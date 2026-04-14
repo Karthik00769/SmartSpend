@@ -49,8 +49,11 @@ export async function POST(req: NextRequest) {
     const summary = await upsertBudget(bodyData);
     return ok(summary, 201);
 
-  } catch (err) {
-    console.error('[POST /api/budgets]', err);
-    return fail('Failed to save budget.', 500);
+  } catch (err: any) {
+    console.error('[POST /api/budgets]', err?.message ?? err);
+    // Surface validation/FK errors (category not found, missing fields) as 400
+    const msg: string = err?.message ?? 'Failed to save budget.';
+    const isUserError = msg.includes('not found') || msg.includes('Missing required') || msg.includes('does not belong');
+    return fail(msg, isUserError ? 400 : 500);
   }
 }

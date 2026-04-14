@@ -15,6 +15,7 @@ export interface RawExpenseInput {
   amount:      string | number;
   date:        string;
   description?: string;
+  source?:     'manual' | 'receipt_scan' | 'bank_import';
 }
 
 // ─── Validated + enriched expense ────────────────────────────────────────────

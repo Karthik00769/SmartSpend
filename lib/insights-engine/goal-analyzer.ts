@@ -68,7 +68,7 @@ export function analyzeGoal(
   const today        = new Date();
   const targetDate   = new Date(goal.deadline + 'T00:00:00Z');
   const daysRemaining = Math.max(0, Math.ceil((targetDate.getTime() - today.getTime()) / 86_400_000));
-  const remaining    = Math.max(0, goal.targetAmount - goal.currentAmount);
+  const remaining    = Math.max(0, goal.targetAmount - goal.savedAmount);
 
   // Daily required savings to hit target
   const requiredDailyAmount = daysRemaining > 0 ? remaining / daysRemaining : Infinity;
@@ -77,7 +77,7 @@ export function analyzeGoal(
   const projectedExtra   = avgDailySavings * daysRemaining;
   const projectedAmount  = Math.min(
     goal.targetAmount,
-    goal.currentAmount + projectedExtra,
+    goal.savedAmount + projectedExtra,
   );
   const achievementPct   = goal.targetAmount > 0
     ? Math.min(100, (projectedAmount / goal.targetAmount) * 100)
@@ -86,12 +86,12 @@ export function analyzeGoal(
   // Probability score
   const ratio       = requiredDailyAmount > 0 ? avgDailySavings / requiredDailyAmount : 2;
   const probability = daysRemaining === 0
-    ? (goal.currentAmount >= goal.targetAmount ? 100 : 0)
+    ? (goal.savedAmount >= goal.targetAmount ? 100 : 0)
     : logisticScore(Math.min(ratio, 3));
 
   // Risk tier
   let risk: GoalRisk;
-  if (goal.currentAmount >= goal.targetAmount)   risk = 'completed';
+  if (goal.savedAmount >= goal.targetAmount)   risk = 'completed';
   else if (probability >= 70)                    risk = 'on_track';
   else if (probability >= 40)                    risk = 'at_risk';
   else                                           risk = 'behind';
@@ -111,7 +111,7 @@ export function analyzeGoal(
     goalId:               goal.id,
     title:                goal.title,
     targetAmount:         goal.targetAmount,
-    currentAmount:        goal.currentAmount,
+    savedAmount:        goal.savedAmount,
     targetDate:           goal.deadline,
     daysRemaining,
     requiredDailyAmount:  Math.round(requiredDailyAmount * 100) / 100,
@@ -189,8 +189,8 @@ function buildMilestones(
 ): GoalMilestone[] {
   return MILESTONE_PCTS.map(pct => {
     const targetForMilestone = goal.targetAmount * (pct / 100);
-    const alreadyReached     = goal.currentAmount >= targetForMilestone;
-    const amountStillNeeded  = Math.max(0, targetForMilestone - goal.currentAmount);
+    const alreadyReached     = goal.savedAmount >= targetForMilestone;
+    const amountStillNeeded  = Math.max(0, targetForMilestone - goal.savedAmount);
     const daysToMilestone    = avgDailySavings > 0
       ? Math.ceil(amountStillNeeded / avgDailySavings)
       : Infinity;

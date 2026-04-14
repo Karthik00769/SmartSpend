@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS goals (
   title          VARCHAR(150)     NOT NULL,
   description    TEXT             NULL,
   target_amount  DECIMAL(12,2)    NOT NULL,
-  current_amount DECIMAL(12,2)    NOT NULL DEFAULT 0.00,
+  saved_amount DECIMAL(12,2)    NOT NULL DEFAULT 0.00,
   target_date    DATE             NOT NULL,
   priority       ENUM('low','medium','high')                        NOT NULL DEFAULT 'medium',
   status         ENUM('active','paused','completed','cancelled')    NOT NULL DEFAULT 'active',
@@ -196,7 +196,7 @@ INSERT IGNORE INTO budgets (user_id, category_id, limit_amount, budget_month, bu
 (1, 8, 100, MONTH(NOW()), YEAR(NOW()));
 
 -- Sample goals
-INSERT IGNORE INTO goals (id, user_id, title, description, target_amount, current_amount, target_date, priority, status) VALUES
+INSERT IGNORE INTO goals (id, user_id, title, description, target_amount, saved_amount, target_date, priority, status) VALUES
 (1, 1, 'Emergency Fund',  'Build 3 months of expenses', 10000, 3500, DATE_ADD(NOW(), INTERVAL 9  MONTH), 'high',   'active'),
 (2, 1, 'Vacation Fund',   'Trip to Europe',              5000,  1200, DATE_ADD(NOW(), INTERVAL 5  MONTH), 'medium', 'active'),
 (3, 1, 'New Laptop',      'Gaming laptop upgrade',       2000,   800, DATE_ADD(NOW(), INTERVAL 3  MONTH), 'low',    'active');

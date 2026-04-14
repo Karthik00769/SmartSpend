@@ -68,16 +68,17 @@ export function calculateHealthScore(data: HealthScoreInput): HealthScoreResult 
 
   // 2. Budget Compliance (30 Points)
   // Target: % of customized budgets that are NOT over the limit.
-  let budgetCompliancePct = 100; // default 100% if no budgets exist
+  let budgetCompliancePct = 0; 
+  let budgetComplianceScore = 0;
   if (budgets.categories.length > 0) {
     const compliantCount = budgets.categories.filter((c) => !c.isOverBudget).length;
     budgetCompliancePct = (compliantCount / budgets.categories.length) * 100;
+    budgetComplianceScore = Math.round((budgetCompliancePct / 100) * 30);
   }
-  const budgetComplianceScore = Math.round((budgetCompliancePct / 100) * 30);
 
   // 3. Spending Stability (20 Points)
   // Target: Ratio of overall spent to overall total budget cap across all categories.
-  let spendingStabilityScore = 20; 
+  let spendingStabilityScore = 0; 
   if (budgets.totalBudget > 0) {
     const spendRatio = totalSpent / budgets.totalBudget;
     if (spendRatio > 1.2) {
@@ -87,18 +88,19 @@ export function calculateHealthScore(data: HealthScoreInput): HealthScoreResult 
     } else {
       spendingStabilityScore = 20; // well within total defined boundaries
     }
-  } else if (monthlyIncome > 0 && totalSpent > monthlyIncome) {
-     spendingStabilityScore = 0; // Spent more than income without budgets defined
+  } else if (monthlyIncome > 0 && totalSpent > 0) {
+    // If no budgets but spending exists, evaluate based on income
+    const incomeRatio = totalSpent / monthlyIncome;
+    if (incomeRatio <= 0.5) spendingStabilityScore = 20;
+    else if (incomeRatio <= 0.8) spendingStabilityScore = 10;
+    else spendingStabilityScore = 0;
   }
 
   // 4. Goal Progress (10 Points)
   // Target: Demonstrating continuous measurable deposits against active targets.
   let goalProgressScore = 0;
   const activeGoals = goals.filter((g) => g.status === 'active');
-  if (activeGoals.length === 0) {
-    // Neutral fallback if user doesn't use goals yet. Give half points so it doesn't penalize harshly.
-    goalProgressScore = 5; 
-  } else {
+  if (activeGoals.length > 0) {
     // Calculate average completion rate of active goals, mapping to points
     const totalProgress = activeGoals.reduce((acc, g) => acc + (g.completionPct || 0), 0);
     const avgProgress = totalProgress / activeGoals.length;

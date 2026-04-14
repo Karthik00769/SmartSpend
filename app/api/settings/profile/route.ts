@@ -1,8 +1,5 @@
 /**
  * app/api/settings/profile/route.ts
- * ─────────────────────────────────────────────────────────────────────
- * GET  /api/settings/profile  — fetch profile data
- * POST /api/settings/profile  — update profile data
  */
 import { NextRequest } from 'next/server';
 import { ok, fail } from '@/lib/api-response';
@@ -11,12 +8,19 @@ import { authOptions } from "@/lib/auth/authOptions";
 import { getUserProfile, updateUserProfile } from '@/services/user.service';
 import { z } from 'zod';
 import { parseBody } from '@/lib/validate';
+import { query } from '@/lib/db';
 
 const ProfileUpdateSchema = z.object({
-  name:          z.string().min(2).max(100).optional(),
-  email:         z.string().email().optional(), // email updates usually need more logic, but we'll allow it for now if needed.
+  name:           z.string().min(2).max(100).optional(),
+  email:          z.string().email().optional(),
   monthly_income: z.preprocess((val) => Number(val), z.number().min(0)),
-  currency:      z.string().length(3).default('USD'),
+  currency:       z.string().length(3).default('USD'),
+  timezone:       z.string().max(50).default('Asia/Kolkata'),
+  preferences:    z.object({
+    budgetAlerts: z.boolean().optional(),
+    aiInsights:   z.boolean().optional(),
+    weeklyDigest: z.boolean().optional(),
+  }).optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -25,14 +29,29 @@ export async function GET(req: NextRequest) {
 
   try {
     const userId = (session.user as any).id as string;
+    if (!userId) return fail('User ID missing from session', 400);
+
     const profile = await getUserProfile(userId);
 
-    if (!profile) return fail('User not found', 404);
+    // User may exist but be soft-deleted or inactive — return a safe default
+    if (!profile) {
+      return ok({
+        id: userId,
+        name: (session.user as any).name ?? '',
+        email: (session.user as any).email ?? '',
+        monthly_income: 0,
+        currency: 'USD',
+        timezone: 'Asia/Kolkata',
+        twoFactorEnabled: false,
+        preferences: { budgetAlerts: true, aiInsights: true, weeklyDigest: false },
+        sessionVersion: 1,
+      });
+    }
 
     return ok(profile);
-  } catch (err) {
-    console.error('[GET /api/settings/profile]', err);
-    return fail('Failed to fetch profile settings', 500);
+  } catch (err: any) {
+    console.error('[GET /api/settings/profile] ERROR:', err?.message ?? err, err?.stack);
+    return fail(err?.message ?? 'Failed to fetch profile settings', 500);
   }
 }
 
@@ -46,10 +65,22 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return fail(parsed.message, 400, parsed.fieldErrors);
 
   try {
+    const currentProfile = await getUserProfile(userId);
+    if (!currentProfile) return fail('User not found', 404);
+
+    // If email is changing, check for uniqueness
+    if (parsed.data.email && parsed.data.email !== currentProfile.email) {
+      const existing = await query<any[]>('SELECT id FROM users WHERE email = ? AND id != ?', [parsed.data.email, userId]);
+      if (existing.length > 0) return fail('Email already in use by another account.', 400);
+    }
+
     const success = await updateUserProfile(userId, {
       name:           parsed.data.name,
+      email:          parsed.data.email,
       monthly_income: parsed.data.monthly_income,
       currency:       parsed.data.currency,
+      timezone:       parsed.data.timezone,
+      preferences:    parsed.data.preferences as any,
     });
 
     if (!success) return fail('Failed to update profile.', 500);

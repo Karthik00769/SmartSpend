@@ -239,7 +239,7 @@ export function generateMonthAdvice(
  */
 export function generateGoalAdvice(goals: GoalProbabilityResult[]): TextAdvice[] {
   return goals.map(g => {
-    const pct    = Math.min(100, Math.round((g.currentAmount / g.targetAmount) * 100));
+    const pct    = Math.min(100, Math.round((g.savedAmount / g.targetAmount) * 100));
     const needed = $(g.requiredDailyAmount);
 
     if (g.risk === 'completed') {

@@ -216,7 +216,7 @@ curl "http://localhost:3000/api/goals?userId=1&status=active"
         "id": 1,
         "title": "Emergency Fund",
         "targetAmount": 10000,
-        "currentAmount": 3500,
+        "savedAmount": 3500,
         "deadline": "2026-12-31",
         "priority": "high",
         "status": "active",

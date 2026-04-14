@@ -86,7 +86,6 @@ export async function createGoal(
   input: CreateGoalPayload,
 ): Promise<CreateGoalResponse> {
   return post<CreateGoalResponse>('/api/goals', {
-    priority: 'medium',
     ...input,
   });
 }

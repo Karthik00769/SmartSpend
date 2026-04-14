@@ -2,16 +2,19 @@ import { query } from '@/lib/db';
 import type { GoalDTO } from '@/types/api';
 import { ResultSetHeader } from 'mysql2';
 
+// ─── Row shape from DB ────────────────────────────────────────────────────────
+// NOTE: Column is `saved_amount` in the DB, NOT `saved_amount`.
 interface GoalRow {
   id:                     number;
   user_id:                string;
   title:                  string;
   description:            string | null;
   target_amount:          string;
-  current_amount:         string;
+  saved_amount:           string;   // DB column name
   target_date:            string;
   priority:               'low' | 'medium' | 'high';
   status:                 'active' | 'paused' | 'completed' | 'cancelled';
+  goal_type:              'short_term' | 'long_term';
   completion_pct:         string;
   days_remaining:         number;
   required_daily_savings: string | null;
@@ -25,10 +28,11 @@ function toDTO(row: GoalRow): GoalDTO {
     title:                row.title,
     description:          row.description || '',
     targetAmount:         parseFloat(row.target_amount),
-    currentAmount:        parseFloat(row.current_amount),
+    savedAmount:        parseFloat(row.saved_amount),   // expose as savedAmount in DTO
     deadline:             row.target_date ? new Date(row.target_date).toISOString().slice(0, 10) : '',
     priority:             row.priority || 'medium',
     status:               row.status   || 'active',
+    goalType:             row.goal_type || 'short_term',
     completionPct:        parseFloat(row.completion_pct || '0'),
     daysRemaining:        row.days_remaining,
     requiredDailySavings: row.required_daily_savings
@@ -38,26 +42,34 @@ function toDTO(row: GoalRow): GoalDTO {
   };
 }
 
+// Uses `saved_amount` — the actual column name in the goals table.
+// Soft-deleted rows (deleted_at IS NOT NULL) are always excluded.
 const BASE_SELECT = `
   SELECT
-    id, user_id, title, description, target_amount, current_amount,
-    target_date, priority, status, created_at,
-    ROUND((current_amount / NULLIF(target_amount, 0)) * 100, 1) AS completion_pct,
+    id, user_id, title, description, target_amount, saved_amount,
+    target_date, priority, status, goal_type, created_at,
+    ROUND((saved_amount / NULLIF(target_amount, 0)) * 100, 1) AS completion_pct,
     DATEDIFF(target_date, CURDATE()) AS days_remaining,
     CASE
       WHEN DATEDIFF(target_date, CURDATE()) <= 0 THEN NULL
       ELSE ROUND(
-        (target_amount - current_amount) / DATEDIFF(target_date, CURDATE()),
+        (target_amount - saved_amount) / DATEDIFF(target_date, CURDATE()),
         2
       )
     END AS required_daily_savings
   FROM goals
+  WHERE deleted_at IS NULL
 `;
+
+import { logAuditEvent } from './audit.service';
 
 export async function listGoals(params: { userId: string; status?: string }): Promise<GoalDTO[]> {
   const { userId, status } = params;
 
-  let sql = BASE_SELECT + `WHERE user_id = ?`;
+  // Auto-mark overdue goals as failed before returning
+  await syncGoalStatuses(userId);
+
+  let sql = BASE_SELECT + ` AND user_id = ?`;
   const args: any[] = [userId];
 
   if (status && status !== 'all') {
@@ -72,18 +84,20 @@ export async function listGoals(params: { userId: string; status?: string }): Pr
 }
 
 export async function createGoal(input: any): Promise<GoalDTO> {
-  const { userId, title, description, targetAmount, deadline, priority } = input;
+  const { userId, title, description, targetAmount, deadline, priority, goalType = 'short_term' } = input;
 
   const result = await query<ResultSetHeader>(
-    `INSERT INTO goals (user_id, title, description, target_amount, target_date, priority, status)
-     VALUES (?, ?, ?, ?, ?, ?, 'active')`,
-    [userId, title, description || '', targetAmount, deadline, priority || 'medium'],
+    `INSERT INTO goals (user_id, title, description, target_amount, saved_amount, target_date, priority, status, goal_type)
+     VALUES (?, ?, ?, ?, 0.00, ?, ?, 'active', ?)`,
+    [userId, title, description || '', targetAmount, deadline, priority || 'medium', goalType],
   );
 
   const [row] = await query<GoalRow[]>(
-    BASE_SELECT + `WHERE id = ?`,
-    [result.insertId],
+    BASE_SELECT + ` AND id = ? AND user_id = ?`,
+    [result.insertId, userId],
   );
+
+  await logAuditEvent(userId, 'GOAL_CREATED', 'GOAL', result.insertId, { title, targetAmount });
 
   return toDTO(row);
 }
@@ -93,29 +107,97 @@ export async function updateGoalProgress(
   userId: string,
   addAmount: number,
 ): Promise<GoalDTO | null> {
-  const updated = await query<ResultSetHeader>(
+  // WHERE includes user_id for strict isolation
+  await query<ResultSetHeader>(
     `UPDATE goals
-     SET current_amount = LEAST(current_amount + ?, target_amount)
-     WHERE id = ? AND user_id = ?`,
-    [addAmount, goalId, userId],
+     SET
+       saved_amount = LEAST(saved_amount + ?, target_amount),
+       status = CASE
+         WHEN LEAST(saved_amount + ?, target_amount) >= target_amount THEN 'completed'
+         ELSE status
+       END
+     WHERE id = ? AND user_id = ? AND deleted_at IS NULL AND status NOT IN ('completed','cancelled')`,
+    [addAmount, addAmount, goalId, userId],
   );
 
-  if (updated.affectedRows === 0) return null;
+  const [row] = await query<GoalRow[]>(
+    BASE_SELECT + ` AND id = ? AND user_id = ?`,
+    [goalId, userId],
+  );
+  if (!row) return null;
 
-  const [row] = await query<GoalRow[]>(BASE_SELECT + `WHERE id = ?`, [goalId]);
+  await logAuditEvent(userId, 'GOAL_DEPOSIT', 'GOAL', goalId, { addAmount });
   return toDTO(row);
+}
+
+export async function updateGoal(
+  goalId: number,
+  userId: string,
+  patch: { title?: string; description?: string; targetAmount?: number; deadline?: string; priority?: string; status?: string },
+): Promise<GoalDTO | null> {
+  const sets: string[] = [];
+  const args: any[]    = [];
+
+  if (patch.title        != null) { sets.push('title = ?');        args.push(patch.title); }
+  if (patch.description  != null) { sets.push('description = ?');  args.push(patch.description); }
+  if (patch.targetAmount != null) { sets.push('target_amount = ?'); args.push(patch.targetAmount); }
+  if (patch.deadline     != null) { sets.push('target_date = ?');   args.push(patch.deadline); }
+  if (patch.priority     != null) { sets.push('priority = ?');      args.push(patch.priority); }
+  if (patch.status       != null) { sets.push('status = ?');        args.push(patch.status); }
+
+  if (sets.length === 0) throw new Error('Nothing to update.');
+
+  sets.push('updated_at = NOW()');
+  args.push(goalId, userId);
+
+  await query<ResultSetHeader>(
+    `UPDATE goals SET ${sets.join(', ')} WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+    args,
+  );
+
+  const [row] = await query<GoalRow[]>(
+    BASE_SELECT + ` AND id = ? AND user_id = ?`,
+    [goalId, userId],
+  );
+  if (!row) return null;
+
+  await logAuditEvent(userId, 'GOAL_UPDATED', 'GOAL', goalId, patch);
+  return toDTO(row);
+}
+
+export async function softDeleteGoal(goalId: number, userId: string): Promise<void> {
+  const result = await query<ResultSetHeader>(
+    `UPDATE goals SET deleted_at = NOW() WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+    [goalId, userId],
+  );
+  if (result.affectedRows === 0) throw new Error('Goal not found or already deleted.');
+  await logAuditEvent(userId, 'GOAL_DELETED', 'GOAL', goalId, {});
+}
+
+/** Mark overdue active goals as failed. Call on GET to keep statuses fresh. */
+export async function syncGoalStatuses(userId: string): Promise<void> {
+  await query(
+    `UPDATE goals
+     SET status = 'failed'
+     WHERE user_id = ?
+       AND status = 'active'
+       AND target_date < CURDATE()
+       AND saved_amount < target_amount
+       AND deleted_at IS NULL`,
+    [userId],
+  );
 }
 
 export async function checkGoalUnlockStatus(userId: string): Promise<{ monthsOfData: number; longTermUnlocked: boolean }> {
   const [row] = await query<{ months_diff: number | null }[]>(`
     SELECT TIMESTAMPDIFF(MONTH, MIN(expense_date), CURDATE()) AS months_diff
     FROM expenses
-    WHERE user_id = ?
+    WHERE user_id = ? AND deleted_at IS NULL
   `, [userId]);
 
   const months = row?.months_diff ?? 0;
   return {
-    monthsOfData:      months,
-    longTermUnlocked:  months >= 2,
+    monthsOfData:     months,
+    longTermUnlocked: months >= 2,
   };
 }

@@ -20,7 +20,7 @@
 import { NextRequest } from 'next/server';
 import { ok, fail } from '@/lib/api-response';
 import { parseBody, parseQuery, CreateGoalSchema, GetGoalsQuerySchema } from '@/lib/validate';
-import { listGoals, createGoal } from '@/services/goal.service';
+import { listGoals, createGoal, checkGoalUnlockStatus } from '@/services/goal.service';
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/authOptions";
 
@@ -52,6 +52,18 @@ export async function POST(req: NextRequest) {
   try {
     const bodyData = parsed.data as any;
     bodyData.userId = (session.user as any).id;
+
+    // Enforce long-term goal lock
+    if (bodyData.goalType === 'long_term') {
+      const { longTermUnlocked, monthsOfData } = await checkGoalUnlockStatus(bodyData.userId);
+      if (!longTermUnlocked) {
+        return fail(
+          `Long-term goals require at least 2 months of expense history. You current have ${monthsOfData} months.`,
+          403
+        );
+      }
+    }
+
     const goal = await createGoal(bodyData);
     return ok({ goal }, 201);
 

@@ -54,7 +54,7 @@ erDiagram
         int user_id FK
         string title
         decimal target_amount
-        decimal current_amount
+        decimal saved_amount
         date deadline
         string status
     }

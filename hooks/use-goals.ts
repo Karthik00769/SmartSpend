@@ -7,16 +7,18 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { apiGet, apiPost, buildQuery, ApiRequestError } from '@/lib/api-client';
+import { apiGet, apiPost, apiPatch, apiDelete, buildQuery, ApiRequestError } from '@/lib/api-client';
 import type { GoalDTO } from '@/types/api';
 
 // ─── Payload ──────────────────────────────────────────────────────────────────
 
 export interface CreateGoalPayload {
   title:        string;
+  description?: string;
   targetAmount: number;
   deadline:     string;   // YYYY-MM-DD
   priority?:    'low' | 'medium' | 'high';
+  goalType?:    'short_term' | 'long_term';
   icon?:        string;
 }
 
@@ -27,17 +29,20 @@ export interface UseGoalsOptions {
 }
 
 export interface UseGoalsReturn {
-  goals:       GoalDTO[];
-  loading:     boolean;
-  error:       string | null;
-  submitting:  boolean;
-  submitError: string | null;
-  createGoal:  (payload: CreateGoalPayload) => Promise<GoalDTO | null>;
-  refresh:     () => void;
+  goals:         GoalDTO[];
+  loading:       boolean;
+  error:         string | null;
+  submitting:    boolean;
+  submitError:   string | null;
+  createGoal:    (payload: CreateGoalPayload) => Promise<GoalDTO | null>;
+  depositToGoal: (goalId: number, amount: number) => Promise<boolean>;
+  updateGoal:    (goalId: number, patch: Partial<Pick<GoalDTO, 'title' | 'description' | 'targetAmount' | 'deadline' | 'priority' | 'status'>>) => Promise<boolean>;
+  deleteGoal:    (goalId: number) => Promise<boolean>;
+  refresh:       () => void;
 }
 
 export function useGoals(opts: UseGoalsOptions = {}): UseGoalsReturn {
-  const status = opts.status ?? 'active';
+  const status = opts.status ?? 'all';
 
   const [goals,       setGoals]      = useState<GoalDTO[]>([]);
   const [loading,     setLoading]    = useState(true);
@@ -97,5 +102,50 @@ export function useGoals(opts: UseGoalsOptions = {}): UseGoalsReturn {
     [refresh],
   );
 
-  return { goals, loading, error, submitting, submitError, createGoal, refresh };
+  // ── Deposit to goal ─────────────────────────────────────────────────────────
+  const depositToGoal = useCallback(
+    async (goalId: number, amount: number): Promise<boolean> => {
+      try {
+        await apiPost(`/api/goals/${goalId}/progress`, { amount });
+        refresh();
+        return true;
+      } catch (err) {
+        console.error('Failed to deposit to goal:', err);
+        return false;
+      }
+    },
+    [refresh],
+  );
+
+  // ── Update goal ─────────────────────────────────────────────────────────────
+  const updateGoal = useCallback(
+    async (goalId: number, patch: Record<string, any>): Promise<boolean> => {
+      try {
+        await apiPatch(`/api/goals/${goalId}`, patch);
+        refresh();
+        return true;
+      } catch (err) {
+        console.error('Failed to update goal:', err);
+        return false;
+      }
+    },
+    [refresh],
+  );
+
+  // ── Delete goal ─────────────────────────────────────────────────────────────
+  const deleteGoal = useCallback(
+    async (goalId: number): Promise<boolean> => {
+      try {
+        await apiDelete(`/api/goals/${goalId}`);
+        refresh();
+        return true;
+      } catch (err) {
+        console.error('Failed to delete goal:', err);
+        return false;
+      }
+    },
+    [refresh],
+  );
+
+  return { goals, loading, error, submitting, submitError, createGoal, depositToGoal, updateGoal, deleteGoal, refresh };
 }

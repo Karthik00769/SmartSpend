@@ -63,8 +63,3 @@ export const API_PATHS = {
 } as const;
 
 export type ApiPath = (typeof API_PATHS)[keyof typeof API_PATHS];
-
-// ─── Demo / dev user ─────────────────────────────────────────────────────────
-
-export const DEMO_USER_ID: string =
-  process.env.NEXT_PUBLIC_DEMO_USER_ID ?? '1';

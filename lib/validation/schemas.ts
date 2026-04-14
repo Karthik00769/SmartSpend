@@ -11,18 +11,36 @@ import { z } from 'zod';
 export const expenseSchema = z.object({
   amount: z.coerce
     .number({ required_error: 'Amount is required' })
-    .positive('Amount must be greater than 0'),
-    
-  date: z.string().min(1, 'Date is required'),
-  
+    .positive('Amount must be greater than 0')
+    .max(1_000_000, 'Amount cannot exceed 1,000,000')
+    .refine(v => Math.round(v * 100) / 100 === v || String(v).split('.')[1]?.length <= 2,
+      'Amount can have at most 2 decimal places'),
+
+  date: z.string()
+    .min(1, 'Date is required')
+    .refine(d => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+      const parsed = new Date(d + 'T00:00:00Z');
+      return !isNaN(parsed.getTime());
+    }, 'Invalid date')
+    .refine(d => {
+      const parsed = new Date(d + 'T00:00:00Z');
+      const today  = new Date();
+      today.setUTCHours(23, 59, 59, 999);
+      return parsed <= today;
+    }, 'Date cannot be in the future'),
+
   description: z.string().max(255, 'Description too long').optional(),
-  
-  categoryId: z.coerce
-    .number()
-    .optional()
-    .or(z.literal('')) // allow empty string for select
-    .transform(val => (val === '' ? undefined : Number(val))),
-});
+
+  // categoryId is optional — user may choose "Auto Detect" instead
+  categoryId: z.coerce.number().min(1).optional(),
+
+  // Free-text category — used when categoryId is absent (auto-detect or custom)
+  categoryName: z.string().max(100).optional(),
+}).refine(
+  (d) => d.categoryId != null || (d.categoryName != null && d.categoryName.trim().length > 0),
+  { message: 'Please select a category or use Auto Detect', path: ['categoryId'] },
+);
 
 export type ExpenseFormValues = z.infer<typeof expenseSchema>;
 
@@ -43,22 +61,24 @@ export type BudgetFormValues = z.infer<typeof budgetSchema>;
 // ─── Goal ───────────────────────────────────────────────────────────────────────
 
 export const goalSchema = z.object({
-  title: z.string().min(1, 'Title is required').max(100, 'Title too long'),
+  title: z.string().min(3, 'Title is required').max(100),
   
-  description: z.string().max(255, 'Description too long').optional(),
+  description: z.string().min(1, 'Description is required').max(500),
   
   targetAmount: z.coerce
     .number({ required_error: 'Target amount is required' })
     .positive('Target must be greater than 0'),
     
-  currentAmount: z.coerce
+  savedAmount: z.coerce
     .number()
     .min(0, 'Current amount cannot be negative')
     .default(0),
     
   deadline: z.string().min(1, 'Deadline is required'),
   
-  priority: z.enum(['low', 'medium', 'high']).default('medium'),
+  priority: z.enum(['low', 'medium', 'high']),
+  
+  goalType: z.enum(['short_term', 'long_term']).default('short_term'),
 });
 
 export type GoalFormValues = z.infer<typeof goalSchema>;

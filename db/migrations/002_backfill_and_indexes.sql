@@ -100,22 +100,22 @@ SET @sql = IF(@has_target_date2 > 0,
 );
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- ── goals: backfill current_amount from saved_amount if it exists ─────
+-- ── goals: backfill saved_amount from saved_amount if it exists ─────
 SELECT COUNT(*) INTO @has_saved_amount
 FROM INFORMATION_SCHEMA.COLUMNS
 WHERE TABLE_SCHEMA = DATABASE()
   AND TABLE_NAME   = 'goals'
   AND COLUMN_NAME  = 'saved_amount';
 
-SELECT COUNT(*) INTO @has_current_amount
+SELECT COUNT(*) INTO @has_saved_amount
 FROM INFORMATION_SCHEMA.COLUMNS
 WHERE TABLE_SCHEMA = DATABASE()
   AND TABLE_NAME   = 'goals'
-  AND COLUMN_NAME  = 'current_amount';
+  AND COLUMN_NAME  = 'saved_amount';
 
-SET @sql = IF(@has_saved_amount > 0 AND @has_current_amount > 0,
-  'UPDATE goals SET current_amount = saved_amount WHERE current_amount = 0 AND saved_amount > 0',
-  'SELECT ''no current_amount backfill needed'' AS migration_info'
+SET @sql = IF(@has_saved_amount > 0 AND @has_saved_amount > 0,
+  'UPDATE goals SET saved_amount = saved_amount WHERE saved_amount = 0 AND saved_amount > 0',
+  'SELECT ''no saved_amount backfill needed'' AS migration_info'
 );
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 

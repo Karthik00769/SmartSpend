@@ -1,92 +1,150 @@
 'use client';
 
-/**
- * app/(app)/add-expense/page.tsx
- * ─────────────────────────────────────────────────────────────────────
- * Add Expense page — reads expense list from SmartSpend context.
- * ManualEntryForm already uses context.addExpense() internally.
- */
+import { useState, useMemo } from 'react';
+import { toast }             from 'sonner';
+import { ManualEntryForm }   from '@/components/sections/expense/manual-entry-form';
+import { UploadArea, type ParsedTransaction } from '@/components/sections/expense/upload-area';
+import { ScanReceiptArea, type ExtractedData } from '@/components/sections/expense/scan-receipt';
+import { useSmartSpend }     from '@/context/smartspend-context';
 
-import { useSmartSpend } from '@/context/smartspend-context';
-import { ManualEntryForm } from '@/components/sections/expense/manual-entry-form';
-import { UploadArea }      from '@/components/sections/expense/upload-area';
-import { ScanReceiptArea } from '@/components/sections/expense/scan-receipt';
-import { Card }            from '@/components/ui/card';
+type Method = 'manual' | 'scan' | 'bank';
 
-import { useState } from 'react';
+const METHODS: { key: Method; label: string; icon: string; desc: string }[] = [
+  { key: 'manual', label: 'Manual Entry', icon: '✏️', desc: 'Type in expense details' },
+  { key: 'scan',   label: 'Scan Receipt', icon: '📸', desc: 'Upload or capture a receipt' },
+  { key: 'bank',   label: 'Bank Upload',  icon: '🏦', desc: 'Import from CSV or PDF' },
+];
 
 export default function AddExpensePage() {
-  const { expenses, expensesLoading } = useSmartSpend();
-  const [prefill, setPrefill] = useState<any>(null);
+  const { addExpense } = useSmartSpend();
 
-  // Show the 10 most recent entries
-  const recent = expenses.slice(0, 10);
+  const [prefill,      setPrefill]      = useState<ExtractedData | null>(null);
+  const [previewSrc,   setPreviewSrc]   = useState<'scan' | 'bank' | null>(null);
+  const [activeMethod, setActiveMethod] = useState<Method>('manual');
+
+  const handleDataExtracted = (data: ExtractedData, source: 'scan' | 'bank') => {
+    setPrefill(data);
+    setPreviewSrc(source);
+    if (window.innerWidth < 768) window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const clearPrefill = () => { setPrefill(null); setPreviewSrc(null); };
+
+  const initialData = useMemo(() => {
+    if (!prefill) return null;
+    return {
+      amount:       prefill.amount   ?? undefined,
+      date:         prefill.date     ?? new Date().toISOString().slice(0, 10),
+      description:  prefill.merchant ?? '',
+      categoryName: prefill.category ?? undefined,
+    };
+  }, [prefill]);
+
+  const handleBatchConfirm = async (transactions: ParsedTransaction[]) => {
+    let saved = 0, failed = 0;
+    for (const tx of transactions) {
+      const result = await addExpense({
+        amount: tx.amount, date: tx.date, description: tx.description,
+        categoryName: tx.category || undefined, source: 'bank_import',
+      });
+      if (result) saved++; else failed++;
+    }
+    if (saved > 0)  toast.success(`${saved} transaction${saved > 1 ? 's' : ''} saved.`);
+    if (failed > 0) toast.error(`${failed} failed to save.`);
+  };
+
+  const formSource = previewSrc === 'scan' ? 'ocr' : previewSrc === 'bank' ? 'bank' : 'manual';
 
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-foreground mb-2">Add Expense</h1>
-        <p className="text-muted-foreground">
-          Record spending manually or upload an image — expenses are auto-categorized by the engine
-        </p>
+    <div className="w-full">
+      <div className="mb-5">
+        <h1 className="text-2xl font-semibold text-foreground mb-0.5">Add Expense</h1>
+        <p className="text-sm text-muted-foreground">Record spending via manual entry, receipt scan, or bank upload.</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Form — uses context.addExpense() */}
-        <div className="lg:col-span-2">
-          <ManualEntryForm initialData={prefill} />
+      {/* ── DESKTOP: left method rail + right expanded panel ── */}
+      <div className="hidden md:flex gap-5 items-start">
+
+        {/* Left: vertical method selector */}
+        <div className="w-44 shrink-0 flex flex-col gap-2">
+          {METHODS.map(m => (
+            <button
+              key={m.key}
+              onClick={() => { setActiveMethod(m.key); clearPrefill(); }}
+              className={`flex items-center gap-3 px-3 py-3 rounded-xl border text-left transition-all w-full ${
+                activeMethod === m.key
+                  ? 'border-primary bg-primary/5 shadow-sm'
+                  : 'border-border hover:border-primary/40 hover:bg-muted/40'
+              }`}
+            >
+              <span className="text-lg shrink-0">{m.icon}</span>
+              <div className="min-w-0">
+                <p className={`text-sm font-semibold leading-tight ${activeMethod === m.key ? 'text-primary' : 'text-foreground'}`}>
+                  {m.label}
+                </p>
+                <p className="text-[11px] text-muted-foreground leading-tight mt-0.5 truncate">{m.desc}</p>
+              </div>
+            </button>
+          ))}
         </div>
 
-        {/* Right column: upload area + recent list */}
-        <div className="space-y-6">
-          <ScanReceiptArea onDataExtracted={(data) => setPrefill(data)} />
-          <UploadArea />
+        {/* Right: expanded panel fills remaining space */}
+        <div className="flex-1 min-w-0">
+          {/* Pre-fill banner */}
+          {prefill && previewSrc && (
+            <div className="mb-4 p-3 bg-primary/5 border border-primary/20 rounded-lg flex items-center gap-3">
+              <span className="text-lg shrink-0">{previewSrc === 'scan' ? '📸' : '📄'}</span>
+              <p className="text-sm text-primary flex-1">Data extracted — review and save below.</p>
+              <button onClick={clearPrefill} className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded">✕</button>
+            </div>
+          )}
 
-          {/* Recent expenses */}
-          <Card className="p-6">
-            <h3 className="text-lg font-semibold text-foreground mb-4">Recent Expenses</h3>
+          {activeMethod === 'manual' && (
+            <ManualEntryForm initialData={initialData} source={formSource} onSuccess={clearPrefill} />
+          )}
+          {activeMethod === 'scan' && (
+            prefill && previewSrc === 'scan'
+              ? <ManualEntryForm initialData={initialData} source="ocr" onSuccess={clearPrefill} />
+              : <ScanReceiptArea onDataExtracted={(data) => handleDataExtracted(data, 'scan')} />
+          )}
+          {activeMethod === 'bank' && (
+            prefill && previewSrc === 'bank'
+              ? <ManualEntryForm initialData={initialData} source="bank" onSuccess={clearPrefill} />
+              : <UploadArea
+                  onDataExtracted={(data) => handleDataExtracted(data, 'bank')}
+                  onBatchConfirm={handleBatchConfirm}
+                />
+          )}
+        </div>
+      </div>
 
-            {expensesLoading ? (
-              <div className="space-y-3 animate-pulse">
-                {[...Array(5)].map((_, i) => (
-                  <div key={i} className="h-10 bg-muted rounded-lg" />
-                ))}
-              </div>
-            ) : recent.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-6">
-                No expenses yet. Add your first one! 👆
-              </p>
-            ) : (
-              <div className="space-y-1">
-                {recent.map(e => (
-                  <div
-                    key={e.id}
-                    className="flex items-center justify-between py-2 border-b border-border last:border-0"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="text-xl shrink-0">{e.categoryIcon}</span>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium text-foreground leading-tight truncate">
-                            {e.description || e.categoryName}
-                          </p>
-                          {e.categorySource === 'auto' && (
-                            <span className="text-[10px] font-semibold bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 px-1.5 py-0.5 rounded flex items-center gap-0.5">
-                              🤖 Auto
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground">{e.date}</p>
-                      </div>
-                    </div>
-                    <span className="text-sm font-semibold text-red-600 dark:text-red-400 shrink-0 ml-3">
-                      −${e.amount.toFixed(2)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
+      {/* ── MOBILE: stacked layout (unchanged) ── */}
+      <div className="md:hidden flex flex-col gap-5 pb-10">
+        {prefill && previewSrc && (
+          <div className="p-3 bg-primary/5 border border-primary/20 rounded-xl flex items-center gap-3">
+            <span className="text-xl shrink-0">{previewSrc === 'scan' ? '📸' : '📄'}</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-primary">Data extracted</p>
+              <p className="text-xs text-muted-foreground">Review and save below.</p>
+            </div>
+            <button onClick={clearPrefill} className="text-xs text-muted-foreground hover:text-foreground px-2 py-1">✕</button>
+          </div>
+        )}
+
+        <ManualEntryForm initialData={initialData} source={formSource} onSuccess={clearPrefill} />
+
+        <div className="border-t border-border" />
+
+        <ScanReceiptArea onDataExtracted={(data) => handleDataExtracted(data, 'scan')} />
+        <UploadArea
+          onDataExtracted={(data) => handleDataExtracted(data, 'bank')}
+          onBatchConfirm={handleBatchConfirm}
+        />
+
+        <div className="bg-muted/40 px-4 py-3 rounded-lg border border-border/60 text-center">
+          <p className="text-xs text-muted-foreground">
+            💡 Select <strong>Auto Detect</strong> in the category field for smart suggestions.
+          </p>
         </div>
       </div>
     </div>

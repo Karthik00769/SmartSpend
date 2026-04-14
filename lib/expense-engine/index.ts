@@ -84,6 +84,7 @@ export async function processExpense(
     date:        processed.date,
     description: processed.description,
     categorySource: cat.confidence === 'exact' ? 'manual' : 'auto',
+    source:      raw.source ?? 'manual',
   });
 
   return {

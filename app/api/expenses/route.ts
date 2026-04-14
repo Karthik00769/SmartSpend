@@ -15,16 +15,18 @@ import { z } from 'zod';
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/authOptions";
 
-import { listExpenses } from '@/services/expense.service';
+import { listExpenses, findOrCreateCategory, countExpenses } from '@/services/expense.service';
 import { processExpense } from '@/lib/expense-engine';
 
 // ── Loose intake schema — engine does the deep validation ─────────────────────
 const ExpenseIntakeSchema = z.object({
-  userId:      z.union([z.string(), z.number()]).transform(String).optional(),
-  categoryId:  z.preprocess((val) => Number(val), z.number()).optional(),
-  amount:      z.union([z.string(), z.number()]),
-  date:        z.string(),
-  description: z.string().trim().max(500).default(''),
+  userId:       z.union([z.string(), z.number()]).transform(String).optional(),
+  categoryId:   z.preprocess((val) => val != null && val !== '' ? Number(val) : undefined, z.number().optional()),
+  categoryName: z.string().trim().max(100).optional(),
+  amount:       z.union([z.string(), z.number()]),
+  date:         z.string(),
+  description:  z.string().trim().max(500).default(''),
+  source:       z.enum(['manual', 'receipt_scan', 'bank_import']).default('manual'),
 });
 
 export async function GET(req: NextRequest) {
@@ -35,10 +37,12 @@ export async function GET(req: NextRequest) {
   if (!parsed.success) return fail(parsed.message, 400, parsed.fieldErrors);
 
   try {
-    const queryData = parsed.data as any;
-    queryData.userId = (session.user as any).id;
-    const expenses = await listExpenses(queryData);
-    return ok({ expenses, count: expenses.length });
+    const queryData = { ...parsed.data, userId: (session.user as any).id } as any;
+    const [expenses, total] = await Promise.all([
+      listExpenses(queryData),
+      countExpenses(queryData),
+    ]);
+    return ok({ expenses, count: expenses.length, total });
   } catch (err) {
     console.error('[GET /api/expenses]', err);
     return fail('Failed to fetch expenses.', 500);
@@ -55,19 +59,27 @@ export async function POST(req: NextRequest) {
 
   const userId = (session.user as any).id as string;
 
-  // ── 2. Run through the Expense Processing Engine ──────────────────────────
   try {
+    // Resolve categoryId from name if not provided
+    let resolvedCategoryId = parsed.data.categoryId;
+    if (!resolvedCategoryId && parsed.data.categoryName) {
+      resolvedCategoryId = await findOrCreateCategory(
+        userId,
+        parsed.data.categoryName,
+      );
+    }
+
     const result = await processExpense(
       {
         userId:      userId as string,
-        categoryId:  parsed.data.categoryId,
+        categoryId:  resolvedCategoryId,
         amount:      parsed.data.amount as any,
         date:        parsed.data.date,
         description: parsed.data.description,
+        source:      parsed.data.source,
       },
       userId as string,
     );
-
 
     // Engine validation failed — return 422 with field errors
     if (!result.validation.valid) {
@@ -80,15 +92,18 @@ export async function POST(req: NextRequest) {
 
     return ok(
       {
-        expense:        result.savedExpense, // fully populated DTO containing categoryName/categoryIcon
+        expense:        result.savedExpense,
         expenseId:      result.savedExpenseId,
         processed:      result.processed,
         categorization: result.categorization,
       },
       201,
     );
-  } catch (err) {
+  } catch (err: any) {
     console.error('[POST /api/expenses]', err);
+    // Surface duplicate and category errors as 409/400 rather than 500
+    if (err.message?.includes('Duplicate expense')) return fail(err.message, 409);
+    if (err.message?.includes('not found') || err.message?.includes('does not belong')) return fail(err.message, 400);
     return fail('Failed to save expense. Check database connection.', 500);
   }
 }

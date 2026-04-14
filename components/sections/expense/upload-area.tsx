@@ -1,152 +1,272 @@
 'use client';
 
 import { useState } from 'react';
-import { Card } from '@/components/ui/card';
-import { toast } from 'sonner';
+import { Card }     from '@/components/ui/card';
+import { Button }   from '@/components/ui/button';
+import { Input }    from '@/components/ui/input';
+import { toast }    from 'sonner';
+import { type ExtractedData } from './scan-receipt';
+import { autoCategorizeName } from '@/lib/expense-engine/auto-categorize';
 
-export function UploadArea() {
-  const [isDragging, setIsDragging] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadedFiles, setUploadedFiles] = useState<{name: string, status: 'processing' | 'done' | 'error'}[]>([]);
-  const [error, setError] = useState<string | null>(null);
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-  const ALLOWED_TYPES = [
-    'application/pdf',
-    'text/csv',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'application/vnd.ms-excel'
-  ];
-  const ALLOWED_EXTS = ['.pdf', '.csv', '.xlsx', '.xls'];
+export interface ParsedTransaction {
+  amount:      number;
+  date:        string;
+  description: string;
+  category:    string;   // editable — pre-filled by auto-categorizer
+}
 
-  const handleDragEnter = (e: React.DragEvent) => {
-    e.preventDefault(); e.stopPropagation(); setIsDragging(true);
-  };
+interface UploadAreaProps {
+  onDataExtracted?:    (data: ExtractedData) => void;
+  onBatchConfirm?:     (transactions: ParsedTransaction[]) => void;
+}
 
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault(); e.stopPropagation(); setIsDragging(false);
-  };
+const ALLOWED_TYPES = ['application/pdf', 'text/csv'];
+const ALLOWED_EXTS  = ['.pdf', '.csv'];
 
+// ─── Component ────────────────────────────────────────────────────────────────
+
+export function UploadArea({ onDataExtracted, onBatchConfirm }: UploadAreaProps) {
+  const [isDragging,    setIsDragging]    = useState(false);
+  const [isProcessing,  setIsProcessing]  = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState<{ name: string; status: 'processing' | 'done' | 'error' }[]>([]);
+
+  // Multi-transaction review state
+  const [transactions,  setTransactions]  = useState<ParsedTransaction[]>([]);
+  const [isSaving,      setIsSaving]      = useState(false);
+
+  const handleDragEnter = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); };
+  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); };
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); e.stopPropagation(); setIsDragging(false);
-    handleFiles(e.dataTransfer.files);
+    processFiles(e.dataTransfer.files);
   };
-
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) handleFiles(e.target.files);
+    if (e.target.files) processFiles(e.target.files);
   };
 
-  const handleFiles = async (files: FileList) => {
-    setError(null);
-    const fileList = Array.from(files);
-    
-    for (const file of fileList) {
+  const processFiles = async (files: FileList) => {
+    for (const file of Array.from(files)) {
       const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
       if (!ALLOWED_TYPES.includes(file.type) && !ALLOWED_EXTS.includes(ext)) {
-        toast.error(`Invalid file type: ${file.name}`);
+        toast.error(`Unsupported file: ${file.name}. Please upload a PDF or CSV.`);
         continue;
       }
-
-      await uploadAndProcess(file);
+      await uploadFile(file);
     }
   };
 
-  const uploadAndProcess = async (file: File) => {
-    setIsUploading(true);
-    const fileId = Math.random().toString(36).substring(7);
+  const uploadFile = async (file: File) => {
+    setIsProcessing(true);
+    setTransactions([]);
     setUploadedFiles(prev => [...prev, { name: file.name, status: 'processing' }]);
 
     try {
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await fetch('/api/expenses/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
+      const res  = await fetch('/api/expenses/upload', { method: 'POST', body: formData });
       const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || 'Upload failed');
 
-      setUploadedFiles(prev => 
+      if (!json.ok) throw new Error(json.error || 'Parsing failed');
+
+      setUploadedFiles(prev =>
         prev.map(f => f.name === file.name ? { ...f, status: 'done' } : f)
       );
-      toast.success(`Successfully processed ${json.data.processedCount} items from ${file.name}`);
-      
-      // Refresh dashboard if handled by context - but here we just notify
+
+      const { transactions: txns, extracted, amountWarning } = json.data ?? {};
+
+      // ── Multi-transaction CSV path ──────────────────────────────────────
+      if (txns && txns.length > 0) {
+        const enriched: ParsedTransaction[] = txns.map((t: any) => ({
+          amount:      t.amount,
+          date:        t.date,
+          description: t.description,
+          category:    autoCategorizeName(t.description)?.categoryName ?? 'Other',
+        }));
+        setTransactions(enriched);
+        toast.success(`Found ${enriched.length} transaction${enriched.length > 1 ? 's' : ''}. Review and confirm below.`);
+        return;
+      }
+
+      // ── Single-transaction path (PDF / image fallback) ──────────────────
+      if (!extracted) throw new Error('No data found in this file.');
+
+      if (amountWarning) {
+        toast.warning(amountWarning);
+      } else {
+        toast.success('Statement processed. Check the pre-filled form.');
+      }
+      onDataExtracted?.({
+        amount:   extracted.amount   ?? null,
+        date:     extracted.date     ?? null,
+        merchant: extracted.merchant || extracted.description || null,
+        category: null,
+      });
+
     } catch (err: any) {
-      setUploadedFiles(prev => 
+      setUploadedFiles(prev =>
         prev.map(f => f.name === file.name ? { ...f, status: 'error' } : f)
       );
-      toast.error(`Failed to process ${file.name}: ${err.message}`);
+      toast.error(err.message || 'Processing error');
     } finally {
-      setIsUploading(false);
+      setIsProcessing(false);
     }
   };
 
-  return (
-    <Card className="p-8 mb-8">
-      <h2 className="text-2xl font-bold text-foreground mb-6">Automatic Entry</h2>
+  // ── Batch confirm ─────────────────────────────────────────────────────────
+  const handleBatchConfirm = async () => {
+    if (!onBatchConfirm) return;
+    setIsSaving(true);
+    try {
+      await onBatchConfirm(transactions);
+      setTransactions([]);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
+  const updateTransaction = (idx: number, field: keyof ParsedTransaction, value: string | number) => {
+    setTransactions(prev => prev.map((t, i) => i === idx ? { ...t, [field]: value } : t));
+  };
+
+  const removeTransaction = (idx: number) => {
+    setTransactions(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  return (
+    <Card className="p-8">
+      <h2 className="text-2xl font-bold text-foreground mb-6">Bulk Upload / Bank Statement</h2>
+
+      {/* Drop zone */}
       <div
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
+        onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
-        className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
-          isDragging
-            ? 'border-primary bg-primary/5'
-            : 'border-border hover:border-primary/50'
-        } ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+        className={`border-2 border-dashed rounded-xl p-12 text-center transition-all duration-300 ${
+          isDragging ? 'border-primary bg-primary/10 scale-[0.99]' : 'border-border hover:border-primary/50'
+        } ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}
       >
         <input
-          type="file"
-          id="file-upload"
-          multiple
-          accept=".pdf,.csv,.xlsx,.xls"
-          onChange={handleFileInput}
-          disabled={isUploading}
-          className="hidden"
+          type="file" id="file-upload" multiple accept=".pdf,.csv"
+          onChange={handleFileInput} disabled={isProcessing} className="hidden"
         />
-        
-        <div className="text-5xl mb-4">📄</div>
-        <h3 className="text-lg font-semibold text-foreground mb-2">
-          Upload Bank Statements
-        </h3>
-        <p className="text-muted-foreground mb-4">
-          Drag and drop PDF, CSV, or Excel files here, or click to browse
+        <div className="text-6xl mb-6">📄</div>
+        <h3 className="text-xl font-bold text-foreground mb-2">Upload Bank Statement</h3>
+        <p className="text-muted-foreground mb-6 max-w-xs mx-auto">
+          PDF or CSV. Transactions are extracted and auto-categorized instantly.
         </p>
         <label htmlFor="file-upload" className="inline-block">
-          <div className={`bg-primary text-primary-foreground px-6 py-2 rounded-lg font-medium transition-opacity ${isUploading ? 'cursor-not-allowed' : 'cursor-pointer hover:opacity-90'}`}>
-            {isUploading ? 'Processing...' : 'Select Files'}
+          <div className={`bg-primary text-primary-foreground px-8 py-3 rounded-lg font-bold shadow-md transition-all ${isProcessing ? 'cursor-not-allowed' : 'cursor-pointer hover:shadow-lg active:scale-95'}`}>
+            {isProcessing ? 'Extracting…' : 'Select File'}
           </div>
         </label>
-        <p className="text-xs text-muted-foreground mt-4">
-          Supported formats: PDF, CSV, XLSX
-        </p>
       </div>
 
+      {/* File status */}
       {uploadedFiles.length > 0 && (
-        <div className="mt-6">
-          <h3 className="font-semibold text-foreground mb-3">Recent Uploads</h3>
-          <ul className="space-y-2">
-            {uploadedFiles.map((file, idx) => (
-              <li
-                key={idx}
-                className="flex items-center justify-between p-3 bg-muted rounded-lg"
-              >
-                <span className="text-sm text-foreground">
-                  <span className="mr-2">📎</span>
-                  {file.name}
-                </span>
-                <span className={`text-xs px-2 py-1 rounded ${
-                  file.status === 'done' ? 'bg-green-100 text-green-700' : 
-                  file.status === 'error' ? 'bg-red-100 text-red-700' : 
-                  'bg-accent text-accent-foreground animate-pulse'
-                }`}>
-                  {file.status.toUpperCase()}
-                </span>
-              </li>
+        <div className="mt-6 space-y-2">
+          {uploadedFiles.map((f, i) => (
+            <div key={i} className="flex items-center justify-between p-3 bg-muted/30 rounded-xl border border-border/50">
+              <span className="text-sm font-medium flex items-center gap-2">
+                <span className="opacity-70">📎</span> {f.name}
+              </span>
+              <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded-full ${
+                f.status === 'done'  ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400' :
+                f.status === 'error' ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400' :
+                'bg-accent text-accent-foreground animate-pulse'
+              }`}>{f.status}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Multi-transaction review table ─────────────────────────────────── */}
+      {transactions.length > 0 && (
+        <div className="mt-8">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-foreground">
+              Review Transactions <span className="text-muted-foreground font-normal text-sm">({transactions.length} found)</span>
+            </h3>
+            <p className="text-xs text-muted-foreground">Edit any field before confirming</p>
+          </div>
+
+          <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
+            {transactions.map((tx, idx) => (
+              <div key={idx} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-3 p-4 bg-muted/20 rounded-xl border border-border/40 items-center">
+                {/* Amount */}
+                <div>
+                  <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1">Amount</p>
+                  <Input
+                    type="number" step="0.01" min="0.01"
+                    value={tx.amount}
+                    onChange={e => updateTransaction(idx, 'amount', parseFloat(e.target.value) || 0)}
+                    className="h-9 text-sm font-semibold"
+                  />
+                </div>
+                {/* Date */}
+                <div>
+                  <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1">Date</p>
+                  <Input
+                    type="date"
+                    value={tx.date}
+                    onChange={e => updateTransaction(idx, 'date', e.target.value)}
+                    className="h-9 text-sm"
+                  />
+                </div>
+                {/* Description */}
+                <div>
+                  <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1">Description</p>
+                  <Input
+                    value={tx.description}
+                    onChange={e => updateTransaction(idx, 'description', e.target.value)}
+                    className="h-9 text-sm"
+                    placeholder="Merchant / note"
+                  />
+                </div>
+                {/* Remove */}
+                <button
+                  type="button"
+                  onClick={() => removeTransaction(idx)}
+                  className="text-muted-foreground hover:text-red-500 transition-colors mt-5 text-lg"
+                  title="Remove"
+                >✕</button>
+
+                {/* Category — full width row below */}
+                <div className="col-span-3">
+                  <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1">
+                    Category <span className="text-primary/60 normal-case font-normal">(auto-detected — edit freely)</span>
+                  </p>
+                  <Input
+                    value={tx.category}
+                    onChange={e => updateTransaction(idx, 'category', e.target.value)}
+                    className="h-9 text-sm border-primary/30 bg-primary/5"
+                    placeholder="Category name"
+                  />
+                </div>
+              </div>
             ))}
-          </ul>
+          </div>
+
+          <div className="flex gap-4 mt-6">
+            <Button
+              onClick={handleBatchConfirm}
+              disabled={isSaving || transactions.length === 0}
+              className="flex-1 h-12 font-bold shadow-lg shadow-primary/20"
+            >
+              {isSaving ? `Saving ${transactions.length} transactions…` : `Confirm & Save ${transactions.length} Transactions`}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setTransactions([])}
+              disabled={isSaving}
+              className="h-12 px-6"
+            >
+              Discard
+            </Button>
+          </div>
         </div>
       )}
     </Card>

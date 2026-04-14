@@ -9,12 +9,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiGet, apiPatch, buildQuery, ApiRequestError } from '@/lib/api-client';
 import type { InsightsEngineOutput } from '@/lib/insights-engine/types';
+import { subscribeInsightsRefresh } from '@/context/smartspend-context';
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export interface UseInsightsOptions {
   year?:   number;
   month?:  number;
+  months?: number;  // how many months of trend data to include (default 3)
 }
 
 export interface UseInsightsReturn {
@@ -30,6 +32,7 @@ export function useInsights(opts: UseInsightsOptions = {}): UseInsightsReturn {
   const now    = new Date();
   const year   = opts.year   ?? now.getFullYear();
   const month  = opts.month  ?? now.getMonth() + 1;
+  const months = opts.months ?? 3;
 
   const [data,        setData]        = useState<InsightsEngineOutput | null>(null);
   const [loading,     setLoading]     = useState(true);
@@ -39,6 +42,14 @@ export function useInsights(opts: UseInsightsOptions = {}): UseInsightsReturn {
 
   const refresh = useCallback(() => setTick(n => n + 1), []);
 
+  // Subscribe to global expense-added signal so insights auto-refresh
+  useEffect(() => {
+    const unsubscribe = subscribeInsightsRefresh(() => setTick(n => n + 1));
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   // ── Fetch engine output ─────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
@@ -47,7 +58,7 @@ export function useInsights(opts: UseInsightsOptions = {}): UseInsightsReturn {
       setLoading(true);
       setError(null);
       try {
-        const qs     = buildQuery({ year, month });
+        const qs     = buildQuery({ year, month, months });
         const result = await apiGet<InsightsEngineOutput>(`/api/insights/engine${qs}`);
         if (!cancelled) setData(result);
       } catch (err) {
@@ -63,7 +74,7 @@ export function useInsights(opts: UseInsightsOptions = {}): UseInsightsReturn {
 
     fetchInsights();
     return () => { cancelled = true; };
-  }, [year, month, tick]);
+  }, [year, month, months, tick]);
 
   // ── Mark all read ───────────────────────────────────────────────────────────
   const markAllRead = useCallback(async () => {

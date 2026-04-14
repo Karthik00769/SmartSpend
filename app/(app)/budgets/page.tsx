@@ -1,17 +1,19 @@
 'use client';
 
-/**
- * app/(app)/budget/page.tsx
- * ─────────────────────────────────────────────────────────────────────
- * Reads budget data from SmartSpend context (no direct fetch).
- * Shows a skeleton while loading and a BudgetTracker with real data.
- */
-
+import { useState } from 'react';
 import { useSmartSpend } from '@/context/smartspend-context';
 import { BudgetForm }    from '@/components/sections/budget/budget-form';
 import { BudgetTracker } from '@/components/sections/dashboard/budget-tracker';
 import { Card }          from '@/components/ui/card';
-import type { Budget }   from '@/types';
+import { Button }        from '@/components/ui/button';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+
+const MONTHS = [
+  'January','February','March','April','May','June',
+  'July','August','September','October','November','December',
+];
 
 function BudgetSkeleton() {
   return (
@@ -23,33 +25,104 @@ function BudgetSkeleton() {
 }
 
 export default function BudgetPage() {
-  const { budget, budgetLoading, budgetError, period } = useSmartSpend();
+  const {
+    budget, budgetLoading, budgetError,
+    period, setPeriod,
+    refreshAll,
+    fmt,
+  } = useSmartSpend();
 
-  // Adapt API budget data to BudgetTracker prop shape
-  const budgetForTracker: Budget | null = budget
-    ? {
-        id:          '1',
-        userId:      '1',
-        month:       `${period.year}-${String(period.month).padStart(2, '0')}`,
-        totalAmount: budget.categories.reduce((s, c) => s + c.allocated, 0),
-        categories:  budget.categories.map(c => ({
-          category:  c.category,
-          allocated: c.allocated,
-          spent:     c.spent,
-        })),
-        createdAt: new Date(),
-      }
-    : null;
+  const now = new Date();
+  const years = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1];
+
+  // Past months are read-only — only current month is editable
+  const isCurrentPeriod =
+    period.year === now.getFullYear() && period.month === now.getMonth() + 1;
+  const isPastPeriod = !isCurrentPeriod &&
+    (period.year < now.getFullYear() ||
+     (period.year === now.getFullYear() && period.month < now.getMonth() + 1));
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-foreground mb-2">Budget Management</h1>
-        <p className="text-muted-foreground">
-          Set your monthly budget limits and track spending by category
-        </p>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground mb-1">Budget Management</h1>
+          <p className="text-muted-foreground text-sm">
+            Set monthly limits per category and track spending in real time.
+          </p>
+        </div>
+
+        {/* Period selector */}
+        <div className="flex items-center gap-2">
+          <Select
+            value={String(period.month)}
+            onValueChange={v => setPeriod(period.year, Number(v))}
+          >
+            <SelectTrigger className="w-36 h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {MONTHS.map((m, i) => (
+                <SelectItem key={i + 1} value={String(i + 1)}>{m}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={String(period.year)}
+            onValueChange={v => setPeriod(Number(v), period.month)}
+          >
+            <SelectTrigger className="w-24 h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {years.map(y => (
+                <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
+      {/* Summary KPI strip */}
+      {budget && !budgetLoading && (
+        <div className="grid grid-cols-3 gap-4 mb-8">
+          {[
+            {
+              label: 'Total Budget',
+              value: `${fmt(budget.totalBudget)}`,
+              icon: '📋',
+              cls: 'text-foreground',
+            },
+            {
+              label: 'Total Spent',
+              value: `${fmt(budget.totalSpent)}`,
+              icon: '💸',
+              cls: budget.totalSpent > budget.totalBudget
+                ? 'text-red-600 dark:text-red-400'
+                : 'text-foreground',
+            },
+            {
+              label: 'Remaining',
+              value: `${fmt(budget.totalBudget - budget.totalSpent)}`,
+              icon: '💰',
+              cls: budget.totalBudget - budget.totalSpent < 0
+                ? 'text-red-600 dark:text-red-400'
+                : 'text-green-600 dark:text-green-400',
+            },
+          ].map(c => (
+            <Card key={c.label} className="p-4 flex items-center gap-3">
+              <span className="text-2xl">{c.icon}</span>
+              <div>
+                <p className="text-xs text-muted-foreground">{c.label}</p>
+                <p className={`text-xl font-bold ${c.cls}`}>{c.value}</p>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Main content */}
       {budgetLoading ? (
         <BudgetSkeleton />
       ) : budgetError ? (
@@ -59,12 +132,25 @@ export default function BudgetPage() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1">
-            {/* Form uses context.upsertBudget() internally */}
-            <BudgetForm />
+            {isPastPeriod ? (
+              <Card className="p-5 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20">
+                <p className="text-sm font-medium text-amber-700 dark:text-amber-400 mb-1">📅 Past period — read only</p>
+                <p className="text-xs text-amber-600 dark:text-amber-500">
+                  Historical budgets cannot be edited to preserve analytics accuracy.
+                  Switch to the current month to make changes.
+                </p>
+              </Card>
+            ) : (
+              <BudgetForm />
+            )}
           </div>
           <div className="lg:col-span-2">
-            {budgetForTracker ? (
-              <BudgetTracker budget={budgetForTracker} />
+            {budget ? (
+              <BudgetTracker
+                budget={budget}
+                onDeleted={refreshAll}
+                fmt={fmt}
+              />
             ) : (
               <Card className="p-12 text-center">
                 <p className="text-4xl mb-3">💡</p>

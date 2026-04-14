@@ -62,6 +62,10 @@ async function apiFetch<T>(
   }
 
   if (!res.ok || json.ok === false) {
+    if (res.status === 401 && typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+      console.warn('[API] 401 Unauthorized. Redirecting to login.');
+      window.location.href = '/login';
+    }
     const errorMsg = json.error || json.message || res.statusText || text || `Request failed with status ${res.status}`;
     throw new ApiRequestError(res.status, errorMsg, json.details);
   }

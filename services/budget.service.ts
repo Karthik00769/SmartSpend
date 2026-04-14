@@ -5,6 +5,10 @@ import type {
   BudgetCategoryDTO,
 } from '@/types/api';
 
+// budgets table columns: id, user_id, category_id, limit_amount, month, year,
+//                        amount, created_at, updated_at, deleted_at
+// NO budget_month / budget_year columns exist.
+
 interface BudgetRow {
   id:           number;
   user_id:      string;
@@ -13,8 +17,8 @@ interface BudgetRow {
   icon:         string;
   color_hex:    string;
   limit_amount: string;
-  budget_month: number;
-  budget_year:  number;
+  month:        number;
+  year:         number;
   total_spent:  string;
 }
 
@@ -34,9 +38,21 @@ function toDTO(row: BudgetRow): BudgetCategoryDTO {
     usedPct,
     isOverBudget: spent > allocated && allocated > 0,
     remaining:    allocated - spent,
-    month:        row.budget_month,
-    year:         row.budget_year,
+    month:        row.month,
+    year:         row.year,
   };
+}
+
+import { logAuditEvent } from './audit.service';
+
+export async function deleteBudget(id: number, userId: string): Promise<void> {
+  const result = await query<any>(
+    `UPDATE budgets SET deleted_at = NOW()
+     WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+    [id, userId],
+  );
+  if (result.affectedRows === 0) throw new Error('Budget not found or already deleted.');
+  await logAuditEvent(userId, 'BUDGET_DELETED', 'BUDGET', id, {});
 }
 
 export async function listBudgets(params: GetBudgetsQuery): Promise<BudgetSummaryDTO> {
@@ -45,7 +61,8 @@ export async function listBudgets(params: GetBudgetsQuery): Promise<BudgetSummar
 
   const rows = await query<BudgetRow[]>(
     `SELECT
-       b.id, b.user_id, b.category_id, b.limit_amount, b.budget_month, b.budget_year,
+       b.id, b.user_id, b.category_id, b.limit_amount,
+       b.month, b.year,
        c.name AS category, c.icon, c.color_hex,
        COALESCE(SUM(e.amount), 0) AS total_spent
      FROM budgets b
@@ -53,13 +70,15 @@ export async function listBudgets(params: GetBudgetsQuery): Promise<BudgetSummar
      LEFT JOIN expenses e
        ON  e.category_id = b.category_id
        AND e.user_id     = b.user_id
-       AND YEAR(e.expense_date)  = b.budget_year
-       AND MONTH(e.expense_date) = b.budget_month
-     WHERE b.user_id      = ?
-       AND b.budget_year  = ?
-       AND b.budget_month = ?
+       AND YEAR(e.expense_date)  = b.year
+       AND MONTH(e.expense_date) = b.month
+       AND e.deleted_at IS NULL
+     WHERE b.user_id    = ?
+       AND b.year       = ?
+       AND b.month      = ?
+       AND b.deleted_at IS NULL
      GROUP BY
-       b.id, b.user_id, b.category_id, b.limit_amount, b.budget_month, b.budget_year,
+       b.id, b.user_id, b.category_id, b.limit_amount, b.month, b.year,
        c.name, c.icon, c.color_hex
      ORDER BY total_spent DESC`,
     [userId, year, month],
@@ -75,12 +94,38 @@ export async function listBudgets(params: GetBudgetsQuery): Promise<BudgetSummar
 export async function upsertBudget(input: any): Promise<BudgetSummaryDTO> {
   const { userId, categoryId, amount, month, year } = input;
 
-  await query(
-    `INSERT INTO budgets (user_id, category_id, limit_amount, budget_month, budget_year)
-     VALUES (?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE limit_amount = VALUES(limit_amount)`,
-    [userId, categoryId, amount, month, year],
+  // Ensure types are consistent (INT in DB)
+  const catId   = parseInt(String(categoryId), 10);
+  const userId_ = String(userId);
+
+  if (isNaN(catId) || !amount === undefined || !month || !year) {
+    console.error(`[BUDGET] Validation failed: catId=${catId}, userId=${userId_}, month=${month}, year=${year}`);
+    throw new Error(`Missing or invalid required fields: categoryId=${categoryId}, amount=${amount}`);
+  }
+
+  // 2. Validate: allow if user owns the category OR it is a system category
+  const [catCheck] = await query<any[]>(
+    `SELECT id, name, is_system FROM categories 
+     WHERE id = ? AND (user_id = ? OR is_system = 1) AND deleted_at IS NULL`,
+    [catId, userId_],
   );
 
-  return listBudgets({ userId: userId as string, month, year });
+  if (!catCheck) {
+    console.error(`[BUDGET ERROR] Category check failed: userId=${userId_}, categoryId=${catId}. Category not found or unauthorized.`);
+    throw new Error(`Category ${catId} not found or does not belong to this user.`);
+  }
+
+  // 3. Upsert: UNIQUE KEY (user_id, category_id, month, year)
+  const result = await query(
+    `INSERT INTO budgets (user_id, category_id, limit_amount, month, year, updated_at)
+     VALUES (?, ?, ?, ?, ?, NOW())
+     ON DUPLICATE KEY UPDATE 
+       limit_amount = VALUES(limit_amount),
+       updated_at   = NOW()`,
+    [userId_, catId, parseFloat(String(amount)), Number(month), Number(year)],
+  );
+
+  await logAuditEvent(userId_, 'BUDGET_UPDATED', 'BUDGET', catId, { amount, month, year });
+
+  return listBudgets({ userId: userId_, month: Number(month), year: Number(year) });
 }

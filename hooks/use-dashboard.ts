@@ -22,6 +22,7 @@ export interface DashboardData {
   weekly:     WeeklySummary[];
   categories: CategorySummary[];
   charts:     ChartBundle;
+  daily:      Array<{ date: string; total: number }>; // ← date-wise totals
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────

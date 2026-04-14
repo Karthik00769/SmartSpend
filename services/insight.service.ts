@@ -41,14 +41,14 @@ export async function fetchInsights(
   let sql = `
     SELECT
       id, user_id, insight_type,
-      COALESCE(content, message, '') AS content,
+      content,
       metadata, is_read,
       generated_for_month, generated_for_year, created_at,
       TIMESTAMPDIFF(MINUTE, created_at, NOW()) AS minutes_ago
     FROM insights
     WHERE user_id = ?
       AND created_at >= DATE_SUB(NOW(), INTERVAL 90 DAY)
-      AND COALESCE(content, message, '') != ''
+      AND content != ''
   `;
   const args: any[] = [userId];
 
@@ -80,5 +80,92 @@ export async function generateMonthlyInsights(
   month: number,
   year: number,
 ): Promise<number> {
-  return 0;
+  // Derive insights from real DB data — no hardcoded strings
+  interface SpendRow { total_spent: string; prev_spent: string; }
+  interface CatRow   { name: string; total: string; }
+  interface IncRow   { monthly_income: string; }
+
+  const [spendRows, catRows, incRows] = await Promise.all([
+    // Current vs previous month spend
+    query<SpendRow[]>(`
+      SELECT
+        COALESCE(SUM(CASE WHEN MONTH(expense_date)=? AND YEAR(expense_date)=? THEN amount END), 0) AS total_spent,
+        COALESCE(SUM(CASE WHEN MONTH(expense_date)=? AND YEAR(expense_date)=? THEN amount END), 0) AS prev_spent
+      FROM expenses
+      WHERE user_id = ? AND deleted_at IS NULL
+    `, [month, year,
+        month === 1 ? 12 : month - 1, month === 1 ? year - 1 : year,
+        userId]),
+    // Top category this month
+    query<CatRow[]>(`
+      SELECT c.name, SUM(e.amount) AS total
+      FROM expenses e
+      LEFT JOIN categories c ON e.category_id = c.id
+      WHERE e.user_id = ? AND MONTH(e.expense_date) = ? AND YEAR(e.expense_date) = ? AND e.deleted_at IS NULL
+      GROUP BY c.name ORDER BY total DESC LIMIT 1
+    `, [userId, month, year]),
+    query<IncRow[]>(`SELECT monthly_income FROM users WHERE id = ? LIMIT 1`, [userId]),
+  ]);
+
+  const totalSpent  = parseFloat(spendRows[0]?.total_spent ?? '0');
+  const prevSpent   = parseFloat(spendRows[0]?.prev_spent  ?? '0');
+  const income      = parseFloat(incRows[0]?.monthly_income ?? '0');
+  const topCat      = catRows[0]?.name ?? null;
+  const topCatAmt   = parseFloat(catRows[0]?.total ?? '0');
+
+  const insights: { type: string; content: string }[] = [];
+
+  // 1. Month-over-month comparison
+  if (prevSpent > 0 && totalSpent > prevSpent * 1.1) {
+    const pct = Math.round(((totalSpent - prevSpent) / prevSpent) * 100);
+    insights.push({
+      type:    'overspending_alert',
+      content: `Your spending increased by ${pct}% compared to last month (${totalSpent.toFixed(2)} vs ${prevSpent.toFixed(2)}).`,
+    });
+  } else if (prevSpent > 0 && totalSpent < prevSpent * 0.9) {
+    const pct = Math.round(((prevSpent - totalSpent) / prevSpent) * 100);
+    insights.push({
+      type:    'savings_opportunity',
+      content: `Great progress — your spending dropped by ${pct}% compared to last month.`,
+    });
+  }
+
+  // 2. Top category
+  if (topCat && totalSpent > 0) {
+    const pct = Math.round((topCatAmt / totalSpent) * 100);
+    insights.push({
+      type:    'monthly_summary',
+      content: `Your top spending category this month is ${topCat} at ${topCatAmt.toFixed(2)} (${pct}% of total spend).`,
+    });
+  }
+
+  // 3. Savings rate
+  if (income > 0 && totalSpent > 0) {
+    const savingsRate = Math.round(((income - totalSpent) / income) * 100);
+    if (savingsRate >= 20) {
+      insights.push({
+        type:    'savings_opportunity',
+        content: `You saved ${savingsRate}% of your income this month. Keep it up!`,
+      });
+    } else if (savingsRate < 0) {
+      insights.push({
+        type:    'overspending_alert',
+        content: `You spent ${Math.abs(savingsRate)}% more than your monthly income this month. Review your expenses.`,
+      });
+    }
+  }
+
+  if (insights.length === 0) return 0;
+
+  let inserted = 0;
+  for (const ins of insights) {
+    const result = await query<any>(
+      `INSERT INTO insights (user_id, insight_type, content, metadata, generated_for_month, generated_for_year, created_at, is_read)
+       VALUES (?, ?, ?, ?, ?, ?, NOW(), 0)
+       ON DUPLICATE KEY UPDATE content = VALUES(content), is_read = 0, created_at = NOW()`,
+      [userId, ins.type, ins.content, JSON.stringify({ source: 'rule_based' }), month, year],
+    );
+    if (result.affectedRows >= 1) inserted++;
+  }
+  return inserted;
 }

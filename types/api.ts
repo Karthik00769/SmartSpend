@@ -12,7 +12,10 @@
 export type Priority = 'low' | 'medium' | 'high';
 
 /** Lifecycle status for a savings goal */
-export type GoalStatus = 'active' | 'paused' | 'completed' | 'cancelled';
+export type GoalStatus = 'active' | 'paused' | 'completed' | 'cancelled' | 'failed';
+
+/** Goal planning horizon */
+export type GoalType = 'short_term' | 'long_term';
 
 /** Named insight categories produced by the AI/rules engine */
 export type InsightType =
@@ -38,16 +41,17 @@ export interface CategoryDTO {
 // ─── Expense ─────────────────────────────────────────────────────────────────
 
 export interface ExpenseDTO {
-  id:           string;
-  userId:       string;
-  categoryId:   number;
-  categoryName: string;
+  id:             string;
+  userId:         string;
+  categoryId:     number;
+  categoryName:   string;
   categorySource?: 'manual' | 'auto';
-  categoryIcon: string;
-  amount:       number;
-  date:         string;        // ISO date string "YYYY-MM-DD"
-  description:  string;
-  createdAt:    string;
+  categoryIcon:   string;
+  source:         string;   // 'manual' | 'receipt_scan' | 'bank_import'
+  amount:         number;
+  date:           string;
+  description:    string;
+  createdAt:      string;
 }
 
 export interface CreateExpenseInput {
@@ -60,10 +64,18 @@ export interface CreateExpenseInput {
 
 /** Query params for GET /api/expenses */
 export interface GetExpensesQuery {
-  userId?: string;
-  year?:   number;
-  month?:  number;
-  limit?:  number;
+  userId?:     string;
+  year?:       number;
+  month?:      number;
+  limit?:      number;
+  offset?:     number;
+  search?:     string;
+  startDate?:  string;
+  endDate?:    string;
+  minAmount?:  number;
+  maxAmount?:  number;
+  source?:     string;
+  categoryId?: number;
 }
 
 // ─── Budget ──────────────────────────────────────────────────────────────────
@@ -106,10 +118,11 @@ export interface GoalDTO {
   title:                string;
   description:          string;
   targetAmount:         number;
-  currentAmount:        number;
+  savedAmount:        number;
   deadline:             string;   // ISO date string
   priority:             Priority;
   status:               GoalStatus;
+  goalType:             GoalType;
   completionPct:        number;
   daysRemaining:        number;
   requiredDailySavings: number | null;
@@ -120,9 +133,11 @@ export interface GoalDTO {
 export interface CreateGoalInput {
   userId?:      string;
   title:        string;
+  description:  string;
   targetAmount: number;
   deadline:     string;
-  type?:        string;
+  priority:     Priority;
+  goalType:     GoalType;
 }
 
 // ─── Insight ─────────────────────────────────────────────────────────────────

@@ -42,7 +42,7 @@ export interface Goal {
   title: string;
   description?: string;
   targetAmount: number;
-  currentAmount: number;
+  savedAmount: number;
   deadline: Date;
   priority: 'low' | 'medium' | 'high';
   category?: string;

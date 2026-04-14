@@ -28,7 +28,6 @@ import { authOptions } from "@/lib/auth/authOptions";
 import { monthlyExpenseSummary, categoryWiseTotals } from '@/services/expense.service';
 import { listBudgets } from '@/services/budget.service';
 import { listGoals } from '@/services/goal.service';
-import { generateInsights, UserFinancialData } from '@/lib/ai/insightGenerator';
 import { query } from '@/lib/db';
 
 export async function GET(req: NextRequest) {
@@ -56,33 +55,60 @@ export async function GET(req: NextRequest) {
         listGoals({ userId: queryData.userId, status: 'active' } as any)
       ]);
 
-      const catDist = categories.reduce((acc: any, c) => ({ ...acc, [c.name]: c.total }), {});
+      const totalSpent  = summary.totalSpent;
+      const topCat      = categories[0];
 
-      const aiData: UserFinancialData = {
-        monthlySpending: summary.totalSpent,
-        categoryDistribution: catDist,
-        budgetUsage: budgets.categories.map((b: any) => ({ category: b.category, limit: b.allocated, spent: b.spent })),
-        goalProgress: goals.map(g => ({ title: g.title, target: g.targetAmount, current: g.currentAmount }))
-      };
+      // Rule-based insights derived entirely from DB data — no AI hallucination
+      const newInsights: { type: string; content: string }[] = [];
 
-      const newInsights = await generateInsights(aiData);
+      // 1. Top spending category
+      if (topCat && totalSpent > 0) {
+        const pct = Math.round((topCat.total / totalSpent) * 100);
+        newInsights.push({
+          type:    'monthly_summary',
+          content: `Your top spending category this month is ${topCat.name} at ${topCat.total.toFixed(2)} (${pct}% of total spend).`,
+        });
+      }
+
+      // 2. Budget exceeded
+      for (const b of budgets.categories.filter(b => b.isOverBudget).slice(0, 2)) {
+        newInsights.push({
+          type:    'budget_exceeded',
+          content: `You've exceeded your ${b.category} budget by ${Math.abs(b.remaining).toFixed(2)} (${b.spent.toFixed(2)} spent vs ${b.allocated.toFixed(2)} limit).`,
+        });
+      }
+
+      // 3. Budget near limit (80–99%)
+      for (const b of budgets.categories.filter(b => !b.isOverBudget && (b.usedPct ?? 0) >= 80).slice(0, 1)) {
+        newInsights.push({
+          type:    'overspending_alert',
+          content: `You're at ${b.usedPct?.toFixed(0)}% of your ${b.category} budget — ${b.remaining.toFixed(2)} remaining.`,
+        });
+      }
+
+      // 4. Goal progress
+      for (const g of goals.slice(0, 1)) {
+        const pct = g.targetAmount > 0 ? Math.round((g.savedAmount / g.targetAmount) * 100) : 0;
+        newInsights.push({
+          type:    pct >= 75 ? 'savings_opportunity' : 'goal_at_risk',
+          content: `Your "${g.title}" goal is ${pct}% complete (${g.savedAmount.toFixed(2)} of ${g.targetAmount.toFixed(2)} saved).`,
+        });
+      }
 
       if (newInsights.length > 0) {
-        // Map AI-generated type strings to valid DB ENUM values
-        const typeMap: Record<string, string> = {
-          warning:     'overspending_alert',
-          opportunity: 'savings_opportunity',
-          trend:       'monthly_summary',
-        };
-
         for (const insight of newInsights) {
-          const dbType = typeMap[insight.type] ?? 'monthly_summary';
           await query(
-            'INSERT IGNORE INTO insights (user_id, insight_type, content, metadata, generated_for_month, generated_for_year) VALUES (?, ?, ?, ?, ?, ?)',
-            [queryData.userId, dbType, insight.message, JSON.stringify({ aiGenerated: true }), currentMonth, currentYear]
+            `INSERT INTO insights
+               (user_id, insight_type, content, metadata, generated_for_month, generated_for_year, created_at, is_read)
+             VALUES (?, ?, ?, ?, ?, ?, NOW(), 0)
+             ON DUPLICATE KEY UPDATE
+               content = VALUES(content),
+               metadata = VALUES(metadata),
+               is_read = 0,
+               created_at = NOW()`,
+            [queryData.userId, insight.type, insight.content, JSON.stringify({ source: 'rule_based' }), currentMonth, currentYear],
           );
         }
-        // Refetch to include newly generated insights securely scoped to user
         result = await fetchInsights(queryData);
       }
     }

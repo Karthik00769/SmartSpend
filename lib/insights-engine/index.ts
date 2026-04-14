@@ -51,7 +51,7 @@ import {
 } from './text-generator';
 import { calculateBudgetForecasts } from './forecaster';
 
-import type { InsightsEngineOutput, WeekPeriod, Period } from './types';
+import type { InsightsEngineOutput, WeekPeriod, Period, TopCategory, CategoryTrendSummary, SpendingAnomaly, SavingsAnalysis, MonthlyBreakdown } from './types';
 import type { ExpenseDTO } from '@/types/api';
 
 // ─── DB shape helpers ─────────────────────────────────────────────────────────
@@ -69,6 +69,7 @@ export async function runInsightsEngine(
   userId: string,
   year:   number,
   month:  number,
+  trendMonthCount: number = 3,
 ): Promise<InsightsEngineOutput> {
 
   // ── Step 1: Parallel data fetch ───────────────────────────────────────────
@@ -167,6 +168,112 @@ export async function runInsightsEngine(
   const severityOrder = { critical: 0, warning: 1, positive: 2, info: 3 };
   dedupedAdvice.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
 
+  // ── Step 8: Top 3 categories ──────────────────────────────────────────────
+  // When showing multi-month view, aggregate across all fetched months
+  const allExpensesForTrend = trendMonthCount >= 3
+    ? [...currentExpenses, ...prevExpenses, ...prevPrevExpenses]
+    : currentExpenses;
+  const allCatsForTrend = buildCategorySummaries(allExpensesForTrend, budgetMap);
+
+  const totalCurrentSpend = allCatsForTrend.reduce((s, c) => s + c.totalSpent, 0);
+  const topCategories: TopCategory[] = allCatsForTrend.slice(0, 3).map(c => ({
+    categoryName:      c.name,
+    icon:              c.icon,
+    color:             c.color,
+    total:             c.totalSpent,
+    percentageOfTotal: totalCurrentSpend > 0
+      ? Math.round((c.totalSpent / totalCurrentSpend) * 1000) / 10
+      : 0,
+  }));
+
+  // ── Step 9: Category trend classification ─────────────────────────────────
+  const prevCatMap2 = new Map(prevCats.map(c => [c.categoryId, c.totalSpent]));
+  const categoryTrends: CategoryTrendSummary[] = currentCats.map(c => {
+    const prev = prevCatMap2.get(c.categoryId) ?? 0;
+    const pct  = prev > 0 ? ((c.totalSpent - prev) / prev) * 100 : 100;
+    let trend: CategoryTrendSummary['trend'] = 'stable';
+    if (prev === 0)     trend = 'new';
+    else if (pct > 10)  trend = 'increasing';
+    else if (pct < -10) trend = 'decreasing';
+    return {
+      categoryName: c.name,
+      icon:         c.icon,
+      trend,
+      trendPct:     Math.round(Math.abs(pct) * 10) / 10,
+      currentSpend: c.totalSpent,
+      prevSpend:    prev,
+    };
+  }).sort((a, b) => b.currentSpend - a.currentSpend);
+
+  // ── Step 10: Anomaly detection (spike > 1.5× avg of last 2 months) ────────
+  const prevPrevCats = buildCategorySummaries(prevPrevExpenses, new Map());
+  const prevPrevCatMap = new Map(prevPrevCats.map(c => [c.categoryId, c.totalSpent]));
+  const anomalies: SpendingAnomaly[] = [];
+  for (const c of currentCats) {
+    const p1 = prevCatMap2.get(c.categoryId) ?? 0;
+    const p2 = prevPrevCatMap.get(c.categoryId) ?? 0;
+    if (p1 === 0 && p2 === 0) continue;
+    const divisor = (p1 > 0 ? 1 : 0) + (p2 > 0 ? 1 : 0);
+    const avg = (p1 + p2) / divisor;
+    const ratio = avg > 0 ? c.totalSpent / avg : 0;
+    if (ratio > 1.5) {
+      anomalies.push({
+        categoryName: c.name,
+        icon:         c.icon,
+        currentSpend: c.totalSpent,
+        avgPrevSpend: Math.round(avg * 100) / 100,
+        spikeRatio:   Math.round(ratio * 10) / 10,
+        message:      `${c.name} spending is ${Math.round(ratio * 10) / 10}× your recent average — unusually high this month.`,
+      });
+    }
+  }
+
+  // ── Step 11: Savings analysis ─────────────────────────────────────────────
+  const savingsRate = currentSummary.savingsRate;
+  const savingsAnalysis: SavingsAnalysis = {
+    income:         monthlyIncome,
+    totalSpent:     currentSummary.totalSpent,
+    savings:        currentSummary.savings,
+    savingsRate,
+    classification: savingsRate < 10 ? 'low' : savingsRate <= 30 ? 'moderate' : 'good',
+  };
+
+  // ── Step 12: Monthly breakdown (oldest → newest) ──────────────────────────
+  const MONTH_NAMES = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const prevPrevSummary = buildMonthlySummary(prevPrevExpenses, prevPrevMonth.year, prevPrevMonth.month, monthlyIncome);
+
+  const monthlyBreakdown: MonthlyBreakdown[] = [
+    {
+      year:       prevPrevMonth.year,
+      month:      prevPrevMonth.month,
+      label:      `${MONTH_NAMES[prevPrevMonth.month]} ${prevPrevMonth.year}`,
+      totalSpent: prevPrevSummary.totalSpent,
+      savings:    prevPrevSummary.savings,
+      savingsRate: prevPrevSummary.savingsRate,
+    },
+    {
+      year:       prevMonth.year,
+      month:      prevMonth.month,
+      label:      `${MONTH_NAMES[prevMonth.month]} ${prevMonth.year}`,
+      totalSpent: prevSummary.totalSpent,
+      savings:    prevSummary.savings,
+      savingsRate: prevSummary.savingsRate,
+    },
+    {
+      year,
+      month,
+      label:      `${MONTH_NAMES[month]} ${year}`,
+      totalSpent: currentSummary.totalSpent,
+      savings:    currentSummary.savings,
+      savingsRate: currentSummary.savingsRate,
+    },
+  ];
+
+  // Debug: verify date range coverage
+  const allDates = [...currentExpenses, ...prevExpenses, ...prevPrevExpenses].map(e => e.date).sort();
+  console.log('[InsightsEngine] Date range — MIN:', allDates[0] ?? 'none', '| MAX:', allDates[allDates.length - 1] ?? 'none');
+  console.log('[InsightsEngine] Monthly totals:', monthlyBreakdown.map(m => `${m.label}: ${m.totalSpent}`).join(' | '));
+
   return {
     generatedAt:       new Date().toISOString(),
     period:            { year, month },
@@ -176,6 +283,12 @@ export async function runInsightsEngine(
     advice:            dedupedAdvice,
     pattern,
     score,
+    topCategories,
+    categoryTrends,
+    anomalies,
+    savingsAnalysis,
+    aiSuggestions:     null,
+    monthlyBreakdown,
   };
 }
 

@@ -52,11 +52,12 @@ export async function GET(req: NextRequest) {
       FROM expenses e
       WHERE
         e.user_id = ?
-        AND e.expense_date >= DATE_SUB(LAST_DAY(NOW()), INTERVAL ? MONTH)
+        AND e.deleted_at IS NULL
+        AND e.expense_date >= DATE_FORMAT(DATE_SUB(NOW(), INTERVAL ? MONTH), '%Y-%m-01')
       GROUP BY
-        YEAR(e.expense_date),
-        MONTH(e.expense_date),
-        DATE_FORMAT(e.expense_date, '%b %Y')
+        yr,
+        mo,
+        month_label
       ORDER BY
         yr ASC,
         mo ASC

@@ -1,72 +1,78 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { toast } from 'sonner';
 
-import { useRef } from 'react';
-
-interface ScanReceiptAreaProps {
-  onDataExtracted?: (data: { amount?: number; description?: string; date?: string }) => void;
+export interface ExtractedData {
+  amount: number | null;
+  date: string | null;
+  merchant: string | null;
+  category: string | null;
+  raw_text?: string;
 }
 
+interface ScanReceiptAreaProps {
+  onDataExtracted?: (data: ExtractedData) => void;
+}
+
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const ALLOWED_IMAGE_EXTS  = ['.jpg', '.jpeg', '.png', '.webp'];
+
 export function ScanReceiptArea({ onDataExtracted }: ScanReceiptAreaProps) {
-  const [isDragging, setIsDragging] = useState(false);
-  const [isScanning, setIsScanning] = useState(false);
-  const [scannedFiles, setScannedFiles] = useState<{name: string, status: 'scanning' | 'done' | 'error'}[]>([]);
-  
-  const [useCamera, setUseCamera] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isDragging,  setIsDragging]  = useState(false);
+  const [isScanning,  setIsScanning]  = useState(false);
+  const [useCamera,   setUseCamera]   = useState(false);
+  const [scannedList, setScannedList] = useState<{ name: string; status: 'scanning' | 'done' | 'error' }[]>([]);
+
+  const videoRef  = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // ── Camera ─────────────────────────────────────────────────────────────────
   const startCamera = async () => {
     setUseCamera(true);
-    setTimeout(async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        if (videoRef.current) videoRef.current.srcObject = stream;
-      } catch (err) {
-        toast.error("Camera access denied");
-        setUseCamera(false);
-      }
-    }, 300);
+    await new Promise(r => setTimeout(r, 100));
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' },
+      });
+      if (videoRef.current) videoRef.current.srcObject = stream;
+    } catch {
+      toast.error('Camera access denied');
+      setUseCamera(false);
+    }
   };
 
-  const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-  const ALLOWED_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.pdf'];
+  const stopCamera = () => {
+    const stream = videoRef.current?.srcObject as MediaStream | null;
+    stream?.getTracks().forEach(t => t.stop());
+    setUseCamera(false);
+  };
 
-  const captureFrame = async () => {
+  const captureFrame = () => {
     if (!videoRef.current || !canvasRef.current) return;
-    const video = videoRef.current;
+    const video  = videoRef.current;
     const canvas = canvasRef.current;
-    canvas.width = video.videoWidth;
+    canvas.width  = video.videoWidth;
     canvas.height = video.videoHeight;
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
-    // Basic preprocess (increase contrast/grayscale on canvas)
-    ctx.filter = 'grayscale(100%) contrast(150%)';
+    ctx.filter = 'grayscale(100%) contrast(140%)';
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     ctx.filter = 'none';
 
     canvas.toBlob(async (blob) => {
-      if (blob) {
-        const file = new File([blob], "camera-scan.jpg", { type: "image/jpeg" });
-        await uploadAndScan(file);
-        setUseCamera(false);
-        // stop stream
-        const stream = video.srcObject as MediaStream;
-        stream?.getTracks().forEach(t => t.stop());
-      }
-    }, 'image/jpeg', 0.8);
+      if (!blob) return;
+      const file = new File([blob], 'camera-scan.jpg', { type: 'image/jpeg' });
+      stopCamera();
+      await processFile(file);
+    }, 'image/jpeg', 0.85);
   };
 
-  const handleDragEnter = (e: React.DragEvent) => {
-    e.preventDefault(); e.stopPropagation(); setIsDragging(true);
-  };
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault(); e.stopPropagation(); setIsDragging(false);
-  };
+  // ── Drag & drop / file input ────────────────────────────────────────────────
+  const handleDragEnter = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); };
+  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); };
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); e.stopPropagation(); setIsDragging(false);
     handleFiles(e.dataTransfer.files);
@@ -76,125 +82,138 @@ export function ScanReceiptArea({ onDataExtracted }: ScanReceiptAreaProps) {
   };
 
   const handleFiles = async (files: FileList) => {
-    const fileList = Array.from(files);
-    for (const file of fileList) {
+    for (const file of Array.from(files)) {
       const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-      if (!ALLOWED_TYPES.includes(file.type) && !ALLOWED_EXTS.includes(ext)) {
-        toast.error(`Invalid file type: ${file.name}`);
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type) && !ALLOWED_IMAGE_EXTS.includes(ext)) {
+        toast.error(`Unsupported file type: ${file.name}. Please upload a JPG, PNG or WebP image.`);
         continue;
       }
-      await uploadAndScan(file);
+      await processFile(file);
     }
   };
 
-  const uploadAndScan = async (file: File) => {
+  // ── Core: send to /api/expenses/scan, get extracted JSON back ─────────────
+  const processFile = async (file: File) => {
     setIsScanning(true);
-    setScannedFiles(prev => [...prev, { name: file.name, status: 'scanning' }]);
+    setScannedList(prev => [...prev, { name: file.name, status: 'scanning' }]);
 
     try {
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await fetch('/api/expenses/upload', { // Same centralized upload route
-        method: 'POST',
-        body: formData,
-      });
-
+      const res  = await fetch('/api/expenses/scan', { method: 'POST', body: formData });
       const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || 'Scan failed');
 
-      setScannedFiles(prev => 
+      if (!json.ok) {
+        throw new Error(json.error || 'Parsing failed');
+      }
+
+      setScannedList(prev =>
         prev.map(f => f.name === file.name ? { ...f, status: 'done' } : f)
       );
-      toast.success(`Receipt scanned: ${json.data.description || file.name}`);
 
-      if (onDataExtracted && json.data) {
-        onDataExtracted({
-          amount: json.data.amount,
-          description: json.data.description,
-          date: json.data.date,
-        });
+      const extracted: ExtractedData = json.data?.extracted;
+      const amountWarning: string | null = json.data?.amountWarning ?? null;
+
+      if (!extracted) {
+        throw new Error('No data could be extracted from this image');
       }
+
+      if (amountWarning) {
+        toast.warning(amountWarning);
+      } else {
+        toast.success('Receipt scanned. Review and confirm the details.');
+      }
+
+      // Pass data to parent (AddExpensePage) for pre-filling the form
+      onDataExtracted?.(extracted);
+
     } catch (err: any) {
-      setScannedFiles(prev => 
+      setScannedList(prev =>
         prev.map(f => f.name === file.name ? { ...f, status: 'error' } : f)
       );
-      toast.error(`Scan failed for ${file.name}: ${err.message}`);
+      toast.error(err.message || 'OCR processing failed');
     } finally {
       setIsScanning(false);
     }
   };
 
   return (
-    <Card className="p-8 mb-8">
+    <Card className="p-8">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-foreground">Scan Receipt (OCR)</h2>
-        <button 
-          onClick={useCamera ? () => setUseCamera(false) : startCamera} 
-          className="text-xs font-medium text-primary hover:underline"
+        <h2 className="text-2xl font-bold text-foreground">Scan Receipt</h2>
+        <button
+          type="button"
+          onClick={useCamera ? stopCamera : startCamera}
+          className="text-sm font-medium text-primary hover:underline bg-primary/10 px-3 py-1 rounded-full"
         >
           {useCamera ? 'Close Camera' : '📷 Use Camera'}
         </button>
       </div>
 
-      {/* Live Camera View */}
+      {/* Live camera view */}
       {useCamera && (
-        <div className="relative border rounded-lg bg-black mb-6 overflow-hidden aspect-video">
+        <div className="relative border rounded-lg bg-black mb-6 overflow-hidden aspect-video shadow-inner">
           <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
           <canvas ref={canvasRef} className="hidden" />
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-4">
-            <button 
-              onClick={captureFrame} 
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
+            <button
+              type="button"
+              onClick={captureFrame}
               disabled={isScanning}
-              className="bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium shadow-md hover:opacity-90 transition-opacity"
+              className="bg-primary text-primary-foreground px-8 py-3 rounded-full font-bold shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
             >
-              Capture Frame
+              {isScanning ? 'Processing…' : 'Capture Receipt'}
             </button>
           </div>
         </div>
       )}
 
+      {/* Drag-and-drop zone */}
       <div
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
+        onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
-        className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
-          isDragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
-        } ${isScanning ? 'opacity-50 cursor-not-allowed' : ''}`}
+        className={`border-2 border-dashed rounded-xl p-12 text-center transition-all duration-300 ${
+          isDragging ? 'border-primary bg-primary/10 scale-[0.99] shadow-inner' : 'border-border hover:border-primary/50'
+        } ${isScanning ? 'opacity-50 pointer-events-none' : ''}`}
       >
-        <input 
-          type="file" 
-          id="receipt-upload" 
-          multiple 
-          accept="image/*,application/pdf" 
-          onChange={handleFileInput} 
+        <input
+          type="file"
+          id="receipt-upload"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={handleFileInput}
           disabled={isScanning}
-          className="hidden" 
+          className="hidden"
         />
-        <div className="text-5xl mb-4">📸</div>
-        <h3 className="text-lg font-semibold text-foreground mb-2">Upload Receipt Images</h3>
-        <p className="text-muted-foreground mb-4">Drag and drop images or PDFs here for AI-powered data extraction</p>
+        <div className="text-6xl mb-6 drop-shadow-sm">📸</div>
+        <h3 className="text-xl font-bold text-foreground mb-2">Upload Receipt Picture</h3>
+        <p className="text-muted-foreground mb-6 max-w-xs mx-auto">
+          Drop your receipt here or click to browse. Supported: JPG, PNG, WebP.
+        </p>
         <label htmlFor="receipt-upload" className="inline-block">
-          <div className={`bg-primary text-primary-foreground px-6 py-2 rounded-lg font-medium transition-opacity ${isScanning ? 'cursor-not-allowed' : 'cursor-pointer hover:opacity-90'}`}>
-            {isScanning ? 'Scanning...' : 'Select Images'}
+          <div className={`bg-primary text-primary-foreground px-8 py-3 rounded-lg font-bold shadow-md transition-all ${isScanning ? 'cursor-not-allowed' : 'cursor-pointer hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0'}`}>
+            {isScanning ? 'Analyzing…' : 'Select Image'}
           </div>
         </label>
-        <p className="text-xs text-muted-foreground mt-4">Supported formats: JPG, PNG, WebP, PDF</p>
       </div>
 
-      {scannedFiles.length > 0 && (
-        <div className="mt-6">
-          <h3 className="font-semibold text-foreground mb-3">Recent Receipts</h3>
+      {scannedList.length > 0 && (
+        <div className="mt-8 space-y-3">
+          <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Processing History</h4>
           <ul className="space-y-2">
-            {scannedFiles.map((file, idx) => (
-              <li key={idx} className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                <span className="text-sm text-foreground"><span className="mr-2">🖼️</span>{file.name}</span>
-                <span className={`text-xs px-2 py-1 rounded ${
-                  file.status === 'done' ? 'bg-green-100 text-green-700' : 
-                  file.status === 'error' ? 'bg-red-100 text-red-700' : 
-                  'bg-accent text-accent-foreground animate-pulse'
+            {scannedList.map((f, i) => (
+              <li key={i} className="flex items-center justify-between p-4 bg-muted/50 rounded-xl border border-border/50">
+                <span className="text-sm font-medium text-foreground flex items-center gap-2">
+                  <span className="opacity-70">🖼️</span> {f.name}
+                </span>
+                <span className={`text-[10px] uppercase tracking-tighter px-2.5 py-1 rounded-full font-bold shadow-sm ${
+                  f.status === 'done'    ? 'bg-green-500/10 text-green-600 dark:text-green-400' :
+                  f.status === 'error'   ? 'bg-red-500/10 text-red-600 dark:text-red-400'       :
+                  'bg-blue-500/10 text-blue-600 animate-pulse'
                 }`}>
-                  {file.status.toUpperCase()}
+                  {f.status}
                 </span>
               </li>
             ))}

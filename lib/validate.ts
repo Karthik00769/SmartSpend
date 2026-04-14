@@ -118,13 +118,23 @@ export const CreateExpenseSchema = z.object({
 export type CreateExpenseInput = z.infer<typeof CreateExpenseSchema>;
 
 export const GetExpensesQuerySchema = z.object({
-  userId: UserIdField.optional(),
-  year:   Year.optional(),
-  month:  Month.optional(),
-  limit:  z.union([z.string(), z.number()])
-            .transform(Number)
-            .refine(v => v >= 1 && v <= 200, 'Limit must be 1-200')
-            .default(50),
+  userId:     UserIdField.optional(),
+  year:       Year.optional(),
+  month:      Month.optional(),
+  limit:      z.union([z.string(), z.number()])
+                .transform(Number)
+                .refine(v => v >= 1 && v <= 500, 'Limit must be 1-500')
+                .default(50),
+  offset:     z.union([z.string(), z.number()])
+                .transform(Number)
+                .default(0),
+  search:     z.string().trim().max(200).optional(),
+  startDate:  z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  endDate:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  minAmount:  z.union([z.string(), z.number()]).transform(Number).optional(),
+  maxAmount:  z.union([z.string(), z.number()]).transform(Number).optional(),
+  source:     z.enum(['manual', 'receipt_scan', 'bank_import']).optional(),
+  categoryId: z.union([z.string(), z.number()]).transform(Number).optional(),
 });
 export type GetExpensesQuery = z.infer<typeof GetExpensesQuerySchema>;
 
@@ -151,16 +161,20 @@ export type GetBudgetsQuery = z.infer<typeof GetBudgetsQuerySchema>;
 
 export const CreateGoalSchema = z.object({
   userId:       UserIdField.optional(),
-  title:        z.string().trim().min(1, 'Title is required').max(150),
-  description:  z.string().trim().max(1000).default(''),
+  title:        z.string().trim().min(3, 'Title must be at least 3 characters').max(150),
+  description:  z.string().trim().max(1000).optional().default(''),
   targetAmount: PositiveDecimal,
   deadline:     ISODate,
   priority:     z.enum(['low', 'medium', 'high']).default('medium'),
+  goalType:     z.enum(['short_term', 'long_term', 'short', 'long'])
+                  .transform(v => v === 'short' ? 'short_term' : v === 'long' ? 'long_term' : v)
+                  .default('short_term'),
 });
 export type CreateGoalInput = z.infer<typeof CreateGoalSchema>;
 
 export const GetGoalsQuerySchema = z.object({
   userId: UserIdField.optional(),
+  status: z.enum(['active', 'paused', 'completed', 'cancelled', 'all']).optional(),
 });
 export type GetGoalsQuery = z.infer<typeof GetGoalsQuerySchema>;
 

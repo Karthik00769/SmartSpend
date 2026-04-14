@@ -89,9 +89,9 @@ function AuthContextProviderInternal({ children }: { children: ReactNode }) {
   }, []);
 
   // ── updateUser ───────────────────────────────────────────────────────────
-  const updateUser = useCallback((partial: Partial<AuthUser>) => {
-    // In NextAuth.js this typically triggers a network update() 
-    console.warn("UpdateUser not fully mapped to NextAuth session in this demo");
+  const updateUser = useCallback((_partial: Partial<AuthUser>) => {
+    // Profile updates are persisted via /api/settings/profile — session
+    // is refreshed by NextAuth on the next request automatically.
   }, []);
 
   const value: AuthContextValue = {

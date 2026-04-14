@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { signIn } from 'next-auth/react';
+import { signIn, useSession } from 'next-auth/react';
 
 import {
   Form,
@@ -40,8 +40,18 @@ type SignupFormValues = z.infer<typeof signupSchema>;
 
 export default function SignupPage() {
   const router = useRouter();
+  const { status } = useSession();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // Already authenticated → go to dashboard
+  useEffect(() => {
+    if (status === 'authenticated') {
+      router.replace('/dashboard');
+    }
+  }, [status, router]);
 
   const form = useForm<SignupFormValues>({
     resolver: zodResolver(signupSchema),
@@ -135,7 +145,22 @@ export default function SignupPage() {
               <FormItem>
                 <FormLabel>Password</FormLabel>
                 <FormControl>
-                  <Input type="password" placeholder="••••••••" disabled={form.formState.isSubmitting} {...field} />
+                  <div className="relative">
+                    <Input 
+                      type={showPassword ? 'text' : 'password'} 
+                      placeholder="••••••••" 
+                      disabled={form.formState.isSubmitting} 
+                      className="pr-12"
+                      {...field} 
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword ? 'HIDE' : 'SHOW'}
+                    </button>
+                  </div>
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -149,7 +174,22 @@ export default function SignupPage() {
               <FormItem>
                 <FormLabel>Confirm Password</FormLabel>
                 <FormControl>
-                  <Input type="password" placeholder="••••••••" disabled={form.formState.isSubmitting} {...field} />
+                  <div className="relative">
+                    <Input 
+                      type={showConfirmPassword ? 'text' : 'password'} 
+                      placeholder="••••••••" 
+                      disabled={form.formState.isSubmitting} 
+                      className="pr-12"
+                      {...field} 
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground hover:text-foreground"
+                    >
+                      {showConfirmPassword ? 'HIDE' : 'SHOW'}
+                    </button>
+                  </div>
                 </FormControl>
                 <FormMessage />
               </FormItem>

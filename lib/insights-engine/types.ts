@@ -103,7 +103,7 @@ export interface GoalProbabilityResult {
   goalId:               number;
   title:                string;
   targetAmount:         number;
-  currentAmount:        number;
+  savedAmount:        number;
   targetDate:           string;
   daysRemaining:        number;
   requiredDailyAmount:  number;    // required per day to hit goal
@@ -138,6 +138,54 @@ export interface SpendingPattern {
 
 // ─── Full engine output ───────────────────────────────────────────────────────
 
+/** Monthly spending breakdown entry */
+export interface MonthlyBreakdown {
+  year:       number;
+  month:      number;
+  label:      string;   // e.g. "Feb 2026"
+  totalSpent: number;
+  savings:    number;
+  savingsRate: number;
+}
+
+/** Top category entry */
+export interface TopCategory {
+  categoryName:      string;
+  icon:              string;
+  color:             string;
+  total:             number;
+  percentageOfTotal: number;
+}
+
+/** Category trend classification */
+export interface CategoryTrendSummary {
+  categoryName: string;
+  icon:         string;
+  trend:        'increasing' | 'decreasing' | 'stable' | 'new';
+  trendPct:     number;   // absolute percentage change
+  currentSpend: number;
+  prevSpend:    number;
+}
+
+/** Spending anomaly (spike detection) */
+export interface SpendingAnomaly {
+  categoryName: string;
+  icon:         string;
+  currentSpend: number;
+  avgPrevSpend: number;   // average of last 2 months
+  spikeRatio:   number;   // currentSpend / avgPrevSpend
+  message:      string;
+}
+
+/** Income vs expense analysis */
+export interface SavingsAnalysis {
+  income:       number;
+  totalSpent:   number;
+  savings:      number;
+  savingsRate:  number;
+  classification: 'low' | 'moderate' | 'good';
+}
+
 /** The complete output of runInsightsEngine() */
 export interface InsightsEngineOutput {
   generatedAt:       string;          // ISO timestamp
@@ -154,4 +202,11 @@ export interface InsightsEngineOutput {
     goalProgress:     number;   // sub-score
     spendingControl:  number;   // sub-score
   };
+  // ── New analytics fields ──────────────────────────────────────────────────
+  topCategories:    TopCategory[];
+  categoryTrends:   CategoryTrendSummary[];
+  anomalies:        SpendingAnomaly[];
+  savingsAnalysis:  SavingsAnalysis;
+  aiSuggestions:    string | null;   // Gemini output, null if unavailable
+  monthlyBreakdown: MonthlyBreakdown[]; // all fetched months oldest→newest
 }

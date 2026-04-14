@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
-import { useForm }  from 'react-hook-form';
+import { useState, useEffect } from 'react';
+import { useForm }    from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Button }   from '@/components/ui/button';
-import { Input }    from '@/components/ui/input';
-import { Card }     from '@/components/ui/card';
+import { Button }     from '@/components/ui/button';
+import { Input }      from '@/components/ui/input';
+import { Card }       from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -21,24 +21,30 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { useSmartSpend } from '@/context/smartspend-context';
+import { useSmartSpend }  from '@/context/smartspend-context';
+import { apiGet }         from '@/lib/api-client';
 import { budgetSchema, type BudgetFormValues } from '@/lib/validation/schemas';
 
-// System categories (mirrors DB schema categories 1-8)
-const SYSTEM_CATEGORIES = [
-  { id: 1, name: 'Food & Dining',    icon: '🍔' },
-  { id: 2, name: 'Transportation',   icon: '🚗' },
-  { id: 3, name: 'Utilities',        icon: '💡' },
-  { id: 4, name: 'Entertainment',    icon: '🎬' },
-  { id: 5, name: 'Shopping',         icon: '🛍️' },
-  { id: 6, name: 'Healthcare',       icon: '🏥' },
-  { id: 7, name: 'Education',        icon: '📚' },
-  { id: 8, name: 'Subscriptions',    icon: '📱' },
-];
+interface Category {
+  id:    number;
+  label: string;
+  icon:  string;
+}
 
 export function BudgetForm() {
   const { upsertBudget, budgetSubmitting, budgetSubmitError, budget } = useSmartSpend();
   const [success, setSuccess] = useState(false);
+
+  // Fetch real categories from the DB — never use hardcoded IDs
+  const [categories,  setCategories]  = useState<Category[]>([]);
+  const [catsLoading, setCatsLoading] = useState(true);
+
+  useEffect(() => {
+    apiGet<{ categories: Category[] }>('/api/categories')
+      .then((d) => setCategories(d.categories ?? []))
+      .catch(() => setCategories([]))
+      .finally(() => setCatsLoading(false));
+  }, []);
 
   const form = useForm<BudgetFormValues>({
     resolver: zodResolver(budgetSchema),
@@ -49,29 +55,29 @@ export function BudgetForm() {
   });
 
   const onSubmit = async (values: BudgetFormValues) => {
-    const ok = await upsertBudget({
-      categoryId:  values.categoryId,
-      category:    SYSTEM_CATEGORIES.find(c => c.id === values.categoryId)?.name ?? 'Other',
-      amount:      values.limitAmount,
+    const result = await upsertBudget({
+      categoryId: values.categoryId,
+      category:   categories.find((c) => c.id === values.categoryId)?.label ?? 'Other',
+      amount:     values.limitAmount,
     });
 
-    if (ok) {
+    if (result) {
       setSuccess(true);
       form.reset({ categoryId: undefined, limitAmount: undefined });
       setTimeout(() => setSuccess(false), 3000);
     }
   };
 
-  // Pre-fill the limit when a category is chosen
+  // Pre-fill the limit field when an existing budget category is selected
   const handleCategoryChange = (catId: string) => {
     const catNum = Number(catId);
     form.setValue('categoryId', catNum);
-    
-    const existing = budget?.categories.find(c => c.categoryId === catNum);
+
+    const existing = budget?.categories.find((c) => c.categoryId === catNum);
     if (existing) {
       form.setValue('limitAmount', existing.allocated);
     } else {
-      form.setValue('limitAmount', undefined as any); // clear if not found
+      form.setValue('limitAmount', undefined as any);
     }
   };
 
@@ -93,7 +99,8 @@ export function BudgetForm() {
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-          {/* Category picker */}
+
+          {/* Category picker — loaded from DB */}
           <FormField
             control={form.control}
             name="categoryId"
@@ -106,15 +113,21 @@ export function BudgetForm() {
                 >
                   <FormControl>
                     <SelectTrigger>
-                      <SelectValue placeholder="Choose a category…" />
+                      <SelectValue placeholder={catsLoading ? 'Loading…' : 'Choose a category…'} />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    {SYSTEM_CATEGORIES.map(c => (
-                      <SelectItem key={c.id} value={String(c.id)}>
-                        <span className="mr-2">{c.icon}</span>{c.name}
-                      </SelectItem>
-                    ))}
+                    {catsLoading ? (
+                      <SelectItem value="__loading__" disabled>Loading categories…</SelectItem>
+                    ) : categories.length === 0 ? (
+                      <SelectItem value="__empty__" disabled>No categories found</SelectItem>
+                    ) : (
+                      categories.map((c) => (
+                        <SelectItem key={c.id} value={String(c.id)}>
+                          <span className="mr-2">{c.icon}</span>{c.label}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
                 <FormMessage />
@@ -137,7 +150,7 @@ export function BudgetForm() {
                     min="10"
                     placeholder="300"
                     {...field}
-                    onChange={e => field.onChange(e.target.value ? Number(e.target.value) : '')}
+                    onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : '')}
                     value={field.value ?? ''}
                   />
                 </FormControl>
@@ -149,7 +162,7 @@ export function BudgetForm() {
           <Button
             type="submit"
             className="w-full"
-            disabled={budgetSubmitting}
+            disabled={budgetSubmitting || catsLoading}
           >
             {budgetSubmitting ? 'Saving…' : 'Save Budget Limit'}
           </Button>
@@ -161,8 +174,8 @@ export function BudgetForm() {
         <div className="mt-6 pt-6 border-t border-border">
           <h3 className="font-semibold text-foreground mb-4">Current Limits</h3>
           <div className="space-y-2">
-            {budget.categories.map(cat => {
-              const meta = SYSTEM_CATEGORIES.find(c => c.id === cat.categoryId);
+            {budget.categories.map((cat) => {
+              const meta = categories.find((c) => c.id === cat.categoryId);
               return (
                 <div
                   key={cat.categoryId}
@@ -171,7 +184,6 @@ export function BudgetForm() {
                   <span className="text-sm text-foreground flex items-center gap-2">
                     {meta?.icon ?? '📌'} {cat.category}
                   </span>
-
                   <div className="text-right">
                     <span className="text-sm font-semibold text-foreground">
                       ${cat.spent.toFixed(0)}
@@ -189,4 +201,3 @@ export function BudgetForm() {
     </Card>
   );
 }
-

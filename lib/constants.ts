@@ -1,14 +1,14 @@
-// Expense categories with icons and colors
 export const EXPENSE_CATEGORIES = [
-  { id: 'food', label: 'Food & Dining', icon: '🍔', color: 'bg-orange-100' },
-  { id: 'transport', label: 'Transportation', icon: '🚗', color: 'bg-blue-100' },
-  { id: 'utilities', label: 'Utilities', icon: '💡', color: 'bg-yellow-100' },
-  { id: 'entertainment', label: 'Entertainment', icon: '🎬', color: 'bg-purple-100' },
-  { id: 'shopping', label: 'Shopping', icon: '🛍️', color: 'bg-pink-100' },
-  { id: 'healthcare', label: 'Healthcare', icon: '🏥', color: 'bg-red-100' },
-  { id: 'education', label: 'Education', icon: '📚', color: 'bg-green-100' },
-  { id: 'subscription', label: 'Subscriptions', icon: '📱', color: 'bg-indigo-100' },
-  { id: 'other', label: 'Other', icon: '📌', color: 'bg-gray-100' },
+  { id: '1',  label: 'Food & Drinks',      icon: '🍔', color: 'bg-orange-100' },
+  { id: '2',  label: 'Travel & Commute',   icon: '🚗', color: 'bg-blue-100' },
+  { id: '3',  label: 'Home & Living',      icon: '🏠', color: 'bg-yellow-100' },
+  { id: '4',  label: 'Entertainment',      icon: '🎭', color: 'bg-purple-100' },
+  { id: '5',  label: 'Shopping & Retail', icon: '🛍️', color: 'bg-pink-100' },
+  { id: '6',  label: 'Health & Wellness',  icon: '🏥', color: 'bg-red-100' },
+  { id: '7',  label: 'Education',          icon: '🎓', color: 'bg-green-100' },
+  { id: '8',  label: 'Subscriptions',      icon: '📱', color: 'bg-indigo-100' },
+  { id: '9',  label: 'Work & Business',    icon: '💼', color: 'bg-gray-100' },
+  { id: '10', label: 'Others',             icon: '📌', color: 'bg-slate-100' },
 ];
 
 // Budget allocation suggestions
@@ -41,15 +41,16 @@ export const GOAL_TEMPLATES = [
   { id: 'education', label: 'Education Fund', amount: 15000, priority: 'high' },
 ];
 
-// Navigation links for authenticated users
+// Navigation links — ordered by usage frequency
 export const NAV_LINKS = [
-  { href: '/dashboard',   label: 'Dashboard',   icon: '📊' },
-  { href: '/add-expense', label: 'Add Expense',  icon: '➕' },
-  { href: '/budgets',     label: 'Budget',       icon: '💰' },
-  { href: '/goals',       label: 'Goals',        icon: '🎯' },
-  { href: '/insights',    label: 'Insights',     icon: '🔍' },
-  { href: '/reports',     label: 'Reports',      icon: '📈' },
-  { href: '/settings',    label: 'Settings',     icon: '⚙️' },
+  { href: '/dashboard',        label: 'Dashboard',       icon: '📊' },
+  { href: '/add-expense',      label: 'Add Expense',     icon: '➕' },
+  { href: '/expenses-history', label: 'Expenses',        icon: '📜' },
+  { href: '/budgets',          label: 'Budgets',         icon: '💰' },
+  { href: '/goals',            label: 'Goals',           icon: '🎯' },
+  { href: '/insights',         label: 'Insights',        icon: '🔍' },
+  { href: '/reports',          label: 'Reports',         icon: '📈' },
+  { href: '/settings',         label: 'Settings',        icon: '⚙️' },
 ];
 
 

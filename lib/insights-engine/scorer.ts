@@ -45,7 +45,7 @@ export function savingsRateScore(savingsRate: number): number {
  */
 export function budgetComplianceScore(categories: CategorySummary[]): number {
   const budgetedCats = categories.filter(c => c.budgetLimit > 0);
-  if (budgetedCats.length === 0) return 75; // default if no budgets set
+  if (budgetedCats.length === 0) return 0; // default to 0 if no budgets set
 
   let totalScore = 0;
   for (const cat of budgetedCats) {
@@ -72,7 +72,7 @@ export function budgetComplianceScore(categories: CategorySummary[]): number {
  * High-priority goals get 2× weight, medium 1.5×, low 1×.
  */
 export function goalProgressScore(goals: GoalProbabilityResult[]): number {
-  if (goals.length === 0) return 75; // default if no goals set
+  if (goals.length === 0) return 0; // default to 0 if no goals set
 
   let weightedSum = 0;
   let totalWeight = 0;
@@ -96,7 +96,11 @@ export function spendingControlScore(
   summary: MonthlySummary,
   mom:     MonthOverMonthResult,
 ): number {
-  let score = 80; // baseline
+  let score = 0; // baseline 0 for new users
+  
+  if (summary.transactionCount === 0) return 0;
+  
+  score = 80; // set to baseline if data exists
 
   // Penalise month-over-month spend increase
   if (mom.totalSpend.direction === 'up' && mom.totalSpend.isSignificant) {

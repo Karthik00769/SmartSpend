@@ -97,16 +97,16 @@ SET @sql = IF(@col_exists = 0,
 );
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- ── GOALS: current_amount ─────────────────────────────────────────────
+-- ── GOALS: saved_amount ─────────────────────────────────────────────
 SELECT COUNT(*) INTO @col_exists
 FROM INFORMATION_SCHEMA.COLUMNS
 WHERE TABLE_SCHEMA = DATABASE()
   AND TABLE_NAME   = 'goals'
-  AND COLUMN_NAME  = 'current_amount';
+  AND COLUMN_NAME  = 'saved_amount';
 
 SET @sql = IF(@col_exists = 0,
-  'ALTER TABLE goals ADD COLUMN current_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00',
-  'SELECT ''goals.current_amount already exists'' AS migration_info'
+  'ALTER TABLE goals ADD COLUMN saved_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00',
+  'SELECT ''goals.saved_amount already exists'' AS migration_info'
 );
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 

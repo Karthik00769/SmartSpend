@@ -8,7 +8,7 @@ interface GoalProgressProps {
 
 export function GoalProgress({ goals }: GoalProgressProps) {
   const getGoalPercentage = (goal: Goal) => {
-    return (goal.currentAmount / goal.targetAmount) * 100;
+    return (goal.savedAmount / goal.targetAmount) * 100;
   };
 
   const getPriorityColor = (priority: string) => {
@@ -30,7 +30,7 @@ export function GoalProgress({ goals }: GoalProgressProps) {
       <div className="space-y-6">
         {goals.map((goal) => {
           const percentage = getGoalPercentage(goal);
-          const remaining = goal.targetAmount - goal.currentAmount;
+          const remaining = goal.targetAmount - goal.savedAmount;
           const daysRemaining = Math.ceil(
             (new Date(goal.deadline).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
           );
@@ -50,7 +50,7 @@ export function GoalProgress({ goals }: GoalProgressProps) {
               </div>
               <div className="flex items-center justify-between mb-2 text-sm">
                 <span className="text-muted-foreground">
-                  ${goal.currentAmount.toFixed(2)} / ${goal.targetAmount.toFixed(2)}
+                  ${goal.savedAmount.toFixed(2)} / ${goal.targetAmount.toFixed(2)}
                 </span>
                 <span className="font-medium text-foreground">
                   {percentage.toFixed(0)}%

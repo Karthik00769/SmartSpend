@@ -13,10 +13,12 @@ import type { ExpenseDTO } from '@/types/api';
 // ─── Payload for creating an expense ──────────────────────────────────────────
 
 export interface AddExpensePayload {
-  amount:      number;
-  date:        string;    // YYYY-MM-DD
-  description: string;
-  categoryId?: number;    // explicitly set by user
+  amount:        number;
+  date:          string;
+  description:   string;
+  categoryId?:   number;
+  categoryName?: string;
+  source?:       'manual' | 'receipt_scan' | 'bank_import';
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
