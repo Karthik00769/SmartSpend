@@ -24,9 +24,11 @@ import sharp from 'sharp';
 const pdfParse = require('pdf-parse');
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 
-// Setup pdfjs standard no-worker fallback for node.js strictly
+// In Next.js server environment, setting workerSrc with require.resolve 
+// breaks build because it's transformed into a module ID.
+// We assign a primitive string to avoid "Invalid workerSrc type" error.
 if (pdfjsLib?.GlobalWorkerOptions) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdfjs-dist/legacy/build/pdf.worker.mjs';
 }
 
 const NM = path.join(process.cwd(), 'node_modules');
