@@ -51,24 +51,46 @@ export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
   },
-  useSecureCookies: true,
+  // Railway terminates SSL at the proxy level and forwards plain HTTP internally.
+  // Force useSecureCookies=false so Next‑Auth uses un-prefixed cookie names
+  // (next-auth.state instead of __Secure-next-auth.state). The cookies are still
+  // sent over the public HTTPS connection to the browser.
+  useSecureCookies: false,
   cookies: {
     state: {
-      name: '__Secure-next-auth.state',
+      name: 'next-auth.state',
       options: {
         httpOnly: true,
-        sameSite: 'lax',
+        sameSite: 'lax' as const,
         path: '/',
-        secure: true,
+        secure: false,
       },
     },
     pkceCodeVerifier: {
-      name: '__Secure-next-auth.pkce.verifier',
+      name: 'next-auth.pkce.verifier',
       options: {
         httpOnly: true,
-        sameSite: 'lax',
+        sameSite: 'lax' as const,
         path: '/',
-        secure: true,
+        secure: false,
+      },
+    },
+    callbackUrl: {
+      name: 'next-auth.callback-url',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax' as const,
+        path: '/',
+        secure: false,
+      },
+    },
+    csrfToken: {
+      name: 'next-auth.csrf-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax' as const,
+        path: '/',
+        secure: false,
       },
     },
   },
