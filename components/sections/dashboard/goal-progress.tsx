@@ -4,9 +4,13 @@ import { Goal } from '@/types';
 
 interface GoalProgressProps {
   goals: Goal[];
+  /** Currency formatter — e.g. fmt from useSmartSpend(). */
+  fmt?: (amount: number) => string;
 }
 
-export function GoalProgress({ goals }: GoalProgressProps) {
+export function GoalProgress({ goals, fmt }: GoalProgressProps) {
+  const format = fmt ?? ((n: number) => `$${n.toFixed(2)}`);
+
   const getGoalPercentage = (goal: Goal) => {
     return (goal.savedAmount / goal.targetAmount) * 100;
   };
@@ -50,7 +54,7 @@ export function GoalProgress({ goals }: GoalProgressProps) {
               </div>
               <div className="flex items-center justify-between mb-2 text-sm">
                 <span className="text-muted-foreground">
-                  ${goal.savedAmount.toFixed(2)} / ${goal.targetAmount.toFixed(2)}
+                  {format(goal.savedAmount)} / {format(goal.targetAmount)}
                 </span>
                 <span className="font-medium text-foreground">
                   {percentage.toFixed(0)}%
@@ -58,8 +62,8 @@ export function GoalProgress({ goals }: GoalProgressProps) {
               </div>
               <Progress value={percentage} className="h-2 mb-2" />
               <p className="text-xs text-muted-foreground">
-                {daysRemaining > 0 
-                  ? `${daysRemaining} days remaining` 
+                {daysRemaining > 0
+                  ? `${daysRemaining} days remaining`
                   : 'Deadline passed'}
               </p>
             </div>

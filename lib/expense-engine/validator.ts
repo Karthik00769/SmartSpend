@@ -60,11 +60,10 @@ function validateDate(raw: string): ValidationError[] {
     return errors;
   }
 
-  const today = new Date();
-  today.setUTCHours(23, 59, 59, 999);
-
-  if (parsed > today) {
-    errors.push({ field: 'date', message: 'Expense date cannot be in the future.', value: raw });
+  // Expense date must be today — no past, no future
+  const todayStr = new Date().toISOString().slice(0, 10);
+  if (raw !== todayStr) {
+    errors.push({ field: 'date', message: 'Expense date must be today. Past and future dates are not allowed.', value: raw });
   }
   if (parsed < MIN_DATE) {
     errors.push({ field: 'date', message: 'Expense date cannot be before year 2000.', value: raw });

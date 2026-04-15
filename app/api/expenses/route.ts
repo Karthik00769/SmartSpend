@@ -69,12 +69,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // ── ENFORCE CURRENT DATE — ignore any client-submitted date ──────────────
+    // Always use today's server date regardless of what the client sends.
+    const todayDate = new Date().toISOString().slice(0, 10);
+
     const result = await processExpense(
       {
         userId:      userId as string,
         categoryId:  resolvedCategoryId,
         amount:      parsed.data.amount as any,
-        date:        parsed.data.date,
+        date:        todayDate,
         description: parsed.data.description,
         source:      parsed.data.source,
       },

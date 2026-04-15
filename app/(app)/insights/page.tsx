@@ -108,7 +108,7 @@ function SummaryCard({ data, fmt }: { data: any; fmt: (n: number) => string }) {
   );
 }
 
-function CategoryPie({ data }: { data: { name: string; value: number; fill: string; pct?: number }[] }) {
+function CategoryPie({ data, fmt }: { data: { name: string; value: number; fill: string; pct?: number }[]; fmt: (n: number) => string }) {
   if (!data?.length) return null;
   return (
     <Card className="p-5">
@@ -123,7 +123,7 @@ function CategoryPie({ data }: { data: { name: string; value: number; fill: stri
               formatter={(v: number, name: string, props: any) => {
                 const pct = props?.payload?.pct;
                 return [
-                  `${v.toFixed(2)}${pct != null ? ` (${pct}%)` : ''}`,
+                  `${fmt(v)}${pct != null ? ` (${pct}%)` : ''}`,
                   name,
                 ];
               }}
@@ -515,7 +515,7 @@ export default function InsightsPage() {
       {/* ── Category chart + Goals ── */}
       {(txPieData.length > 0 || goalProbabilities.length > 0) && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {txPieData.length > 0 && <CategoryPie data={txPieData} />}
+          {txPieData.length > 0 && <CategoryPie data={txPieData} fmt={fmt} />}
           {goalProbabilities.length > 0 && (
             <Card className="p-5">
               <h3 className="text-sm font-semibold text-foreground mb-3">Goal Progress</h3>

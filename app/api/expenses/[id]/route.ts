@@ -14,7 +14,8 @@ import { updateExpense, softDeleteExpense, findOrCreateCategory } from '@/servic
 const PatchExpenseSchema = z.object({
   amount:       z.coerce.number().positive().optional(),
   description:  z.string().trim().max(500).optional(),
-  date:         z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  // NOTE: 'date' is intentionally excluded — expense date is set at creation
+  // time (always today) and cannot be changed after the fact.
   categoryId:   z.coerce.number().min(1).optional(),
   categoryName: z.string().trim().max(100).optional(),
 });
@@ -40,7 +41,10 @@ export async function PATCH(
       categoryId = await findOrCreateCategory(userId, categoryName);
     }
 
-    const updated = await updateExpense(id, userId, { ...rest, categoryId });
+    // Expense date is immutable after creation — never allow editing it.
+    const { date: _discardedDate, ...safeRest } = rest as any;
+
+    const updated = await updateExpense(id, userId, { ...safeRest, categoryId });
     return ok({ expense: updated });
   } catch (err: any) {
     console.error('[PATCH /api/expenses/:id]', err);

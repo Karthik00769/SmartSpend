@@ -5,19 +5,35 @@
  *
  * Accepts: multipart/form-data with a "file" field.
  * Supported file types:
- *   - PDF  → extract via pdfjs-dist (legacy build to prevent DOMMatrix)
- *   - Images → extract via tesseract.js
- *   - CSV / TXT → UTF-8 plain text extraction
+ *   - PDF  → text extraction via pdf-parse
+ *   - Images → multi-pass Tesseract OCR (via scan route logic, shared parser)
+ *   - CSV / TXT → UTF-8 text extraction with dynamic column detection
  *
  * IMPORTANT: This route NEVER saves to the database.
- * Response: { ok: true, data: { extracted: { ... } } }
+ * All dates are forced to today (server-side).
+ *
+ * Amount validation: 1 ≤ amount ≤ 1,00,000. Outside this range → discarded.
+ *
+ * Response: { ok: true, data: { extracted | transactions, ... } }
  */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth/authOptions';
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { getServerSession }          from 'next-auth/next';
+import { authOptions }               from '@/lib/auth/authOptions';
+import path                          from 'node:path';
+import { pathToFileURL }             from 'node:url';
+import {
+  parseReceiptText,
+  cleanOCRText,
+  detectCSVDelimiter,
+  splitCSVLine,
+  detectCSVColumns,
+  parseRawAmount,
+  validateCSVAmount,
+  parsePDFBankStatement,
+} from '@/lib/ocr/receipt-parser';
+import { processPDF } from '@/lib/ocr/pdf-processor';
+import Tesseract from 'tesseract.js';
+import sharp from 'sharp';
 
 // Worker path for Tesseract — built from process.cwd() so webpack cannot intercept it
 const NM = path.join(process.cwd(), 'node_modules');
@@ -26,336 +42,262 @@ const TESSERACT_WORKER = path.join(NM, 'tesseract.js/src/worker-script/node/inde
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const MAX_BYTES = 10 * 1024 * 1024;
+const MAX_BYTES   = 10 * 1024 * 1024;
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
-const PDF_TYPE = 'application/pdf';
-const TEXT_TYPES = new Set(['text/csv', 'text/plain']);
+const PDF_TYPE    = 'application/pdf';
+const TEXT_TYPES  = new Set(['text/csv', 'text/plain', 'text/tab-separated-values']);
 
-// ─── Deterministic Pure-Node Regex Parsers ──────────────────────────────────
+// ─── Multi-pass image preprocessor (same as scan route) ─────────────────────
 
-function extractAmount(text: string): number {
-  // Priority 1: keyword + number on the same line
-  const keywordPatterns = [
-    /(?:grand\s*total|total\s*due|amount\s*due|total\s*amount|net\s*amount|balance\s*due|bill\s*amount|net\s*payable|payable|total)[^\d₹Rs\n]{0,10}[₹Rs.INR]*\s*([\d,]+\.?\d{0,2})/i,
-    /(?:₹|Rs\.?|INR)\s*([\d,]+\.?\d{0,2})/i,
-    /([\d,]+\.?\d{0,2})\s*(?:₹|Rs\.?|INR)\b/i,
-    /[$£€]\s*([\d,]+\.\d{2})/,
-  ];
-  for (const pat of keywordPatterns) {
-    const m = text.match(pat);
-    if (m) {
-      const raw = (m[1] ?? m[0]).replace(/[^\d.]/g, '');
-      const val = parseFloat(raw);
-      if (!isNaN(val) && val > 0 && val < 1_000_000) return val;
-    }
-  }
-
-  // Priority 2: line-by-line scan for total/amount keyword lines
-  const lines = text.split('\n');
-  for (const line of lines) {
-    if (!/total|amount|payable|due|net|bill/i.test(line)) continue;
-    const nums = line.match(/[\d,]+\.\d{2}/g);
-    if (nums) {
-      const val = parseFloat(nums[nums.length - 1].replace(/,/g, ''));
-      if (!isNaN(val) && val > 0 && val < 1_000_000) return val;
-    }
-  }
-
-  // Priority 3: decimal numbers (most reliable — avoids phone/PIN/year)
-  const decimals = text.match(/\b\d{1,6}\.\d{2}\b/g);
-  if (decimals && decimals.length > 0) {
-    const parsed = decimals
-      .map(a => parseFloat(a.replace(/,/g, '')))
-      .filter(n => !isNaN(n) && n >= 1 && n < 1_000_000);
-    if (parsed.length > 0) return Math.max(...parsed);
-  }
-
-  // Priority 4: whole numbers that look like amounts (not phone/PIN/year)
-  const wholes = text.match(/\b[1-9]\d{1,5}\b/g);
-  if (wholes) {
-    const parsed = wholes
-      .map(a => parseFloat(a))
-      .filter(n => n >= 10 && n < 100_000 && !(n >= 2000 && n <= 2100));
-    if (parsed.length > 0) return Math.max(...parsed);
-  }
-
-  return 0;
-}
-
-function extractDate(text: string): string {
-  const today = new Date().toISOString().split('T')[0];
-
-  // Ordered by specificity — most specific first
-  const patterns: Array<{ re: RegExp; parse: (m: RegExpMatchArray) => string | null }> = [
-    // YYYY-MM-DD or YYYY/MM/DD
+async function preprocessImage(sharp: any, buf: Buffer): Promise<{ buffer: Buffer; pass: string }> {
+  const passes = [
     {
-      re: /\b(20\d{2})[-/](0?[1-9]|1[0-2])[-/](0?[1-9]|[12]\d|3[01])\b/,
-      parse: m => `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`,
+      name: 'gentle',
+      fn: async () => sharp(buf).grayscale().normalize().sharpen({ sigma: 1.2, m1: 0.5, m2: 0.5 }).png({ compressionLevel: 1 }).toBuffer(),
     },
-    // DD-MM-YYYY or DD/MM/YYYY or DD.MM.YYYY (Indian format)
     {
-      re: /\b(0?[1-9]|[12]\d|3[01])[-/.](0?[1-9]|1[0-2])[-/.](20\d{2})\b/,
-      parse: m => `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`,
+      name: 'contrast-boost',
+      fn: async () => sharp(buf).grayscale().normalize().linear(1.6, -(128 * 0.6)).sharpen({ sigma: 1.5 }).png({ compressionLevel: 1 }).toBuffer(),
     },
-    // DD MMM YYYY  e.g. 05 Apr 2026 or 5 April 2026
     {
-      re: /\b(0?[1-9]|[12]\d|3[01])\s+(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(20\d{2})\b/i,
-      parse: m => {
-        const d = new Date(`${m[2]} ${m[1]} ${m[3]}`);
-        return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
-      },
-    },
-    // MMM DD, YYYY  e.g. Apr 05, 2026
-    {
-      re: /\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(0?[1-9]|[12]\d|3[01]),?\s+(20\d{2})\b/i,
-      parse: m => {
-        const d = new Date(`${m[1]} ${m[2]} ${m[3]}`);
-        return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
-      },
-    },
-    // MM/DD/YY — least reliable, try last
-    {
-      re: /\b(0?[1-9]|1[0-2])[-/](0?[1-9]|[12]\d|3[01])[-/](\d{2})\b/,
-      parse: m => {
-        const d = new Date(`20${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`);
-        return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
-      },
+      name: 'threshold',
+      fn: async () => sharp(buf).grayscale().normalize().threshold(145).png({ compressionLevel: 1 }).toBuffer(),
     },
   ];
 
-  for (const { re, parse } of patterns) {
-    const m = text.match(re);
-    if (m) {
-      try {
-        const result = parse(m);
-        if (result) {
-          const d = new Date(result);
-          if (!isNaN(d.getTime()) && d.getFullYear() >= 2000 && d.getFullYear() <= 2100) {
-            return result;
-          }
-        }
-      } catch { /* try next pattern */ }
+  let best: { buffer: Buffer; textLen: number; conf: number; pass: string } | null = null;
+  const workerPath = pathToFileURL(TESSERACT_WORKER).href;
+  const worker     = await Tesseract.createWorker('eng', 1, {
+    workerPath,
+  });
+  await worker.setParameters({ 
+    tessedit_pageseg_mode: '6' as any,
+    preserve_interword_spaces: '1',
+  });
+
+  for (const p of passes) {
+    try {
+      const processed = await p.fn();
+      const { data: { text, confidence } } = await worker.recognize(processed);
+      const cleaned = cleanOCRText(text);
+      const tLen = cleaned.trim().length;
+      const conf = confidence ?? 0;
+      console.log(`[UPLOAD/${p.name}] conf=${conf.toFixed(0)} chars=${tLen}`);
+
+      if (!best || tLen > best.textLen * 1.15 || (conf > best.conf + 10 && tLen > 20)) {
+        best = { buffer: processed, textLen: tLen, conf, pass: p.name };
+      }
+      if (best.conf >= 80 && best.textLen > 100) break;
+    } catch (e: any) {
+      console.warn(`[UPLOAD/${p.name}] skip:`, e?.message);
     }
   }
 
-  return today;
+  // Get final text using best buffer
+  const { data: { text: finalText } } = await worker.recognize(best!.buffer);
+  await worker.terminate();
+  return { buffer: best!.buffer, pass: best!.pass };
 }
 
-function extractMerchant(text: string): string {
-  const skipWords = [
-    'receipt', 'invoice', 'tax', 'total', 'amount', 'date', 'time', 'page',
-    'order', 'duplicate', 'customer', 'cashier', 'terminal', 'auth', 'thank',
-    'welcome', 'please', 'visit', 'gst', 'vat', 'subtotal', 'visa', 'mastercard',
-    'amex', 'rupee', 'payment', 'bill', 'cash', 'change', 'balance', 'paid',
-    'transaction', 'ref', 'upi', 'neft', 'imps', 'ifsc', 'account', 'bank',
-    'no.', 'number',
-  ];
-
-  const lines = text
-    .replace(/[\x00-\x1F\x7F-\x9F]/g, ' ')
-    .split('\n')
-    .map(l => l.trim())
-    .filter(l => l.length >= 3 && l.length <= 60);
-
-  for (let i = 0; i < Math.min(lines.length, 10); i++) {
-    const line = lines[i];
-    const lower = line.toLowerCase();
-    if (/^[\d\s₹$€£.,:\-/]+$/.test(line)) continue;
-    if (/^[$₹€£¥]/.test(line)) continue;
-    if (skipWords.some(kw => lower.includes(kw))) continue;
-    if (/\b\d{6,}\b/.test(line)) continue; // phone/account numbers
-    const cleaned = line.replace(/^[^a-zA-Z]+/, '').replace(/[^a-zA-Z0-9\s&'.\-]+$/, '').trim();
-    if (cleaned.length >= 3 && /[a-zA-Z]{2,}/.test(cleaned)) return cleaned;
-  }
-
-  const withLetters = lines
-    .filter(l => /[a-zA-Z]{3,}/.test(l) && !/total|amount|date|tax/i.test(l))
-    .sort((a, b) => b.length - a.length);
-  return withLetters[0]?.trim() || '';
-}
-
-function parseExtractedText(rawText: string) {
-  console.log('[UPLOAD] Raw text preview:', rawText.substring(0, 500).replace(/\n/g, ' | '));
-  const amount   = extractAmount(rawText);
-  const date     = extractDate(rawText);
-  const merchant = extractMerchant(rawText);
-  console.log('[UPLOAD] Parsed → amount:', amount, '| date:', date, '| merchant:', merchant);
-  return { amount, date, merchant, description: merchant };
-}
-
-// ─── CSV / tabular text parser ────────────────────────────────────────────────
-// Handles CSV, TSV, and tabular text extracted from PDFs.
-// Per-row try/catch — never crashes on bad rows, logs failures.
+// ─── CSV multi-transaction parser ────────────────────────────────────────────
 
 export interface ParsedTransaction {
   amount:      number;
-  date:        string;
+  date:        string;  // always today
   description: string;
 }
 
+/**
+ * parseCSVTransactions
+ * Parses a CSV/TSV/tabular text file into individual transactions.
+ *
+ * Features:
+ *  - Auto-detects delimiter (tab / pipe / semicolon / comma)
+ *  - Dynamically maps columns by header keyword matching
+ *  - Handles separate debit/credit columns (some banks)
+ *  - Per-row validation: amount must be 1–1,00,000
+ *  - Falls back to positional inference if no headers found
+ *  - All dates are forced to today
+ */
 function parseCSVTransactions(text: string): ParsedTransaction[] {
   try {
-    const lines = text
-      .split('\n')
-      .map(l => l.trim())
-      .filter(Boolean);
-
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
     if (lines.length < 2) return [];
 
-    // Detect delimiter: tab > pipe > semicolon > comma
-    const sample = lines[0];
-    const delim = sample.includes('\t') ? '\t'
-      : sample.includes('|') ? '|'
-      : sample.includes(';') ? ';'
-      : ',';
+    // ── Detect delimiter ───────────────────────────────────────────────────
+    const delim = detectCSVDelimiter(lines);
+    const split  = (line: string) => splitCSVLine(line, delim);
 
-    // Safe CSV line splitter — handles quoted fields with embedded delimiters
-    const splitLine = (line: string): string[] => {
-      const result: string[] = [];
-      let current = '';
-      let inQuotes = false;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (ch === '"') {
-          // Handle escaped quotes ""
-          if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
-          else inQuotes = !inQuotes;
-        } else if (ch === delim && !inQuotes) {
-          result.push(current.trim());
-          current = '';
-        } else {
-          current += ch;
+    // ── Parse headers ──────────────────────────────────────────────────────
+    const headerRow    = split(lines[0]);
+    const colMap       = detectCSVColumns(headerRow);
+
+    console.log(
+      `[CSV] delim="${delim === '\t' ? 'TAB' : delim}"`,
+      `| dateCol=${colMap.dateCol}`,
+      `| amtCol=${colMap.amountCol}`,
+      `| debitCol=${colMap.debitCol}`,
+      `| creditCol=${colMap.creditCol}`,
+      `| descCol=${colMap.descCol}`,
+      `| headers=[${headerRow.join(' | ')}]`,
+    );
+
+    // If no amount column at all, fall back to positional parser
+    const hasAmountInfo = colMap.amountCol !== -1 || colMap.debitCol !== -1 || colMap.creditCol !== -1;
+    if (!hasAmountInfo) {
+      console.log('[CSV] No amount column found, using positional parser');
+      return parsePositional(lines, split);
+    }
+
+    // ── Detect balance column to EXCLUDE it from amount resolution ──────────
+    // Balance columns often have large numbers that look like transaction amounts
+    const balanceCol = (() => {
+      const h = headerRow.map(x => x.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim());
+      const balanceCandidates = [
+        'balance', 'closing balance', 'available balance', 'running balance',
+        'balance amount', 'bal', 'ledger balance', 'book balance',
+      ];
+      for (const c of balanceCandidates) {
+        const idx = h.findIndex(hdr => hdr === c || hdr.includes(c));
+        if (idx !== -1) {
+          console.log(`[CSV] Balance column detected at index ${idx}: "${headerRow[idx]}"`);
+          return idx;
         }
       }
-      result.push(current.trim());
-      return result;
-    };
-
-    const headers = splitLine(lines[0]).map(h => h.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim());
-
-    // Dynamic column detection — broad keyword matching for Indian bank formats
-    const colIdx = (candidates: string[]): number =>
-      candidates.reduce<number>(
-        (found, c) => found !== -1 ? found : headers.findIndex(h => h.includes(c)),
-        -1
-      );
-
-    const dateCol = colIdx([
-      'date', 'txn date', 'transaction date', 'value date', 'posted',
-      'booking date', 'trans date', 'dt',
-    ]);
-    const amtCol = colIdx([
-      'amount', 'debit', 'withdrawal', 'credit', 'sum', 'inr', 'usd',
-      'dr', 'cr', 'debit amount', 'credit amount', 'transaction amount',
-    ]);
-    const descCol = colIdx([
-      'description', 'narration', 'particulars', 'details', 'merchant',
-      'payee', 'memo', 'remarks', 'transaction details', 'transaction narration',
-    ]);
-
-    // If no header row found, try heuristic: look for a line that has date-like + number-like columns
-    if (dateCol === -1 || amtCol === -1) {
-      console.log('[BANK/CSV] No standard headers found. Headers detected:', headers.join(' | '));
-      // Try positional parsing: assume col 0 = date, last numeric col = amount, middle = description
-      return parsePositional(lines, splitLine);
-    }
+      return -1;
+    })();
 
     const transactions: ParsedTransaction[] = [];
     let skipped = 0;
+    const todayDate = new Date().toISOString().slice(0, 10);
 
     for (let i = 1; i < lines.length; i++) {
       try {
-        const cols = splitLine(lines[i]);
-        const maxNeeded = Math.max(dateCol, amtCol);
-        if (cols.length <= maxNeeded) {
+        const cols = split(lines[i]);
+
+        // Skip rows too short to have all needed columns
+        const maxNeeded = Math.max(
+          colMap.amountCol, colMap.debitCol, colMap.creditCol,
+          colMap.descCol,
+        );
+        if (cols.length <= Math.max(0, maxNeeded)) { skipped++; continue; }
+
+        // Skip header-repeat rows (common in bank statements)
+        const firstCell = (cols[0] ?? '').toLowerCase();
+        if (/^(date|sl|sr|no|#|s\.no|sno)/.test(firstCell)) { skipped++; continue; }
+
+        // Skip fully empty rows
+        if (cols.every(c => !c.trim())) { skipped++; continue; }
+
+        // ── Resolve amount — strict debit/credit/amount priority (Task 4) ────
+        let amount = 0;
+
+        // RULE: if both debit and credit exist, debit > 0 wins (it's an expense)
+        if (colMap.debitCol !== -1 && colMap.creditCol !== -1) {
+          const debit  = parseRawAmount(cols[colMap.debitCol]  ?? '');
+          const credit = parseRawAmount(cols[colMap.creditCol] ?? '');
+          // Debit (withdrawal) = expense; credit (deposit) = income — skip credits
+          amount = debit > 0 ? debit : 0;
+          if (amount === 0) { skipped++; continue; } // credit-only row, skip
+        } else if (colMap.debitCol !== -1) {
+          amount = parseRawAmount(cols[colMap.debitCol] ?? '');
+        } else if (colMap.amountCol !== -1) {
+          // Single amount column: make sure we're NOT reading from balance column
+          if (colMap.amountCol !== balanceCol) {
+            amount = parseRawAmount(cols[colMap.amountCol] ?? '');
+          }
+        }
+
+        // Never use balance column as amount
+        if (balanceCol !== -1 && amount === 0) {
+          // If we still have no amount, skip — don't pull from balance
           skipped++;
           continue;
         }
 
-        const rawDate   = cols[dateCol]?.trim() ?? '';
-        const rawAmount = cols[amtCol]?.trim()  ?? '';
-        const rawDesc   = descCol !== -1 ? (cols[descCol]?.trim() ?? '') : '';
-
-        // Skip header-like rows that sneak in mid-file
-        if (/^(date|amount|description|narration|particulars)/i.test(rawDate)) continue;
-        // Skip empty rows
-        if (!rawDate && !rawAmount) continue;
-
-        const date   = extractDate(rawDate || lines[i]);
-        // Strip currency symbols and commas before parsing
-        const amount = parseFloat(rawAmount.replace(/[₹$€£,\s]/g, '').replace(/[^0-9.]/g, ''));
-
-        if (!amount || isNaN(amount) || amount <= 0) {
-          console.log(`[BANK/CSV] Row ${i}: skipped — invalid amount "${rawAmount}"`);
+        // Validate amount range [1, 100000]
+        if (!validateCSVAmount(amount)) {
+          console.log(`[CSV] Row ${i}: skipped — amount ${amount} out of range [1, 100000]`);
           skipped++;
           continue;
         }
 
-        const description = rawDesc || extractMerchant(lines[i]);
+        // ── Resolve description (must be ≥ 3 chars) ───────────────────────────
+        let description = '';
+        if (colMap.descCol !== -1) {
+          description = (cols[colMap.descCol] ?? '').trim();
+        }
+        // If no desc col or empty, concatenate non-amount non-date cols
+        if (!description || description.length < 3) {
+          description = cols
+            .filter((_, idx) =>
+              idx !== colMap.amountCol && idx !== colMap.debitCol &&
+              idx !== colMap.creditCol && idx !== colMap.dateCol &&
+              idx !== balanceCol
+            )
+            .join(' ')
+            .trim()
+            .slice(0, 100);
+        }
 
-        transactions.push({ amount, date, description });
+        // RULE: valid transaction must have description length > 3
+        if (description.length < 3) {
+          description = 'Bank transaction';
+        }
+
+        transactions.push({ amount, date: todayDate, description });
+
       } catch (rowErr: any) {
-        console.log(`[BANK/CSV] Row ${i}: parse error — ${rowErr?.message ?? rowErr}`);
+        console.log(`[CSV] Row ${i}: parse error — ${rowErr?.message ?? rowErr}`);
         skipped++;
       }
     }
 
     if (skipped > 0) {
-      console.log(`[BANK/CSV] Skipped ${skipped} invalid rows, extracted ${transactions.length} valid transactions`);
+      console.log(`[CSV] Skipped ${skipped} rows, extracted ${transactions.length} valid transactions`);
     }
-
     return transactions;
+
   } catch (err: any) {
-    console.error('[BANK/CSV] Fatal parse error:', err?.message ?? err);
+    console.error('[CSV] Fatal parse error:', err?.message ?? err);
     return [];
   }
 }
 
-// Positional fallback: no headers — try to infer columns by content type
-function parsePositional(lines: string[], splitLine: (l: string) => string[]): ParsedTransaction[] {
+// ─── Positional fallback ─────────────────────────────────────────────────────
+
+function parsePositional(
+  lines: string[],
+  split: (l: string) => string[],
+): ParsedTransaction[] {
   const transactions: ParsedTransaction[] = [];
+  const todayDate = new Date().toISOString().slice(0, 10);
 
   for (let i = 0; i < lines.length; i++) {
     try {
-      const cols = splitLine(lines[i]);
+      const cols = split(lines[i]);
       if (cols.length < 2) continue;
 
-      // Find the first column that looks like a date
-      let dateStr = '';
-      let dateColIdx = -1;
-      for (let c = 0; c < cols.length; c++) {
-        const d = extractDate(cols[c]);
-        if (d !== new Date().toISOString().split('T')[0]) { // not today = found a real date
-          dateStr = d;
-          dateColIdx = c;
-          break;
-        }
-      }
-      if (!dateStr) continue;
-
-      // Find the last column that looks like a number
+      // Find last column that parses to a valid expense amount
       let amount = 0;
+      let amtColIdx = -1;
       for (let c = cols.length - 1; c >= 0; c--) {
-        if (c === dateColIdx) continue;
-        const v = parseFloat(cols[c].replace(/[₹$€£,\s]/g, '').replace(/[^0-9.]/g, ''));
-        if (!isNaN(v) && v > 0 && v < 10_000_000) { amount = v; break; }
+        const v = parseRawAmount(cols[c]);
+        if (validateCSVAmount(v)) { amount = v; amtColIdx = c; break; }
       }
       if (!amount) continue;
 
-      // Description: everything that's not date or amount
-      const desc = cols
-        .filter((_, c) => c !== dateColIdx)
-        .filter(c => {
-          const v = parseFloat(c.replace(/[₹$€£,\s]/g, '').replace(/[^0-9.]/g, ''));
-          return isNaN(v) || v !== amount;
-        })
+      // Description: all other columns joined
+      const description = cols
+        .filter((_, c) => c !== amtColIdx)
         .join(' ')
-        .trim();
+        .trim()
+        .replace(/\s{2,}/g, ' ')
+        .slice(0, 100) || 'Bank transaction';
 
-      transactions.push({ amount, date: dateStr, description: desc || 'Bank transaction' });
+      transactions.push({ amount, date: todayDate, description });
     } catch { /* skip row */ }
   }
-
   return transactions;
 }
 
@@ -375,147 +317,174 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'No file provided.' }, { status: 400 });
     }
     if (file.size === 0) {
-      return NextResponse.json({ ok: false, error: 'The file is empty. Please upload a valid file.' }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'The file is empty.' }, { status: 400 });
     }
     if (file.size > MAX_BYTES) {
       return NextResponse.json({ ok: false, error: 'File too large (max 10 MB).' }, { status: 413 });
     }
 
-    // Validate filename has a recognisable extension
-    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-    if (!ext || ext === file.name.toLowerCase()) {
-      return NextResponse.json({ ok: false, error: 'File has no extension. Please upload a PDF, image, or CSV.' }, { status: 400 });
-    }
+    const ext      = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
     const mimeType = file.type.toLowerCase();
-    const isImage = IMAGE_TYPES.has(mimeType) || ['.jpg', '.jpeg', '.png', '.webp'].includes(ext);
-    const isPDF = mimeType === PDF_TYPE || ext === '.pdf';
-    const isText = TEXT_TYPES.has(mimeType) || ['.csv', '.txt'].includes(ext);
+    const isImage  = IMAGE_TYPES.has(mimeType) || ['.jpg', '.jpeg', '.png', '.webp'].includes(ext);
+    const isPDF    = mimeType === PDF_TYPE || ext === '.pdf';
+    const isText   = TEXT_TYPES.has(mimeType) || ['.csv', '.txt', '.tsv'].includes(ext);
 
     if (!isImage && !isPDF && !isText) {
       return NextResponse.json({ ok: false, error: 'Unsupported file type.' }, { status: 415 });
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    let rawText = '';
+    let rawText  = '';
+    const todayDate = new Date().toISOString().slice(0, 10);
 
-    // ── IMAGE (Tesseract.js v7 + sharp preprocessing) ──────────────────────
+    // ── IMAGE — multi-pass sharp + tesseract ──────────────────────────────
     if (isImage) {
       try {
-        const sharp = require('sharp');
-        // Gentle pass: grayscale + normalize + mild sharpen (no threshold)
-        // Threshold destroys low-contrast thermal receipts
-        const processedBuffer = await sharp(buffer)
-          .grayscale()
-          .normalize()
-          .sharpen({ sigma: 1.0 })
-          .png()
-          .toBuffer();
+        const workerPath = pathToFileURL(TESSERACT_WORKER).href;
 
-        const Tesseract = require('tesseract.js');
-        const workerPath = pathToFileURL(TESSERACT_WORKER);
-        const worker = await Tesseract.createWorker('eng', 1, {
-          workerPath,
+        const passes = [
+          { name: 'gentle',         fn: () => sharp(buffer).grayscale().normalize().sharpen({ sigma: 1.2, m1: 0.5, m2: 0.5 }).png({ compressionLevel: 1 }).toBuffer() },
+          { name: 'contrast-boost', fn: () => sharp(buffer).grayscale().normalize().linear(1.6, -(128 * 0.6)).sharpen({ sigma: 1.5 }).png({ compressionLevel: 1 }).toBuffer() },
+          { name: 'threshold',      fn: () => sharp(buffer).grayscale().normalize().threshold(145).png({ compressionLevel: 1 }).toBuffer() },
+        ];
+
+        const worker = await Tesseract.createWorker('eng', 1, { workerPath });
+        await worker.setParameters({ 
+          tessedit_pageseg_mode: '6' as any,
           preserve_interword_spaces: '1',
         });
-        const { data: { text, confidence } } = await worker.recognize(processedBuffer);
-        rawText = text;
 
-        // Low confidence → retry with binarized version
-        if ((confidence ?? 100) < 60 && rawText.trim().length < 50) {
-          const hardBuffer = await sharp(buffer)
-            .grayscale()
-            .normalize()
-            .threshold(140)
-            .png()
-            .toBuffer();
-          const { data: { text: text2 } } = await worker.recognize(hardBuffer);
-          if (text2.trim().length > rawText.trim().length) rawText = text2;
+        let bestText = '';
+        let bestConf = 0;
+
+        for (const p of passes) {
+          try {
+            const prep = await p.fn();
+            const { data: { text, confidence } } = await worker.recognize(prep);
+            const cleaned = cleanOCRText(text);
+            const tLen = cleaned.trim().length;
+            console.log(`[UPLOAD/${p.name}] conf=${(confidence ?? 0).toFixed(0)} chars=${tLen}`);
+
+            if (tLen > bestText.trim().length * 1.15 || (confidence > bestConf + 10 && tLen > 20)) {
+              bestText = cleaned;
+              bestConf = confidence ?? 0;
+            }
+            if (bestConf >= 80 && bestText.trim().length > 100) break;
+          } catch (e: any) { console.warn(`[UPLOAD/${p.name}] skip:`, e?.message); }
         }
 
         await worker.terminate();
+        rawText = bestText;
       } catch (err: any) {
-        console.error('[UPLOAD/TESSERACT] Failed:', err);
+        console.error('[UPLOAD/OCR] Failed:', err);
         return NextResponse.json({ ok: false, error: 'Failed to process image via OCR.' }, { status: 422 });
       }
     }
 
-    // ── PDF — pdf-parse (pure Node, zero worker dependencies) ──────────────
+    // ── PDF — smart detection: digital vs scanned ──────────────────────────
     else if (isPDF) {
       try {
-        // Require the internal lib directly to avoid pdf-parse running its
-        // own test suite (which tries to open test/data/05-versions-space.pdf)
-        const pdfParse = require('pdf-parse/lib/pdf-parse.js');
-        const result   = await pdfParse(buffer);
-        rawText = result.text ?? '';
+        const pdfResult = await processPDF(buffer);
+        rawText = pdfResult.text;
+
+        console.log(
+          `[UPLOAD/PDF] isDigital=${pdfResult.isDigital}`,
+          `| pages=${pdfResult.pageCount}`,
+          `| pagesOCRd=${pdfResult.pagesOCRd}`,
+          `| textLen=${rawText.length}`,
+          pdfResult.warning ? `| warning: ${pdfResult.warning}` : '',
+        );
+
+        // If the PDF processor returned a warning (e.g. scanned PDF couldn't render)
+        // surface it to the user immediately instead of silently failing
+        if (pdfResult.warning && rawText.length < 5) {
+          return NextResponse.json({
+            ok: true,
+            data: {
+              extracted:     { amount: 0, date: todayDate, merchant: '', description: '' },
+              source:        'bank',
+              needsReview:   true,
+              amountWarning: pdfResult.warning,
+            },
+          });
+        }
       } catch (err: any) {
-        console.error('[UPLOAD/PDF-PARSE] Failed:', err);
-        return NextResponse.json({ ok: false, error: 'Failed to parse PDF document.' }, { status: 422 });
+        console.error('[UPLOAD/PDF] Failed:', err);
+        return NextResponse.json({ ok: false, error: 'Failed to process PDF document.' }, { status: 422 });
       }
     }
 
-    // ── TEXT / CSV ──────────────────────────────────────────────────────────
+    // ── TEXT / CSV / TSV ───────────────────────────────────────────────────
     else if (isText) {
       rawText = buffer.toString('utf8');
     }
 
+    // ── Guard: empty text ──────────────────────────────────────────────────
     if (!rawText || rawText.trim().length < 5) {
-      // Image-based / scanned PDFs have no text layer — return empty extracted
-      // data so the UI can prompt the user to fill fields manually
       if (isPDF) {
         return NextResponse.json({
           ok: true,
           data: {
-            extracted: { amount: 0, date: new Date().toISOString().split('T')[0], merchant: '', description: '' },
-            source: 'bank',
-            amountWarning: 'This PDF appears to be a scanned image with no text layer. Please enter the details manually.',
-          }
+            extracted:     { amount: 0, date: todayDate, merchant: '', description: '' },
+            source:        'bank',
+            needsReview:   true,
+            amountWarning: 'This PDF has no readable text layer. Please enter details manually.',
+          },
         });
       }
-      return NextResponse.json({ ok: false, error: 'File appears to be empty or unreadable.' }, { status: 422 });
+      return NextResponse.json({ ok: false, error: 'File appears empty or unreadable.' }, { status: 422 });
     }
 
-    const data = parseExtractedText(rawText);
+    console.log('[UPLOAD] Text preview:', rawText.slice(0, 400).replace(/\n/g, ' | '));
 
-    // For CSV/text files, attempt multi-transaction parsing first
+    // ── CSV / TSV: try multi-transaction path first ────────────────────────
     if (isText) {
-      try {
-        const transactions = parseCSVTransactions(rawText);
-        if (transactions.length > 0) {
-          console.log(`[BANK/CSV] Returning ${transactions.length} transactions`);
-          return NextResponse.json({ ok: true, data: { transactions, source: 'bank' } });
-        }
-      } catch (csvErr: any) {
-        console.error('[BANK/CSV] parseCSVTransactions threw:', csvErr?.message);
-        // Fall through to single-transaction extraction
+      const transactions = parseCSVTransactions(rawText);
+      if (transactions.length > 0) {
+        console.log(`[UPLOAD/CSV] Returning ${transactions.length} transactions`);
+        return NextResponse.json({ ok: true, data: { transactions, source: 'bank' } });
       }
     }
 
-    // For PDF bank statements, also try multi-transaction parsing on extracted text
+    // ── PDF: try bank-statement row parser first, then single-receipt parse ─
     if (isPDF) {
-      try {
-        const transactions = parseCSVTransactions(rawText);
-        if (transactions.length > 1) {
-          console.log(`[BANK/PDF] Returning ${transactions.length} transactions from PDF`);
-          return NextResponse.json({ ok: true, data: { transactions, source: 'bank' } });
-        }
-      } catch (pdfTxErr: any) {
-        console.error('[BANK/PDF] Multi-transaction parse failed:', pdfTxErr?.message);
-        // Fall through to single-transaction extraction
+      // For digital PDFs with many lines, try the row-wise bank statement parser
+      const transactions = parsePDFBankStatement(rawText, todayDate);
+      if (transactions.length > 1) {
+        console.log(`[UPLOAD/PDF] Bank statement: returning ${transactions.length} transactions`);
+        return NextResponse.json({ ok: true, data: { transactions, source: 'bank' } });
       }
+      // Single transaction or single-receipt PDF → fall through to receipt parser below
+      console.log('[UPLOAD/PDF] Single-entry PDF — using receipt parser');
     }
 
-    // Warn if no amount could be extracted — UI should prompt user to fill it in
-    const amountWarning = data.amount === 0
-      ? 'Could not detect an amount. Please enter it manually.'
+    // ── Single-transaction fallback (image receipt / single-entry PDF) ──────
+    const parsed = parseReceiptText(rawText);
+
+    const amountWarning = parsed.amount === 0
+      ? 'Could not detect a valid amount — please enter it manually.'
+      : parsed.needsReview
+      ? 'Amount detected but confidence is low — please verify before saving.'
       : null;
 
     return NextResponse.json({
       ok: true,
-      data: { extracted: data, source: isImage ? 'ocr' : 'bank', amountWarning }
+      data: {
+        extracted: {
+          amount:      parsed.amount,
+          date:        todayDate,
+          merchant:    parsed.merchant,
+          description: parsed.description,
+        },
+        source:      isImage ? 'ocr' : 'bank',
+        confidence:  parsed.confidence,
+        needsReview: parsed.needsReview,
+        amountWarning,
+      },
     });
 
   } catch (err: any) {
-    console.error('[UPLOAD] Error:', err);
+    console.error('[UPLOAD] Unexpected error:', err);
     return NextResponse.json({ ok: false, error: 'An unexpected processing error occurred.' }, { status: 500 });
   }
 }

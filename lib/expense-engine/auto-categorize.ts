@@ -12,7 +12,7 @@ import { categorize, CATEGORY_RULES } from './categorizer';
 export interface AutoCategorizeResult {
   categoryId:   number;
   categoryName: string;
-  confidence:   'exact' | 'keyword' | 'fallback';
+  confidence:   'exact' | 'keyword' | 'fallback' | 'ai_high' | 'ai_medium';
   matchedOn?:   string;
 }
 

@@ -45,7 +45,7 @@ function AlertBadge({ pct }: { pct: number | null }) {
 
 // ─── Single budget row ────────────────────────────────────────────────────────
 
-function BudgetRow({ cat, onDeleted, fmt = (n: number) => `$${n.toFixed(2)}` }: { cat: BudgetCategoryDTO; onDeleted?: () => void; fmt?: (n: number) => string }) {
+function BudgetRow({ cat, onDeleted, fmt = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }: { cat: BudgetCategoryDTO; onDeleted?: () => void; fmt?: (n: number) => string }) {
   const [deleting, setDeleting] = useState(false);
   const pct = cat.usedPct;
   const barPct = Math.min(pct ?? 0, 100);
@@ -113,7 +113,7 @@ function BudgetRow({ cat, onDeleted, fmt = (n: number) => `$${n.toFixed(2)}` }: 
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function BudgetTracker({ budget, onDeleted, fmt = (n: number) => `$${n.toFixed(2)}` }: BudgetTrackerProps) {
+export function BudgetTracker({ budget, onDeleted, fmt = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }: BudgetTrackerProps) {
   const overallPct = budget.totalBudget > 0
     ? Math.round((budget.totalSpent / budget.totalBudget) * 100)
     : 0;

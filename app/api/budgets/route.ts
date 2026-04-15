@@ -46,6 +46,14 @@ export async function POST(req: NextRequest) {
   try {
     const bodyData = parsed.data as any;
     bodyData.userId = (session.user as any).id;
+
+    // ── ENFORCE CURRENT MONTH/YEAR — override any client-submitted values ────
+    // Budgets are always applied to the current month. The schema already
+    // rejects past months, but we also override here as an extra safeguard.
+    const now = new Date();
+    bodyData.month = now.getMonth() + 1;
+    bodyData.year  = now.getFullYear();
+
     const summary = await upsertBudget(bodyData);
     return ok(summary, 201);
 

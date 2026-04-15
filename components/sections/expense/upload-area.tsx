@@ -79,9 +79,10 @@ export function UploadArea({ onDataExtracted, onBatchConfirm }: UploadAreaProps)
 
       // ── Multi-transaction CSV path ──────────────────────────────────────
       if (txns && txns.length > 0) {
+        const todayDate = new Date().toISOString().slice(0, 10);
         const enriched: ParsedTransaction[] = txns.map((t: any) => ({
           amount:      t.amount,
-          date:        t.date,
+          date:        todayDate,           // always today — bank statement dates ignored
           description: t.description,
           category:    autoCategorizeName(t.description)?.categoryName ?? 'Other',
         }));
@@ -206,15 +207,13 @@ export function UploadArea({ onDataExtracted, onBatchConfirm }: UploadAreaProps)
                     className="h-9 text-sm font-semibold"
                   />
                 </div>
-                {/* Date */}
+                {/* Date — read-only, locked to today */}
                 <div>
                   <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1">Date</p>
-                  <Input
-                    type="date"
-                    value={tx.date}
-                    onChange={e => updateTransaction(idx, 'date', e.target.value)}
-                    className="h-9 text-sm"
-                  />
+                  <div className="h-9 flex items-center px-3 rounded-md border border-border bg-muted/40 text-sm text-muted-foreground cursor-not-allowed gap-2">
+                    <span>{tx.date}</span>
+                    <span className="text-[8px] font-bold uppercase tracking-wide text-primary/70 bg-primary/10 px-1.5 py-0.5 rounded ml-auto">Today</span>
+                  </div>
                 </div>
                 {/* Description */}
                 <div>

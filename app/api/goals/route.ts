@@ -53,6 +53,14 @@ export async function POST(req: NextRequest) {
     const bodyData = parsed.data as any;
     bodyData.userId = (session.user as any).id;
 
+    // ── ENFORCE: deadline must be today or future ─────────────────────────────
+    const deadlineParsed = new Date(bodyData.deadline + 'T00:00:00Z');
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    if (deadlineParsed < today) {
+      return fail('Goal deadline cannot be in the past.', 400);
+    }
+
     // Enforce long-term goal lock
     if (bodyData.goalType === 'long_term') {
       const { longTermUnlocked, monthsOfData } = await checkGoalUnlockStatus(bodyData.userId);

@@ -147,7 +147,15 @@ export const UpsertBudgetSchema = z.object({
   amount:     PositiveDecimal,
   month:      Month,
   year:       Year,
-});
+}).refine(data => {
+  // Budgets cannot be created for past months
+  const now = new Date();
+  const currentYear  = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  const y = Number(data.year);
+  const m = Number(data.month);
+  return (y > currentYear) || (y === currentYear && m >= currentMonth);
+}, { message: 'Budget cannot be set for a past month', path: ['month'] });
 export type UpsertBudgetInput = z.infer<typeof UpsertBudgetSchema>;
 
 export const GetBudgetsQuerySchema = z.object({
@@ -164,7 +172,12 @@ export const CreateGoalSchema = z.object({
   title:        z.string().trim().min(3, 'Title must be at least 3 characters').max(150),
   description:  z.string().trim().max(1000).optional().default(''),
   targetAmount: PositiveDecimal,
-  deadline:     ISODate,
+  deadline:     ISODate.refine(d => {
+    const parsed = new Date(d + 'T00:00:00Z');
+    const today  = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    return parsed >= today;
+  }, 'Goal deadline cannot be in the past'),
   priority:     z.enum(['low', 'medium', 'high']).default('medium'),
   goalType:     z.enum(['short_term', 'long_term', 'short', 'long'])
                   .transform(v => v === 'short' ? 'short_term' : v === 'long' ? 'long_term' : v)

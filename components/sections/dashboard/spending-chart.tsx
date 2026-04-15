@@ -26,6 +26,8 @@ interface SpendingChartProps {
   title?:   string;
   /** 'bar' renders a BarChart (default), 'line' renders a LineChart */
   variant?: 'bar' | 'line';
+  /** Currency formatter — e.g. `fmt` from useSmartSpend(). Defaults to number with commas. */
+  fmt?:     (amount: number) => string;
 }
 
 /** Normalize any TrendPoint to { name, value } so the chart is data-shape agnostic. */
@@ -51,7 +53,9 @@ const AXIS_COLOR    = '#9ca3af'; // gray-400
 const TOOLTIP_BG    = 'var(--background, #1f2937)';
 const TOOLTIP_BORDER = 'var(--border, #374151)';
 
-export function SpendingChart({ data, title = 'Spending Trends', variant = 'bar' }: SpendingChartProps) {
+export function SpendingChart({ data, title = 'Spending Trends', variant = 'bar', fmt }: SpendingChartProps) {
+  // Default formatter: clean number with commas, no currency symbol
+  const fmtValue = fmt ?? ((v: number) => v.toLocaleString('en-IN', { maximumFractionDigits: 0 }));
   // Normalize and guard
   let chartData: { name: string; value: number }[] = [];
 
@@ -101,8 +105,8 @@ export function SpendingChart({ data, title = 'Spending Trends', variant = 'bar'
     axisLine:      false as const,
     tick:          { fill: AXIS_COLOR },
     domain:        [0, 'auto'] as any, // auto dynamic scaling
-    tickFormatter: (v: number) => `$${v}`,
-    width:         45,
+    tickFormatter: (v: number) => fmtValue(v),
+    width:         60,
     allowDecimals: false,
   };
 
@@ -116,7 +120,7 @@ export function SpendingChart({ data, title = 'Spending Trends', variant = 'bar'
     },
     itemStyle: { color: '#818cf8', fontWeight: 700 }, // bright indigo
     labelStyle: { fontWeight: 700, marginBottom: '4px', color: '#fff' },
-    formatter:    (value: number) => [`$${value.toLocaleString()}`, 'Total Spent'],
+    formatter:    (value: number) => [fmtValue(value), 'Total Spent'],
   };
 
   return (

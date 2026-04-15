@@ -3,34 +3,38 @@ import { Card } from '@/components/ui/card';
 
 interface OverviewProps {
   stats: DashboardStats;
+  /** Currency formatter — e.g. fmt from useSmartSpend(). */
+  fmt?: (amount: number) => string;
 }
 
-export function FinancialOverview({ stats }: OverviewProps) {
+export function FinancialOverview({ stats, fmt }: OverviewProps) {
+  const format = fmt ?? ((n: number) => `$${n.toFixed(2)}`);
+
   const cards = [
     {
       title: 'Total Income',
-      value: `$${stats.totalIncome.toFixed(2)}`,
+      value: format(stats.totalIncome),
       icon: '💵',
       color: 'bg-green-50 dark:bg-green-950/30',
       textColor: 'text-green-600 dark:text-green-400',
     },
     {
       title: 'Total Expenses',
-      value: `$${stats.totalExpenses.toFixed(2)}`,
+      value: format(stats.totalExpenses),
       icon: '💸',
       color: 'bg-red-50 dark:bg-red-950/30',
       textColor: 'text-red-600 dark:text-red-400',
     },
     {
       title: 'Savings',
-      value: `$${stats.savings.toFixed(2)}`,
+      value: format(stats.savings),
       icon: '🏦',
       color: 'bg-green-50 dark:bg-green-950/30',
       textColor: 'text-green-600 dark:text-green-400',
     },
     {
       title: 'Budget Remaining',
-      value: `$${stats.budgetRemaining.toFixed(2)}`,
+      value: format(stats.budgetRemaining),
       icon: '📊',
       color: 'bg-accent/10',
       textColor: 'text-accent',

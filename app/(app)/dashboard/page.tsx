@@ -377,7 +377,7 @@ export default function DashboardPage() {
         {/* Spending trend */}
         {data.monthlyTrend && data.monthlyTrend.length > 0 && (
           <div className="lg:col-span-2">
-            <SpendingChart data={data.monthlyTrend} title="Monthly Spending Trend" variant="bar" />
+            <SpendingChart data={data.monthlyTrend} title="Monthly Spending Trend" variant="bar" fmt={fmt} />
           </div>
         )}
 

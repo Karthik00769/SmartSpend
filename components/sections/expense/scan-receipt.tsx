@@ -108,12 +108,14 @@ export function ScanReceiptArea({ onDataExtracted }: ScanReceiptAreaProps) {
         throw new Error(json.error || 'Parsing failed');
       }
 
+      const extracted:     ExtractedData = json.data?.extracted;
+      const amountWarning: string | null = json.data?.amountWarning ?? null;
+      const confidence:    string        = json.data?.confidence ?? 'low';
+      const needsReview:   boolean       = json.data?.needsReview ?? true;
+
       setScannedList(prev =>
         prev.map(f => f.name === file.name ? { ...f, status: 'done' } : f)
       );
-
-      const extracted: ExtractedData = json.data?.extracted;
-      const amountWarning: string | null = json.data?.amountWarning ?? null;
 
       if (!extracted) {
         throw new Error('No data could be extracted from this image');
@@ -121,8 +123,12 @@ export function ScanReceiptArea({ onDataExtracted }: ScanReceiptAreaProps) {
 
       if (amountWarning) {
         toast.warning(amountWarning);
+      } else if (needsReview || confidence === 'low') {
+        toast.warning('Receipt scanned with low confidence — please verify all fields.');
+      } else if (confidence === 'medium') {
+        toast.info('Receipt scanned. Please review the pre-filled details.');
       } else {
-        toast.success('Receipt scanned. Review and confirm the details.');
+        toast.success('Receipt scanned successfully. Review and confirm the details.');
       }
 
       // Pass data to parent (AddExpensePage) for pre-filling the form
@@ -137,6 +143,7 @@ export function ScanReceiptArea({ onDataExtracted }: ScanReceiptAreaProps) {
       setIsScanning(false);
     }
   };
+
 
   return (
     <Card className="p-8">

@@ -67,10 +67,20 @@ export async function processExpense(
   }
 
   // ── Step 2: Categorize ────────────────────────────────────────────────────
-  const cat = categorize(
+  let cat = categorize(
     raw.categoryId ? Number(raw.categoryId) : undefined,
     raw.description || ''
   );
+
+  // 🔥 If brute force or explicit ID fails to find a specific category, try Gemini AI
+  if (cat.confidence === 'fallback' && raw.description) {
+    const { callGeminiCategorizer } = await import('@/lib/ai/expenseCategorizer');
+    const aiResult = await callGeminiCategorizer(raw.description);
+    
+    if (aiResult) {
+      cat = aiResult;
+    }
+  }
 
   // ── Step 3: Enrich with temporal metadata ─────────────────────────────────
   const processed = enrichExpense(raw, cat.categoryId, userId);

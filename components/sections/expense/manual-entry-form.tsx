@@ -327,7 +327,7 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
               )}
             </FormItem>
 
-            {/* Date */}
+            {/* Date — always today, read-only */}
             <FormField
               control={form.control}
               name="date"
@@ -335,8 +335,22 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
                 <FormItem>
                   <FormLabel className="text-xs font-medium text-muted-foreground">Date</FormLabel>
                   <FormControl>
-                    <Input type="date" className="h-10" {...field} />
+                    <div className="relative">
+                      <Input
+                        type="date"
+                        className="h-10 bg-muted/40 cursor-not-allowed text-muted-foreground"
+                        readOnly
+                        disabled
+                        {...field}
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-wide text-primary/70 bg-primary/10 px-1.5 py-0.5 rounded">
+                        Today
+                      </span>
+                    </div>
                   </FormControl>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    📅 Expenses are always recorded as of today.
+                  </p>
                   <FormMessage />
                 </FormItem>
               )}
@@ -379,7 +393,10 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
               variant="outline"
               className="h-10 px-5"
               onClick={() => {
-                form.reset();
+                form.reset({
+                  amount: undefined, categoryId: undefined, categoryName: undefined,
+                  description: '', date: today(),
+                });
                 setUseAutoDetect(false);
                 setCategoryText('');
                 setAutoDetectHint(null);

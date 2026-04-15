@@ -61,7 +61,7 @@ export interface CategoryRule {
 export interface CategorizationResult {
   categoryId:   number;
   categoryName: string;
-  confidence:   'exact' | 'keyword' | 'fallback';
+  confidence:   'exact' | 'keyword' | 'fallback' | 'ai_high' | 'ai_medium';
   matchedOn?:   string;          // which keyword triggered the match
 }
 

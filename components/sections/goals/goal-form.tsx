@@ -221,6 +221,9 @@ export function GoalForm() {
                       {...field}
                     />
                   </FormControl>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    📅 Deadline must be today or a future date.
+                  </p>
                   <FormMessage />
                 </FormItem>
               );

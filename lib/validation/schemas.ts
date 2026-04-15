@@ -24,11 +24,12 @@ export const expenseSchema = z.object({
       return !isNaN(parsed.getTime());
     }, 'Invalid date')
     .refine(d => {
+      // Expense date must be today — not past, not future
       const parsed = new Date(d + 'T00:00:00Z');
       const today  = new Date();
-      today.setUTCHours(23, 59, 59, 999);
-      return parsed <= today;
-    }, 'Date cannot be in the future'),
+      const todayStr = today.toISOString().slice(0, 10);
+      return d === todayStr;
+    }, 'Expense date must be today'),
 
   description: z.string().max(255, 'Description too long').optional(),
 
@@ -74,7 +75,15 @@ export const goalSchema = z.object({
     .min(0, 'Current amount cannot be negative')
     .default(0),
     
-  deadline: z.string().min(1, 'Deadline is required'),
+  deadline: z.string()
+    .min(1, 'Deadline is required')
+    .refine(d => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+      const parsed = new Date(d + 'T00:00:00Z');
+      const today  = new Date();
+      today.setUTCHours(0, 0, 0, 0);
+      return parsed >= today;
+    }, 'Goal deadline cannot be in the past'),
   
   priority: z.enum(['low', 'medium', 'high']),
   

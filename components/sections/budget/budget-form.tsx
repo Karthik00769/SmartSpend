@@ -83,7 +83,15 @@ export function BudgetForm() {
 
   return (
     <Card className="p-6">
-      <h2 className="text-2xl font-bold text-foreground mb-6">Set Category Budget</h2>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold text-foreground">Set Category Budget</h2>
+        <span className="text-xs font-semibold text-primary bg-primary/10 px-2.5 py-1 rounded-full">
+          📅 {new Date().toLocaleString('default', { month: 'long', year: 'numeric' })}
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground mb-5 -mt-3">
+        Budgets apply to the <strong>current month</strong> only. Past months cannot be edited.
+      </p>
 
       {success && (
         <div className="mb-6 p-4 bg-green-100 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg">
