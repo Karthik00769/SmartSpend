@@ -69,21 +69,36 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── ENFORCE CURRENT DATE — ignore any client-submitted date ──────────────
-    // Always use today's server date regardless of what the client sends.
+    // ── VALIDATE DATE — accept historical dates up to 1 year back ────────────
+    // Allow user-provided date (e.g. from a receipt or manual entry) unless:
+    //  - Date is in the future (use today instead)
+    //  - Date is more than 365 days old (clamp to 1 year ago)
     const todayDate = new Date().toISOString().slice(0, 10);
+    let expenseDate = parsed.data.date || todayDate;
+    const dateParsed = new Date(expenseDate);
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+    if (isNaN(dateParsed.getTime()) || dateParsed > today) {
+      expenseDate = todayDate; // future/invalid → use today
+    } else if (dateParsed < oneYearAgo) {
+      expenseDate = oneYearAgo.toISOString().slice(0, 10); // clamp to 1 year ago
+    }
 
     const result = await processExpense(
       {
         userId:      userId as string,
         categoryId:  resolvedCategoryId,
         amount:      parsed.data.amount as any,
-        date:        todayDate,
+        date:        expenseDate,
         description: parsed.data.description,
         source:      parsed.data.source,
       },
       userId as string,
     );
+
 
     // Engine validation failed — return 422 with field errors
     if (!result.validation.valid) {

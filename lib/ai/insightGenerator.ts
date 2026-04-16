@@ -7,6 +7,8 @@ export interface UserFinancialData {
   categoryDistribution: Record<string, number>;
   budgetUsage: Array<{ category: string; limit: number; spent: number }>;
   goalProgress: Array<{ title: string; target: number; current: number }>;
+  currencySymbol?: string; // e.g. '₹', '$', '£' — defaults to '₹'
+  last3MonthsSpending?: number; // optional context for trend insights
 }
 
 // ─── Output Types ────────────────────────────────────────────────────────────
@@ -34,6 +36,7 @@ const MODEL_CANDIDATES = [
  */
 function generateFallbackInsights(data: UserFinancialData): GeneratedInsight[] {
   const insights: GeneratedInsight[] = [];
+  const sym = data.currencySymbol ?? '₹';
 
   // 1. Highest spending category
   const catEntries = Object.entries(data.categoryDistribution);
@@ -44,7 +47,7 @@ function generateFallbackInsights(data: UserFinancialData): GeneratedInsight[] {
       : 0;
     insights.push({
       type: 'trend',
-      content: `Your highest spending category this month is ${topCat} at $${topAmount.toFixed(2)} (${pct}% of total spend).`,
+      content: `Your highest spending category this month is ${topCat} at ${sym}${topAmount.toFixed(0)} (${pct}% of total spend).`,
     });
   }
 
@@ -52,7 +55,7 @@ function generateFallbackInsights(data: UserFinancialData): GeneratedInsight[] {
   if (data.monthlySpending > 0) {
     insights.push({
       type: 'trend',
-      content: `You've spent $${data.monthlySpending.toFixed(2)} total this month across ${catEntries.length} categories.`,
+      content: `You've spent ${sym}${data.monthlySpending.toFixed(0)} total this month across ${catEntries.length} categories.`,
     });
   }
 
@@ -62,7 +65,7 @@ function generateFallbackInsights(data: UserFinancialData): GeneratedInsight[] {
     const over = b.spent - b.limit;
     insights.push({
       type: 'warning',
-      content: `You've exceeded your ${b.category} budget by $${over.toFixed(2)} ($${b.spent.toFixed(2)} spent vs $${b.limit.toFixed(2)} limit). Consider reducing discretionary spending here.`,
+      content: `You've exceeded your ${b.category} budget by ${sym}${over.toFixed(0)} (${sym}${b.spent.toFixed(0)} spent vs ${sym}${b.limit.toFixed(0)} limit). Consider reducing discretionary spending here.`,
     });
   }
 
@@ -74,7 +77,7 @@ function generateFallbackInsights(data: UserFinancialData): GeneratedInsight[] {
     const pct = Math.round((b.spent / b.limit) * 100);
     insights.push({
       type: 'warning',
-      content: `You're at ${pct}% of your ${b.category} budget ($${b.spent.toFixed(2)} / $${b.limit.toFixed(2)}). Watch your spending to stay on track.`,
+      content: `You're at ${pct}% of your ${b.category} budget (${sym}${b.spent.toFixed(0)} / ${sym}${b.limit.toFixed(0)}). Watch your spending to stay on track.`,
     });
   }
 
@@ -84,7 +87,7 @@ function generateFallbackInsights(data: UserFinancialData): GeneratedInsight[] {
       const pct = Math.round((g.current / g.target) * 100);
       insights.push({
         type: pct >= 75 ? 'opportunity' : 'trend',
-        content: `Your "${g.title}" goal is ${pct}% complete ($${g.current.toFixed(2)} of $${g.target.toFixed(2)} saved). ${pct >= 75 ? 'Great work — you\'re almost there!' : 'Keep saving consistently to reach your target.'}`,
+        content: `Your "${g.title}" goal is ${pct}% complete (${sym}${g.current.toFixed(0)} of ${sym}${g.target.toFixed(0)} saved). ${pct >= 75 ? "Great work — you're almost there!" : 'Keep saving consistently to reach your target.'}`,
       });
     }
   }
@@ -111,6 +114,7 @@ function generateFallbackInsights(data: UserFinancialData): GeneratedInsight[] {
   return insights;
 }
 
+
 // ─── AI Generator Function ───────────────────────────────────────────────────
 
 /**
@@ -126,9 +130,11 @@ export async function generateInsights(data: UserFinancialData): Promise<Generat
     return generateFallbackInsights(data);
   }
 
+  const sym = data.currencySymbol ?? '₹';
   const prompt = `
     You are an expert financial advisor for the SmartSpend app.
     Analyze the following user financial data and generate 1 to 3 natural language insights.
+    IMPORTANT: Use the currency symbol "${sym}" for ALL amounts (never use $).
     
     CRITICAL RULES:
     1. NEVER generate or include any numeric financial health scores or percentages (e.g., "Health Score: 85").
@@ -136,22 +142,25 @@ export async function generateInsights(data: UserFinancialData): Promise<Generat
     3. ONLY use natural language to explain trends, identification of risks (overspending), or goal progress.
     4. If the data is empty (no spending, no budgets), encourage the user to add transactions to unlock insights.
     5. Be professional, concise, and highly actionable.
+    6. Use the currency symbol ${sym} for ALL monetary amounts.
 
     Data Context:
-    - Monthly Spending: $${data.monthlySpending}
+    - Monthly Spending: ${sym}${data.monthlySpending}
     - Category Breakdown: ${JSON.stringify(data.categoryDistribution)}
     - Budget Status: ${JSON.stringify(data.budgetUsage)}
-    - Active Goals: ${JSON.stringify(data.goalProgress)}
+    - Active Goals: ${JSON.stringify(data.goalProgress)}${data.last3MonthsSpending !== undefined ? `
+    - Last 3 months average spending: ${sym}${(data.last3MonthsSpending / 3).toFixed(0)}/month` : ''}
 
     Output Format:
-    Return as a clean JSON array with this structure:
+    Return as a clean JSON array:
     [
       {
         "type": "warning | opportunity | trend",
-        "content": "Actionable explanation (e.g. 'You have spent more on dining than in previous weeks; consider cooking at home to save for your goals.')"
+        "content": "Actionable insight using ${sym} for currency."
       }
     ]
   `;
+
 
   const genAI = new GoogleGenerativeAI(apiKey);
 

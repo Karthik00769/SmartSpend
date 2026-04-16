@@ -15,43 +15,124 @@ interface GeminiCategorizeResult {
 
 /**
  * mapToExistingCategory
- * Normalises the AI category prediction and maps it safely to DB categories.
+ * Normalises the AI category prediction and maps it safely to CATEGORY_RULES entries.
+ * The CATEGORY_RULES names are: Food & Dining, Transportation, Utilities, Entertainment,
+ * Shopping, Healthcare, Education, Subscriptions, Other.
  */
 function mapToExistingCategory(category: string): CategorizationResult | null {
   const normalized = category.trim().toLowerCase();
-  
-  // Custom smart mapping for common synonyms that AI might use
+
+  // Map AI output → exact CATEGORY_RULES name (case-insensitive)
   const aiSynonymMap: Record<string, string> = {
-    'food': 'food & dining',
-    'travel': 'transportation',
-    'bills': 'utilities',
-    'entertainment': 'entertainment',
-    'health': 'healthcare',
-    'education': 'education',
-    'shopping': 'shopping',
-    'groceries': 'food & dining',
-    'transport': 'transportation',
-    'rent': 'utilities',
-    'utilities': 'utilities',
-    'others': 'other'
+    // Food
+    'food': 'Food & Dining',
+    'food & dining': 'Food & Dining',
+    'food & drinks': 'Food & Dining',
+    'dining': 'Food & Dining',
+    'groceries': 'Food & Dining',
+    'grocery': 'Food & Dining',
+    'restaurant': 'Food & Dining',
+    'swiggy': 'Food & Dining',
+    'zomato': 'Food & Dining',
+    // Transport
+    'travel': 'Transportation',
+    'transport': 'Transportation',
+    'transportation': 'Transportation',
+    'travel & commute': 'Transportation',
+    'commute': 'Transportation',
+    'cab': 'Transportation',
+    'uber': 'Transportation',
+    'ola': 'Transportation',
+    // Utilities
+    'bills': 'Utilities',
+    'utilities': 'Utilities',
+    'home & living': 'Utilities',
+    'rent': 'Utilities',
+    'electricity': 'Utilities',
+    // Entertainment
+    'entertainment': 'Entertainment',
+    'movies': 'Entertainment',
+    'streaming': 'Entertainment',
+    // Shopping
+    'shopping': 'Shopping',
+    'shopping & retail': 'Shopping',
+    'retail': 'Shopping',
+    'clothes': 'Shopping',
+    'clothing': 'Shopping',
+    'amazon': 'Shopping',
+    'flipkart': 'Shopping',
+    // Healthcare
+    'health': 'Healthcare',
+    'healthcare': 'Healthcare',
+    'health & wellness': 'Healthcare',
+    'medical': 'Healthcare',
+    'pharmacy': 'Healthcare',
+    'doctor': 'Healthcare',
+    'hospital': 'Healthcare',
+    // Education
+    'education': 'Education',
+    'school': 'Education',
+    'college': 'Education',
+    'university': 'Education',
+    'tuition': 'Education',
+    // Subscriptions
+    'subscriptions': 'Subscriptions',
+    'subscription': 'Subscriptions',
+    'membership': 'Subscriptions',
+    'saas': 'Subscriptions',
+    'software': 'Subscriptions',
+    // Fallback
+    'others': 'Other',
+    'other': 'Other',
+    'miscellaneous': 'Other',
+    'misc': 'Other',
   };
 
-  const mappedName = aiSynonymMap[normalized] || normalized;
+  const targetName = aiSynonymMap[normalized];
 
-  // Search through DB category rules to find a match
-  const rule = CATEGORY_RULES.find(r => r.name.toLowerCase() === mappedName || r.name.toLowerCase().includes(mappedName));
-  
+  // Direct map hit
+  if (targetName) {
+    const rule = CATEGORY_RULES.find(r => r.name === targetName);
+    if (rule) {
+      return {
+        categoryId: rule.categoryId,
+        categoryName: rule.name,
+        confidence: 'ai_medium',
+        matchedOn: `AI mapped from: ${category}`,
+      };
+    }
+  }
+
+  // Fuzzy fallback: search CATEGORY_RULES directly
+  const rule = CATEGORY_RULES.find(r =>
+    r.name.toLowerCase() === normalized ||
+    r.name.toLowerCase().includes(normalized) ||
+    normalized.includes(r.name.toLowerCase().split(' ')[0]) // first word match
+  );
+
   if (rule) {
     return {
       categoryId: rule.categoryId,
       categoryName: rule.name,
       confidence: 'ai_medium',
-      matchedOn: `AI mapped from: ${category}`
+      matchedOn: `AI fuzzy from: ${category}`,
+    };
+  }
+
+  // Default to "Other" rather than returning null (stops broken fallback chain)
+  const fallback = CATEGORY_RULES.find(r => r.categoryId === 9);
+  if (fallback) {
+    return {
+      categoryId: fallback.categoryId,
+      categoryName: fallback.name,
+      confidence: 'fallback',
+      matchedOn: `AI unmapped: ${category}`,
     };
   }
 
   return null;
 }
+
 
 export async function callGeminiCategorizer(description: string): Promise<CategorizationResult | null> {
   const apiKey = process.env.GEMINI_API_KEY;

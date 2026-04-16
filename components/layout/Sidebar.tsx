@@ -23,32 +23,46 @@ export function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
         isCollapsed ? "w-20" : "w-64"
       )}
     >
-      <div className={cn("p-6 flex items-center transition-all duration-300 relative", isCollapsed ? "justify-center px-0" : "justify-between gap-3")}>
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/30 shrink-0">
-            <span className="text-white text-xl">💎</span>
+      {/* Brand header */}
+      <div className={cn("flex items-center border-b border-border transition-all duration-300", isCollapsed ? "p-4 justify-center" : "px-5 py-4 gap-3 justify-between")}>
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/30 shrink-0">
+            <span className="text-white text-lg">💎</span>
           </div>
           {!isCollapsed && (
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent truncate animate-in fade-in duration-500">
+            <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent truncate animate-in fade-in duration-300">
               SmartSpend
             </h1>
           )}
         </div>
-        
-        {/* Modern SaaS Toggle Button */}
-        <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className={cn(
-            "p-1.5 rounded-lg border border-border bg-card hover:bg-muted text-muted-foreground transition-all shadow-sm",
-            isCollapsed ? "absolute -right-3 top-8 z-50 bg-primary text-white border-primary" : ""
-          )}
-          title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-        >
-          <span className="text-xs transition-transform inline-block">
-            {isCollapsed ? "▶" : "◀"}
-          </span>
-        </button>
+
+        {/* Close button — only visible when sidebar is open */}
+        {!isCollapsed && (
+          <button
+            onClick={() => setIsCollapsed(true)}
+            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
+            title="Collapse sidebar"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+        )}
       </div>
+
+      {/* Expand button — floating pill when collapsed */}
+      {isCollapsed && (
+        <button
+          onClick={() => setIsCollapsed(false)}
+          className="absolute -right-3 top-16 z-50 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center shadow-lg shadow-primary/40 hover:scale-110 transition-transform"
+          title="Expand sidebar"
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <path d="M3 2l4 3-4 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+      )}
+
 
       <nav className="flex flex-col flex-1 px-4 space-y-2 py-4 overflow-y-auto overflow-x-hidden">
         {NAV_LINKS.map((link) => {
