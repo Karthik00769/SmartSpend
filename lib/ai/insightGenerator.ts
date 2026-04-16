@@ -169,6 +169,7 @@ STRICT RULES:
 * DO NOT generalize
 * Keep insights practical and human-like
 * Max 3–5 insights
+* Understand regional and global contexts including India, US, Europe, and others. Recognize services like UPI, Swiggy, Zomato, Ola, Uber, Amazon, Flipkart, LIC, etc.
 
 ---
 USER:

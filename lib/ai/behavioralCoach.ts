@@ -32,6 +32,7 @@ RULES:
 * No generic advice
 * Be specific
 * Suggest % or amount change
+* Understand regional and global contexts including India, US, Europe, and others. Recognize services like UPI, Swiggy, Zomato, Ola, Uber, Amazon, Flipkart, LIC, etc.
 
 ---
 USER:

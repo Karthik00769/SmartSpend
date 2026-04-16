@@ -32,14 +32,7 @@ STRICT RULES:
 * If uncertain, return "Other"
 
 CONTEXT:
-* Understand global + regional usage (India, US, Europe, etc.)
-* Examples:
-  Swiggy → Food & Dining
-  Zomato → Food & Dining
-  Uber → Transportation
-  Ola → Transportation
-  LIC → Utilities
-  Amazon → Shopping
+* Understand regional and global contexts including India, US, Europe, and others. Recognize services like UPI, Swiggy, Zomato, Ola, Uber, Amazon, Flipkart, LIC, etc.
 
 ---
 USER INPUT:

@@ -32,6 +32,7 @@ STRICT RULES:
 * Ignore phone numbers, GST, invoice IDs
 * Amount must be realistic (₹1 – ₹1,00,000)
 * If the OCR raw text doesn't explicitly contain the merchant name, do not make one up.
+* Understand regional and global contexts including India, US, Europe, and others. Recognize services like UPI, Swiggy, Zomato, Ola, Uber, Amazon, Flipkart, LIC, etc.
 
 ---
 USER:
