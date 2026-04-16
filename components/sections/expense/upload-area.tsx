@@ -15,6 +15,8 @@ export interface ParsedTransaction {
   date:        string;
   description: string;
   category:    string;   // editable — pre-filled by auto-categorizer
+  confidence:  'high' | 'medium' | 'low';
+  needsReview: boolean;
 }
 
 interface UploadAreaProps {
@@ -77,19 +79,32 @@ export function UploadArea({ onDataExtracted, onBatchConfirm }: UploadAreaProps)
 
       const { transactions: txns, extracted, amountWarning } = json.data ?? {};
 
-      // ── Multi-transaction CSV path ──────────────────────────────────────
+      // ── Multi-transaction CSV/PDF path ──────────────────────────────────
       if (txns && txns.length > 0) {
         const todayDate = new Date().toISOString().slice(0, 10);
         const enriched: ParsedTransaction[] = txns.map((t: any) => ({
           amount:      t.amount,
-          date:        todayDate,           // always today — bank statement dates ignored
+          date:        todayDate,
           description: t.description,
           category:    autoCategorizeName(t.description)?.categoryName ?? 'Other',
+          confidence:  (t.confidence as 'high' | 'medium' | 'low') ?? 'low',
+          needsReview: t.needsReview ?? t.confidence === 'low',
         }));
+
+        // Surface any backend warning (e.g. positional mode used)
+        const backendWarning = json.data?.warning;
+        if (backendWarning) toast.warning(backendWarning);
+
         setTransactions(enriched);
-        toast.success(`Found ${enriched.length} transaction${enriched.length > 1 ? 's' : ''}. Review and confirm below.`);
+        const reviewCount = enriched.filter(t => t.needsReview).length;
+        if (reviewCount > 0) {
+          toast.info(`${enriched.length} transactions found — ${reviewCount} need review (highlighted in yellow).`);
+        } else {
+          toast.success(`Found ${enriched.length} transaction${enriched.length > 1 ? 's' : ''}. Review and confirm below.`);
+        }
         return;
       }
+
 
       // ── Single-transaction path (PDF / image fallback) ──────────────────
       if (!extracted) throw new Error('No data found in this file.');
@@ -196,10 +211,26 @@ export function UploadArea({ onDataExtracted, onBatchConfirm }: UploadAreaProps)
 
           <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
             {transactions.map((tx, idx) => (
-              <div key={idx} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-3 p-4 bg-muted/20 rounded-xl border border-border/40 items-center">
+              <div
+                key={idx}
+                className={`grid grid-cols-[1fr_1fr_1fr_auto] gap-3 p-4 rounded-xl border items-center transition-colors ${
+                  tx.needsReview
+                    ? 'bg-amber-500/5 border-amber-400/40'
+                    : 'bg-muted/20 border-border/40'
+                }`}
+              >
                 {/* Amount */}
                 <div>
-                  <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1">Amount</p>
+                  <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1 flex items-center gap-1.5">
+                    Amount
+                    <span className={`ml-auto px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide ${
+                      tx.confidence === 'high'   ? 'bg-green-500/10 text-green-600 dark:text-green-400' :
+                      tx.confidence === 'medium' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' :
+                      'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                    }`}>
+                      {tx.confidence}
+                    </span>
+                  </p>
                   <Input
                     type="number" step="0.01" min="0.01"
                     value={tx.amount}

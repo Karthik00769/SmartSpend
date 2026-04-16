@@ -23,16 +23,11 @@ import path                          from 'node:path';
 import { pathToFileURL }             from 'node:url';
 import {
   parseReceiptTextWithLearning,
-
   cleanOCRText,
-  detectCSVDelimiter,
-  splitCSVLine,
-  detectCSVColumns,
-  parseRawAmount,
-  validateCSVAmount,
-  parsePDFBankStatement,
 } from '@/lib/ocr/receipt-parser';
+import { parseCSV, parsePDFBankText } from '@/lib/ocr/bank-parser';
 import { preprocessImageWithOpenCV } from '@/lib/ocr/opencv-preprocess';
+
 
 // NOTE: pdf-processor is intentionally NOT imported here at the top level.
 // pdfjs-dist (used inside pdf-processor) requires browser globals (DOMMatrix etc.)
@@ -146,208 +141,6 @@ async function preprocessImage(sharp: any, buf: Buffer): Promise<{ buffer: Buffe
   const { data: { text: finalText } } = await worker.recognize(best!.buffer);
   await worker.terminate();
   return { buffer: best!.buffer, pass: best!.pass };
-}
-
-// ─── CSV multi-transaction parser ────────────────────────────────────────────
-
-export interface ParsedTransaction {
-  amount:      number;
-  date:        string;  // always today
-  description: string;
-}
-
-/**
- * parseCSVTransactions
- * Parses a CSV/TSV/tabular text file into individual transactions.
- *
- * Features:
- *  - Auto-detects delimiter (tab / pipe / semicolon / comma)
- *  - Dynamically maps columns by header keyword matching
- *  - Handles separate debit/credit columns (some banks)
- *  - Per-row validation: amount must be 1–1,00,000
- *  - Falls back to positional inference if no headers found
- *  - All dates are forced to today
- */
-function parseCSVTransactions(text: string): ParsedTransaction[] {
-  try {
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-    if (lines.length < 2) return [];
-
-    // ── Detect delimiter ───────────────────────────────────────────────────
-    const delim = detectCSVDelimiter(lines);
-    const split  = (line: string) => splitCSVLine(line, delim);
-
-    // ── Parse headers ──────────────────────────────────────────────────────
-    const headerRow    = split(lines[0]);
-    const colMap       = detectCSVColumns(headerRow);
-
-    console.log(
-      `[CSV] delim="${delim === '\t' ? 'TAB' : delim}"`,
-      `| dateCol=${colMap.dateCol}`,
-      `| amtCol=${colMap.amountCol}`,
-      `| debitCol=${colMap.debitCol}`,
-      `| creditCol=${colMap.creditCol}`,
-      `| descCol=${colMap.descCol}`,
-      `| headers=[${headerRow.join(' | ')}]`,
-    );
-
-    // If no amount column at all, fall back to positional parser
-    const hasAmountInfo = colMap.amountCol !== -1 || colMap.debitCol !== -1 || colMap.creditCol !== -1;
-    if (!hasAmountInfo) {
-      console.log('[CSV] No amount column found, using positional parser');
-      return parsePositional(lines, split);
-    }
-
-    // ── Detect balance column to EXCLUDE it from amount resolution ──────────
-    // Balance columns often have large numbers that look like transaction amounts
-    const balanceCol = (() => {
-      const h = headerRow.map(x => x.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim());
-      const balanceCandidates = [
-        'balance', 'closing balance', 'available balance', 'running balance',
-        'balance amount', 'bal', 'ledger balance', 'book balance',
-      ];
-      for (const c of balanceCandidates) {
-        const idx = h.findIndex(hdr => hdr === c || hdr.includes(c));
-        if (idx !== -1) {
-          console.log(`[CSV] Balance column detected at index ${idx}: "${headerRow[idx]}"`);
-          return idx;
-        }
-      }
-      return -1;
-    })();
-
-    const transactions: ParsedTransaction[] = [];
-    let skipped = 0;
-    const todayDate = new Date().toISOString().slice(0, 10);
-
-    for (let i = 1; i < lines.length; i++) {
-      try {
-        const cols = split(lines[i]);
-
-        // Skip rows too short to have all needed columns
-        const maxNeeded = Math.max(
-          colMap.amountCol, colMap.debitCol, colMap.creditCol,
-          colMap.descCol,
-        );
-        if (cols.length <= Math.max(0, maxNeeded)) { skipped++; continue; }
-
-        // Skip header-repeat rows (common in bank statements)
-        const firstCell = (cols[0] ?? '').toLowerCase();
-        if (/^(date|sl|sr|no|#|s\.no|sno)/.test(firstCell)) { skipped++; continue; }
-
-        // Skip fully empty rows
-        if (cols.every(c => !c.trim())) { skipped++; continue; }
-
-        // ── Resolve amount — strict debit/credit/amount priority (Task 4) ────
-        let amount = 0;
-
-        // RULE: if both debit and credit exist, debit > 0 wins (it's an expense)
-        if (colMap.debitCol !== -1 && colMap.creditCol !== -1) {
-          const debit  = parseRawAmount(cols[colMap.debitCol]  ?? '');
-          const credit = parseRawAmount(cols[colMap.creditCol] ?? '');
-          // Debit (withdrawal) = expense; credit (deposit) = income — skip credits
-          amount = debit > 0 ? debit : 0;
-          if (amount === 0) { skipped++; continue; } // credit-only row, skip
-        } else if (colMap.debitCol !== -1) {
-          amount = parseRawAmount(cols[colMap.debitCol] ?? '');
-        } else if (colMap.amountCol !== -1) {
-          // Single amount column: make sure we're NOT reading from balance column
-          if (colMap.amountCol !== balanceCol) {
-            amount = parseRawAmount(cols[colMap.amountCol] ?? '');
-          }
-        }
-
-        // Never use balance column as amount
-        if (balanceCol !== -1 && amount === 0) {
-          // If we still have no amount, skip — don't pull from balance
-          skipped++;
-          continue;
-        }
-
-        // Validate amount range [1, 100000]
-        if (!validateCSVAmount(amount)) {
-          console.log(`[CSV] Row ${i}: skipped — amount ${amount} out of range [1, 100000]`);
-          skipped++;
-          continue;
-        }
-
-        // ── Resolve description (must be ≥ 3 chars) ───────────────────────────
-        let description = '';
-        if (colMap.descCol !== -1) {
-          description = (cols[colMap.descCol] ?? '').trim();
-        }
-        // If no desc col or empty, concatenate non-amount non-date cols
-        if (!description || description.length < 3) {
-          description = cols
-            .filter((_, idx) =>
-              idx !== colMap.amountCol && idx !== colMap.debitCol &&
-              idx !== colMap.creditCol && idx !== colMap.dateCol &&
-              idx !== balanceCol
-            )
-            .join(' ')
-            .trim()
-            .slice(0, 100);
-        }
-
-        // RULE: valid transaction must have description length > 3
-        if (description.length < 3) {
-          description = 'Bank transaction';
-        }
-
-        transactions.push({ amount, date: todayDate, description });
-
-      } catch (rowErr: any) {
-        console.log(`[CSV] Row ${i}: parse error — ${rowErr?.message ?? rowErr}`);
-        skipped++;
-      }
-    }
-
-    if (skipped > 0) {
-      console.log(`[CSV] Skipped ${skipped} rows, extracted ${transactions.length} valid transactions`);
-    }
-    return transactions;
-
-  } catch (err: any) {
-    console.error('[CSV] Fatal parse error:', err?.message ?? err);
-    return [];
-  }
-}
-
-// ─── Positional fallback ─────────────────────────────────────────────────────
-
-function parsePositional(
-  lines: string[],
-  split: (l: string) => string[],
-): ParsedTransaction[] {
-  const transactions: ParsedTransaction[] = [];
-  const todayDate = new Date().toISOString().slice(0, 10);
-
-  for (let i = 0; i < lines.length; i++) {
-    try {
-      const cols = split(lines[i]);
-      if (cols.length < 2) continue;
-
-      // Find last column that parses to a valid expense amount
-      let amount = 0;
-      let amtColIdx = -1;
-      for (let c = cols.length - 1; c >= 0; c--) {
-        const v = parseRawAmount(cols[c]);
-        if (validateCSVAmount(v)) { amount = v; amtColIdx = c; break; }
-      }
-      if (!amount) continue;
-
-      // Description: all other columns joined
-      const description = cols
-        .filter((_, c) => c !== amtColIdx)
-        .join(' ')
-        .trim()
-        .replace(/\s{2,}/g, ' ')
-        .slice(0, 100) || 'Bank transaction';
-
-      transactions.push({ amount, date: todayDate, description });
-    } catch { /* skip row */ }
-  }
-  return transactions;
 }
 
 // ─── Route handler ────────────────────────────────────────────────────────────
@@ -513,25 +306,45 @@ export async function POST(req: NextRequest) {
 
     console.log('[UPLOAD] Text preview:', rawText.slice(0, 400).replace(/\n/g, ' | '));
 
-    // ── CSV / TSV: try multi-transaction path first ────────────────────────
+    // ── CSV / TSV: hardened multi-transaction path ─────────────────────────
     if (isText) {
-      const transactions = parseCSVTransactions(rawText);
-      if (transactions.length > 0) {
-        console.log(`[UPLOAD/CSV] Returning ${transactions.length} transactions`);
-        return NextResponse.json({ ok: true, data: { transactions, source: 'bank' } });
+      const parseResult = parseCSV(rawText, todayDate);
+      if (parseResult.transactions.length > 0) {
+        console.log(`[UPLOAD/CSV] ${parseResult.transactions.length} transactions | mode=${parseResult.parseMode}`);
+        // Warn if all rows are low-confidence (positional mode)
+        const allLow = parseResult.transactions.every(t => t.confidence === 'low');
+        return NextResponse.json({
+          ok: true,
+          data: {
+            transactions: parseResult.transactions,
+            source:       'bank',
+            parseMode:    parseResult.parseMode,
+            warning:      parseResult.warning ?? (allLow ? 'Column structure unclear — all transactions need review.' : undefined),
+          },
+        });
       }
+      // No transactions found — fall through to single-receipt parse
+      console.log('[UPLOAD/CSV] Zero transactions extracted — trying single-receipt parser');
     }
 
-    // ── PDF: try bank-statement row parser first, then single-receipt parse ─
+    // ── PDF: try hardened bank-statement row parser, then single-receipt parse ─
     if (isPDF) {
-      // For digital PDFs with many lines, try the row-wise bank statement parser
-      const transactions = parsePDFBankStatement(rawText, todayDate);
-      if (transactions.length > 1) {
-        console.log(`[UPLOAD/PDF] Bank statement: returning ${transactions.length} transactions`);
-        return NextResponse.json({ ok: true, data: { transactions, source: 'bank' } });
+      const parseResult = parsePDFBankText(rawText, todayDate);
+      if (parseResult.transactions.length > 1) {
+        console.log(`[UPLOAD/PDF] Bank statement: ${parseResult.transactions.length} transactions`);
+        const allLow = parseResult.transactions.every(t => t.confidence === 'low');
+        return NextResponse.json({
+          ok: true,
+          data: {
+            transactions: parseResult.transactions,
+            source:       'bank',
+            parseMode:    'pdf-lines',
+            warning:      parseResult.warning ?? (allLow ? 'PDF column structure unclear — all transactions need review.' : undefined),
+          },
+        });
       }
-      // Single transaction or single-receipt PDF → fall through to receipt parser below
-      console.log('[UPLOAD/PDF] Single-entry PDF — using receipt parser');
+      // Single transaction or receipt PDF → receipt parser
+      console.log('[UPLOAD/PDF] Single-entry or no-structure PDF — using receipt parser');
     }
 
     // ── Single-transaction fallback (image receipt / single-entry PDF) ──────
