@@ -47,6 +47,7 @@ const DB: mysql.ConnectionOptions = {
   supportBigNumbers:  true,
   bigNumberStrings:   true,
   timezone:           '+00:00',
+  ssl:                process.env.DB_HOST?.includes('tidb') ? { minVersion: 'TLSv1.2' } : undefined,
 };
 
 const MIGRATIONS_DIR = path.resolve(process.cwd(), 'db', 'migrations');

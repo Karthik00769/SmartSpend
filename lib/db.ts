@@ -25,6 +25,8 @@ function createPool(): mysql.Pool {
     // Return BigInt as strings so JSON.stringify doesn't throw
     supportBigNumbers:  true,
     bigNumberStrings:   true,
+    // Aiven, TiDB, and other managed cloud MySQL require SSL.
+    ssl: process.env.DB_SSL === 'true' || process.env.DB_HOST?.includes('tidbcloud') || process.env.DB_HOST?.includes('aiven') ? { minVersion: 'TLSv1.2', rejectUnauthorized: false } : undefined,
   });
 }
 
