@@ -35,6 +35,15 @@ export async function PATCH(
   const parsed = await parseBody(req, PatchGoalSchema);
   if (!parsed.success) return fail(parsed.message, 400, parsed.fieldErrors);
 
+  if (parsed.data.deadline) {
+    const deadlineParsed = new Date(parsed.data.deadline + 'T00:00:00Z');
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    if (deadlineParsed < today) {
+      return fail('Goal deadline cannot be in the past.', 400);
+    }
+  }
+
   try {
     const updated = await updateGoal(goalId, userId, parsed.data);
     if (!updated) return fail('Goal not found.', 404);

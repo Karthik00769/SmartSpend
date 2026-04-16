@@ -235,14 +235,22 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
           toast.info('Date adjusted to today', { duration: 4000 });
         }
 
-        const budgetUsed = result.budgetStatus?.usedPercent;
-        let successMsg = result.message || `Expense added for ${values.date}`;
-        if (budgetUsed !== undefined) {
-          successMsg += ` – Budget used: ${Math.round(budgetUsed)}%`;
+        const dateObj = new Date(values.date + 'T00:00:00Z');
+        const formattedDate = dateObj.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+        
+        let successMsg = `Expense added for ${formattedDate}`;
+        const descriptions: string[] = [];
+
+        if (result.budgetStatus) {
+          descriptions.push(`You used ${Math.round(result.budgetStatus.usedPercent)}% of your ${result.categorization.categoryName} budget`);
+        }
+
+        if (result.goalStatus) {
+          descriptions.push(`Goal progress updated: ${Math.round(result.goalStatus.progress)}%`);
         }
 
         toast.success(successMsg, {
-          description: result.budgetStatus?.status === 'over' ? '⚠️ You are over budget!' : undefined,
+          description: descriptions.length > 0 ? descriptions.join(' • ') : undefined,
           duration: 6000,
         });
       }
@@ -393,7 +401,7 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
               )}
             </FormItem>
 
-            {/* Date — always today, read-only */}
+            {/* Date — editable, bounded by today */}
             <FormField
               control={form.control}
               name="date"
@@ -401,21 +409,15 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
                 <FormItem>
                   <FormLabel className="text-xs font-medium text-muted-foreground">Date</FormLabel>
                   <FormControl>
-                    <div className="relative">
-                      <Input
-                        type="date"
-                        className="h-10 bg-muted/40 cursor-not-allowed text-muted-foreground"
-                        readOnly
-                        disabled
-                        {...field}
-                      />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-wide text-primary/70 bg-primary/10 px-1.5 py-0.5 rounded">
-                        Today
-                      </span>
-                    </div>
+                    <Input
+                      type="date"
+                      className="h-10 text-foreground"
+                      max={today()}
+                      {...field}
+                    />
                   </FormControl>
                   <p className="text-[10px] text-muted-foreground mt-0.5">
-                    📅 Expenses are always recorded as of today.
+                    📅 Record past or current expenses.
                   </p>
                   <FormMessage />
                 </FormItem>
