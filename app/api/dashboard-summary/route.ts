@@ -26,6 +26,7 @@ import {
 } from '@/services/expense.service';
 import { calculateHealthScore } from '@/lib/analytics/healthScore';
 import { generateInsights, type UserFinancialData } from '@/lib/ai/insightGenerator';
+import { generateBehavioralAdvice } from '@/lib/ai/behavioralCoach';
 
 export async function GET(_req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -110,7 +111,13 @@ export async function GET(_req: NextRequest) {
         
         for (const b of budgets.categories) {
            if (b.isOverBudget) {
-              newInsights.push({ type: 'warning', message: `You are over budget on ${b.category}`, content: `You exceeded your budget of $${b.allocated} for ${b.category}.` });
+              const advice = await generateBehavioralAdvice({
+                category: b.category,
+                spend: b.spent,
+                budget: b.allocated,
+                currency: '₹'
+              });
+              newInsights.push({ type: 'warning', message: `You are over budget on ${b.category}`, content: advice || `You exceeded your budget of ₹${b.allocated} for ${b.category}.` });
            }
         }
 
