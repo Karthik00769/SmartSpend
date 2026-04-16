@@ -201,3 +201,15 @@ export async function checkGoalUnlockStatus(userId: string): Promise<{ monthsOfD
     longTermUnlocked: months >= 2,
   };
 }
+
+export async function getActiveGoalsProgress(userId: string): Promise<{ progress: number } | null> {
+  const [row] = await query<any[]>(
+    `SELECT AVG(saved_amount / target_amount * 100) as avg_progress
+     FROM goals
+     WHERE user_id = ? AND status = 'active' AND deleted_at IS NULL`,
+    [userId]
+  );
+  
+  if (!row || row.avg_progress === null) return null;
+  return { progress: Math.round(row.avg_progress) };
+}

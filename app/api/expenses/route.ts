@@ -17,6 +17,8 @@ import { authOptions } from "@/lib/auth/authOptions";
 
 import { listExpenses, findOrCreateCategory, countExpenses } from '@/services/expense.service';
 import { processExpense } from '@/lib/expense-engine';
+import { getCategoryBudgetStatus } from '@/services/budget.service';
+import { getActiveGoalsProgress } from '@/services/goal.service';
 
 // ── Loose intake schema — engine does the deep validation ─────────────────────
 const ExpenseIntakeSchema = z.object({
@@ -69,22 +71,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── VALIDATE DATE — accept historical dates up to 1 year back ────────────
-    // Allow user-provided date (e.g. from a receipt or manual entry) unless:
-    //  - Date is in the future (use today instead)
-    //  - Date is more than 365 days old (clamp to 1 year ago)
-    const todayDate = new Date().toISOString().slice(0, 10);
-    let expenseDate = parsed.data.date || todayDate;
-    const dateParsed = new Date(expenseDate);
+    // ── VALIDATE DATE ────────────────────────────────────────────────────────
     const today = new Date();
     today.setHours(23, 59, 59, 999);
-    const oneYearAgo = new Date();
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const dateParsed = new Date(parsed.data.date);
+    const todayDateStr = new Date().toISOString().slice(0, 10);
+    let dateAdjusted = false;
 
-    if (isNaN(dateParsed.getTime()) || dateParsed > today) {
-      expenseDate = todayDate; // future/invalid → use today
-    } else if (dateParsed < oneYearAgo) {
-      expenseDate = oneYearAgo.toISOString().slice(0, 10); // clamp to 1 year ago
+    if (isNaN(dateParsed.getTime())) {
+      return fail('Invalid date format.', 400);
+    }
+
+    if (dateParsed > today) {
+      if (parsed.data.source === 'manual') {
+        return fail('Future dates are not allowed.', 422, { date: ['Future dates are not allowed'] });
+      } else {
+        // OCR / Bank Data fallback
+        parsed.data.date = todayDateStr;
+        dateAdjusted = true;
+      }
     }
 
     const result = await processExpense(
@@ -92,13 +97,12 @@ export async function POST(req: NextRequest) {
         userId:      userId as string,
         categoryId:  resolvedCategoryId,
         amount:      parsed.data.amount as any,
-        date:        expenseDate,
+        date:        parsed.data.date,
         description: parsed.data.description,
         source:      parsed.data.source,
       },
       userId as string,
     );
-
 
     // Engine validation failed — return 422 with field errors
     if (!result.validation.valid) {
@@ -109,9 +113,26 @@ export async function POST(req: NextRequest) {
       return fail('Expense validation failed.', 422, details);
     }
 
+    // ── 3. Check Budget & Goal Impact ─────────────────────────────────────────
+    const expenseDate = new Date(parsed.data.date);
+    const [budgetStatus, goalStatus] = await Promise.all([
+      getCategoryBudgetStatus(
+        userId,
+        result.categorization.categoryId,
+        expenseDate.getMonth() + 1,
+        expenseDate.getFullYear()
+      ),
+      getActiveGoalsProgress(userId)
+    ]);
+
     return ok(
       {
         expense:        result.savedExpense,
+        dateAdjusted,
+        message:        `Expense added for ${parsed.data.date}`,
+        budgetStatus:   budgetStatus ? { usedPercent: budgetStatus.percent, status: budgetStatus.status } : null,
+        goalStatus,
+        // legacy compat
         expenseId:      result.savedExpenseId,
         processed:      result.processed,
         categorization: result.categorization,

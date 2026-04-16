@@ -221,7 +221,7 @@ export async function POST(req: NextRequest) {
 
 
     // ── Step 3: Expense date is always today (server-enforced) ─────────────
-    const date = new Date().toISOString().slice(0, 10);
+
 
     // ── Step 4: Build response ─────────────────────────────────────────────
     // errorMessage comes from the parser for hard-failure (no amount found)
@@ -236,9 +236,10 @@ export async function POST(req: NextRequest) {
       data: {
         extracted: {
           amount:      parsed.amount,
-          date,
+          date:        parsed.date,
           merchant:    parsed.merchant,
           description: parsed.description,
+          dateAdjusted: parsed.dateAdjusted,
         },
         source:      'ocr',
         confidence:  parsed.confidence,
@@ -250,6 +251,7 @@ export async function POST(req: NextRequest) {
           ocrConfidence: Math.round(ocrConf),
           textLength:    rawText.trim().length,
           rawSnippet:    parsed.rawSnippet,
+          extractedDate: parsed.date,
         },
       },
     });

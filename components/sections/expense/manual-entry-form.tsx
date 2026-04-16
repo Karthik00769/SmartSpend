@@ -204,9 +204,7 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
         const finalDesc   = values.description?.trim() ?? '';
         const origMerchant = ocrMerchantRef.current.trim();
         const correctedAmount = values.amount ?? 0;
-        // Only fire if user actually changed the description or amount is present
         if (origMerchant) {
-          // Silent background call — never block the main success flow
           fetch('/api/expenses/correct-ocr', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -215,7 +213,7 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
               correctedMerchant: finalDesc || origMerchant,
               correctedAmount:   finalDesc !== origMerchant ? correctedAmount : 0,
             }),
-          }).catch(() => { /* silent — learning failure never blocks user */ });
+          }).catch(() => { });
         }
         ocrMerchantRef.current = '';
       }
@@ -223,6 +221,23 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
       if (result.autoCategized) {
         setAutoTagMsg(`Auto-categorized as "${result.categorization.categoryName}"`);
       }
+
+      // ── Strict Feedback Logic (User Request) ────────────────────────────────
+      if (result.dateAdjusted) {
+        toast.info('Date adjusted to today', { duration: 4000 });
+      }
+
+      const budgetUsed = result.budgetStatus?.usedPercent;
+      let successMsg = result.message || `Expense added for ${values.date}`;
+      if (budgetUsed !== undefined) {
+        successMsg += ` – Budget used: ${Math.round(budgetUsed)}%`;
+      }
+
+      toast.success(successMsg, {
+        description: result.budgetStatus?.status === 'over' ? '⚠️ You are over budget!' : undefined,
+        duration: 6000,
+      });
+
       setSuccess(true);
       setIsAutoFilled(false);
       setUseAutoDetect(false);
@@ -235,8 +250,19 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
       onSuccess?.();
       window.scrollTo({ top: 0, behavior: 'smooth' });
       setTimeout(() => { setSuccess(false); setAutoTagMsg(null); }, 5000);
+    } else {
+      // result is false, hook updated submitError
+      // Use a timeout or watch to handle the state change, or just check the hook value if it updates immediately
+      // Actually, toast.error is best here if we can get the message.
     }
   };
+
+  // ── Error feedback effect ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (submitError) {
+      toast.error(submitError, { id: 'submit-error' });
+    }
+  }, [submitError]);
 
   const sourceLabel = source === 'ocr' ? 'Receipt Scan' : source === 'bank' ? 'Bank Upload' : 'Manual Entry';
 

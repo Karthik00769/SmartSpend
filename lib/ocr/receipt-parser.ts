@@ -46,12 +46,14 @@ const SKIP_WORDS = new Set([
 
 export interface ParsedReceipt {
   amount:       number;        // 0 if not found or out of bounds
+  date?:         string;        // extracted date in YYYY-MM-DD format
   merchant:     string;        // '' if not found
   description:  string;        // same as merchant, kept for API compat
   needsReview:  boolean;       // true when confidence is low or amount missing
   confidence:   'high' | 'medium' | 'low';
   errorMessage?: string;       // set when amount cannot be extracted at all
   rawSnippet?:  string;        // first 300 chars of cleaned text, for debugging
+  dateAdjusted?: boolean;      // truthy if the extracted date was future and fallback to today was used
 }
 
 // ─── Text cleaning ───────────────────────────────────────────────────────────
@@ -92,6 +94,13 @@ const TOTAL_LINE_PATTERN =
 /** Patterns that disqualify a line — tax components and per-item amounts */
 const FALSE_POSITIVE_PATTERN =
   /\b(cgst|sgst|igst|cess|tax|vat|service\s*tax|discount|round\s*off|rounding|tds|surcharge|tip|gratuity|item\s*total|qty|quantity|rate|mrp|unit\s*price|per\s*unit|each)\b/i;
+
+const RECEIPT_DATE_PATTERNS = [
+  /\b(\d{2})[\/\-.](\d{2})[\/\-.](\d{4})\b/,     // DD/MM/YYYY
+  /\b(\d{4})[\/\-.](\d{2})[\/\-.](\d{2})\b/,     // YYYY-MM-DD
+  /\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\b/i, // 15 Jan 2024
+  /\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2})\b/, // D/M/YY
+];
 
 // ── Junk line guard ───────────────────────────────────────────────────────────
 /**
@@ -353,6 +362,63 @@ export function extractMerchant(text: string): string {
   return extractMerchantFromZones(classified);
 }
 
+/**
+ * extractDateFromReceipt
+ * Scans the first and last sections of the receipt for date-like strings.
+ * Validates extracted date is not in the future.
+ */
+function extractDateFromReceipt(text: string): { date: string; adjusted: boolean } {
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+  
+  const lines = text.split('\n');
+  const sample = [...lines.slice(0, 15), ...lines.slice(-10)];
+  
+  for (const line of sample) {
+    for (const pattern of RECEIPT_DATE_PATTERNS) {
+      const match = pattern.exec(line);
+      if (match) {
+        try {
+          let y, m, d;
+          if (pattern.source.startsWith('\\b(\\d{2})[\\\/\\-.](\\d{2})')) {
+            // DD/MM/YYYY
+            [d, m, y] = [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])];
+          } else if (pattern.source.startsWith('\\b(\\d{4})')) {
+            // YYYY-MM-DD
+            [y, m, d] = [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])];
+          } else if (pattern.source.includes('Jan|Feb')) {
+             // 15 Jan 2024
+             d = parseInt(match[1]);
+             y = parseInt(match[3]);
+             const monthMap: any = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+             m = monthMap[match[2].toLowerCase()];
+          } else {
+             // D/M/YY fallback - skip for now as ambiguous
+             continue;
+          }
+
+          if (y < 2000 || y > 2100) continue;
+          
+          const isoDate = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          const parsed = new Date(isoDate + 'T00:00:00Z');
+          if (isNaN(parsed.getTime())) continue;
+
+          // Reject future dates
+          if (isoDate > todayStr) {
+             console.log(`[PARSER/date] Future date detected (${isoDate}) - falling back to today.`);
+             return { date: todayStr, adjusted: true };
+          }
+          
+          console.log(`[PARSER/date] Detected valid date: ${isoDate}`);
+          return { date: isoDate, adjusted: false };
+        } catch { continue; }
+      }
+    }
+  }
+
+  return { date: todayStr, adjusted: false }; // fallback
+}
+
 // ─── Main parse function ─────────────────────────────────────────────────────
 
 /**
@@ -379,7 +445,10 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
   // STEP 3: Zone-aware amount extraction
   const { value: amount, confidence: amtConf, source: amtSource } = extractAmountFromZones(classified);
 
-  // STEP 4: Zone-aware merchant extraction
+  // STEP 4: Extract date
+  const { date, adjusted: dateAdjusted } = extractDateFromReceipt(text);
+
+  // STEP 5: Zone-aware merchant extraction
   let merchant = extractMerchantFromZones(classified);
 
   // STEP 5: Cross-validation (log only — doesn't block, but downgrades confidence)
@@ -432,6 +501,8 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
 
   return {
     amount:       finalAmount,
+    date,
+    dateAdjusted,
     merchant,
     description:  merchant,
     needsReview,

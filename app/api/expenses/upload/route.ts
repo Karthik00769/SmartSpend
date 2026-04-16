@@ -362,7 +362,8 @@ export async function POST(req: NextRequest) {
       data: {
         extracted: {
           amount:      parsed.amount,
-          date:        todayDate,
+          date:        parsed.date,
+          dateAdjusted: parsed.dateAdjusted,
           merchant:    parsed.merchant,
           description: parsed.description,
         },

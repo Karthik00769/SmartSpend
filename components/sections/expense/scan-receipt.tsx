@@ -10,6 +10,7 @@ export interface ExtractedData {
   merchant: string | null;
   category: string | null;
   raw_text?: string;
+  dateAdjusted?: boolean | null;
 }
 
 interface ScanReceiptAreaProps {
@@ -119,6 +120,10 @@ export function ScanReceiptArea({ onDataExtracted }: ScanReceiptAreaProps) {
 
       if (!extracted) {
         throw new Error('No data could be extracted from this image');
+      }
+
+      if (extracted.dateAdjusted) {
+        toast.info('Date adjusted to today', { duration: 5000 });
       }
 
       if (amountWarning) {

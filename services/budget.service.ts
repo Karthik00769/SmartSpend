@@ -129,3 +129,42 @@ export async function upsertBudget(input: any): Promise<BudgetSummaryDTO> {
 
   return listBudgets({ userId: userId_, month: Number(month), year: Number(year) });
 }
+
+export async function getCategoryBudgetStatus(
+  userId: string,
+  categoryId: number,
+  month: number,
+  year: number
+): Promise<{ limit: number; spent: number; percent: number; status: 'under' | 'near' | 'over' } | null> {
+  const [row] = await query<any[]>(
+    `SELECT 
+       b.limit_amount,
+       COALESCE(SUM(e.amount), 0) AS total_spent
+     FROM budgets b
+     LEFT JOIN expenses e 
+       ON e.category_id = b.category_id 
+       AND e.user_id = b.user_id
+       AND MONTH(e.expense_date) = b.month
+       AND YEAR(e.expense_date) = b.year
+       AND e.deleted_at IS NULL
+     WHERE b.user_id = ? 
+       AND b.category_id = ? 
+       AND b.month = ? 
+       AND b.year = ?
+       AND b.deleted_at IS NULL
+     GROUP BY b.id`,
+    [userId, categoryId, month, year]
+  );
+
+  if (!row) return null;
+
+  const limit = parseFloat(row.limit_amount);
+  const spent = parseFloat(row.total_spent);
+  const percent = limit > 0 ? (spent / limit) * 100 : 0;
+  
+  let status: 'under' | 'near' | 'over' = 'under';
+  if (percent >= 100) status = 'over';
+  else if (percent >= 85) status = 'near';
+
+  return { limit, spent, percent, status };
+}

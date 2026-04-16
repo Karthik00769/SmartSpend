@@ -25,7 +25,8 @@
 
 export interface BankTransaction {
   amount:      number;
-  date:        string;      // always today (server-enforced)
+  date:        string;
+  dateAdjusted: boolean;
   description: string;
   confidence:  'high' | 'medium' | 'low';
   needsReview: boolean;
@@ -80,6 +81,37 @@ const DATE_PATTERNS = [
 
 function hasDate(line: string): boolean {
   return DATE_PATTERNS.some(p => p.test(line));
+}
+
+/**
+ * Parses a date string and ensures it is not in the future.
+ * Fallback to defaultDate if invalid or future.
+ */
+function extractDateFromRow(raw: string | undefined, defaultDate: string): { date: string; adjusted: boolean } {
+  if (!raw) return { date: defaultDate, adjusted: false };
+  
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+  
+  for (const pattern of DATE_PATTERNS) {
+    const match = pattern.exec(raw);
+    if (match) {
+      const dateStr = match[0];
+      try {
+        const parsed = new Date(dateStr);
+        if (isNaN(parsed.getTime())) continue;
+        
+        const iso = parsed.toISOString().slice(0, 10);
+        if (iso > todayStr) {
+           return { date: defaultDate, adjusted: true };
+        }
+        return { date: iso, adjusted: false };
+      } catch {
+        continue;
+      }
+    }
+  }
+  return { date: defaultDate, adjusted: false };
 }
 
 // ─── Column map ───────────────────────────────────────────────────────────────
@@ -375,12 +407,16 @@ export function parseCSV(text: string, todayDate: string): BankParseResult {
           continue;
         }
 
+        // Date extraction
+        const { date, adjusted: dateAdjusted } = extractDateFromRow(cols[colMap.dateCol], todayDate);
+
         // Description
         const description = extractDescription(cols, colMap, lines[i]);
 
         result.transactions.push({
           amount:      resolved.amount,
-          date:        todayDate,
+          date,
+          dateAdjusted,
           description,
           confidence:  resolved.confidence,
           needsReview: resolved.confidence === 'low',
@@ -437,8 +473,10 @@ function parsePositional(
         .join(' ').trim().replace(/\s{2,}/g, ' ')
         .slice(0, 120) || 'Bank transaction';
 
+      const { date, adjusted: dateAdjusted } = extractDateFromRow(line, todayDate);
+
       result.transactions.push({
-        amount, date: todayDate, description,
+        amount, date, dateAdjusted, description,
         confidence: 'low', needsReview: true,  // positional = always review
       });
     } catch { result.skipped++; }
@@ -579,9 +617,12 @@ export function parsePDFBankText(text: string, todayDate: string): BankParseResu
           .slice(0, 120);
         if (desc.length < 3) desc = 'Bank transaction';
 
+        const { date, adjusted: dateAdjusted } = extractDateFromRow(line, todayDate);
+
         result.transactions.push({
           amount,
-          date:        todayDate,
+          date,
+          dateAdjusted,
           description: desc,
           confidence,
           needsReview: confidence === 'low',

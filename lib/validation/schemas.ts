@@ -24,12 +24,15 @@ export const expenseSchema = z.object({
       return !isNaN(parsed.getTime());
     }, 'Invalid date')
     .refine(d => {
-      // Expense date must be today — not past, not future
+      // Expense date must be today or in the past — not future
       const parsed = new Date(d + 'T00:00:00Z');
       const today  = new Date();
-      const todayStr = today.toISOString().slice(0, 10);
-      return d === todayStr;
-    }, 'Expense date must be today'),
+      today.setUTCHours(23, 59, 59, 999); // Allow until end of today (UTC)
+      
+      // Local date comparison is safer for simple YYYY-MM-DD strings
+      const todayStr = new Date().toISOString().slice(0, 10);
+      return d <= todayStr;
+    }, 'Future dates are not allowed'),
 
   description: z.string().max(255, 'Description too long').optional(),
 

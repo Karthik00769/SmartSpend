@@ -81,15 +81,22 @@ export function UploadArea({ onDataExtracted, onBatchConfirm }: UploadAreaProps)
 
       // ── Multi-transaction CSV/PDF path ──────────────────────────────────
       if (txns && txns.length > 0) {
-        const todayDate = new Date().toISOString().slice(0, 10);
-        const enriched: ParsedTransaction[] = txns.map((t: any) => ({
-          amount:      t.amount,
-          date:        todayDate,
-          description: t.description,
-          category:    autoCategorizeName(t.description)?.categoryName ?? 'Other',
-          confidence:  (t.confidence as 'high' | 'medium' | 'low') ?? 'low',
-          needsReview: t.needsReview ?? t.confidence === 'low',
-        }));
+        let anyDateAdjusted = false;
+        const enriched: ParsedTransaction[] = txns.map((t: any) => {
+          if (t.dateAdjusted) anyDateAdjusted = true;
+          return {
+            amount:      t.amount,
+            date:        t.date,
+            description: t.description,
+            category:    autoCategorizeName(t.description)?.categoryName ?? 'Other',
+            confidence:  (t.confidence as 'high' | 'medium' | 'low') ?? 'low',
+            needsReview: t.needsReview ?? t.confidence === 'low',
+          };
+        });
+
+        if (anyDateAdjusted) {
+          toast.info('Date adjusted to today');
+        }
 
         // Surface any backend warning (e.g. positional mode used)
         const backendWarning = json.data?.warning;

@@ -136,14 +136,12 @@ export function SmartSpendProvider({ children }: SmartSpendProviderProps) {
     async (payload: AddExpensePayload) => {
       const success = await expH.addExpense(payload);
       if (success) {
-        dashH.refresh();
-        summaryH.refresh();
-        budH.refresh();
+        refreshAll();
         notifyInsightsRefresh(); // insights page re-fetches on next render
       }
       return success;
     },
-    [expH.addExpense, dashH.refresh, summaryH.refresh, budH.refresh],
+    [expH.addExpense, refreshAll],
   );
 
   // ── After creating a goal, refresh analytics + KPI dashboard ─────────────

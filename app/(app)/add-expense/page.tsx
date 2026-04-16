@@ -42,14 +42,35 @@ export default function AddExpensePage() {
 
   const handleBatchConfirm = async (transactions: ParsedTransaction[]) => {
     let saved = 0, failed = 0;
+    const impacts: { category: string; percent: number }[] = [];
+
     for (const tx of transactions) {
       const result = await addExpense({
         amount: tx.amount, date: tx.date, description: tx.description,
         categoryName: tx.category || undefined, source: 'bank_import',
       });
-      if (result) saved++; else failed++;
+      if (result) {
+        saved++;
+        if (result.budgetImpact) {
+          impacts.push({ category: result.categorization.categoryName, percent: result.budgetImpact.percent });
+        }
+      } else {
+        failed++;
+      }
     }
-    if (saved > 0)  toast.success(`${saved} transaction${saved > 1 ? 's' : ''} saved.`);
+
+    if (saved > 0) {
+      toast.success(`${saved} transaction${saved > 1 ? 's' : ''} saved.`);
+      
+      // Show summary of budget impacts
+      const overBudget = impacts.filter(i => i.percent > 100);
+      if (overBudget.length > 0) {
+        toast.warning(`Budget Alert: ${overBudget.length} category(s) now over budget!`, {
+          description: overBudget.map(i => `${i.category} (${Math.round(i.percent)}%)`).join(', '),
+          duration: 8000,
+        });
+      }
+    }
     if (failed > 0) toast.error(`${failed} failed to save.`);
   };
 

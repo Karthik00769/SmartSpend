@@ -36,6 +36,12 @@ export interface UseExpensesReturn {
   submitting:  boolean;
   submitError: string | null;
   addExpense:  (payload: AddExpensePayload) => Promise<{
+    expense:        ExpenseDTO;
+    dateAdjusted:   boolean;
+    message:        string;
+    budgetStatus?:  { usedPercent: number; status: 'under' | 'near' | 'over' } | null;
+    goalStatus?:    { progress: number } | null;
+    // legacy compat
     expenseId:      string;
     autoCategized:  boolean;
     categorization: { categoryId: number; categoryName: string; confidence: string; matchedOn?: string };
@@ -90,6 +96,11 @@ export function useExpenses(opts: UseExpensesOptions = {}): UseExpensesReturn {
       setSubmitError(null);
       try {
         const res = await apiPost<{
+          expense:        ExpenseDTO;
+          dateAdjusted:   boolean;
+          message:        string;
+          budgetStatus?:  { usedPercent: number; status: 'under' | 'near' | 'over' } | null;
+          goalStatus?:    { progress: number } | null;
           expenseId:      string;
           autoCategized:  boolean;
           categorization: { categoryId: number; categoryName: string; confidence: string; matchedOn?: string };
