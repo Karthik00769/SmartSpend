@@ -62,8 +62,16 @@ OUTPUT FORMAT (STRICT JSON ONLY):
         },
       });
 
-      const responseText = result.response.text();
-      const raw = JSON.parse(responseText);
+      let responseText = result.response.text().trim();
+      responseText = responseText.replace(/```json\n?/g, '').replace(/```/g, '').trim();
+      
+      let raw: any = {};
+      try {
+        raw = JSON.parse(responseText);
+      } catch (parseErr) {
+         console.warn(`[receiptValidator] JSON parse error on ${modelName}. Output: ${responseText}`);
+         continue; // try next model or fallback
+      }
       
       const validatedAmount = typeof raw.amount === 'number' && raw.amount >= 1 && raw.amount <= 100000 
         ? raw.amount 

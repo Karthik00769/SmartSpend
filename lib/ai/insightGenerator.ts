@@ -214,8 +214,16 @@ OUTPUT FORMAT (STRICT JSON ARRAY ONLY):
         },
       });
 
-      const responseText = result.response.text();
-      const raw = JSON.parse(responseText);
+      let responseText = result.response.text().trim();
+      responseText = responseText.replace(/```json\n?/g, '').replace(/```/g, '').trim();
+
+      let raw: any = [];
+      try {
+        raw = JSON.parse(responseText);
+      } catch (parseErr) {
+        console.warn(`[insightGenerator] JSON parse error on ${modelName}. Output: ${responseText}`);
+        continue;
+      }
 
       const arr: any[] = Array.isArray(raw) ? raw : (Array.isArray(raw?.insights) ? raw.insights : []);
 

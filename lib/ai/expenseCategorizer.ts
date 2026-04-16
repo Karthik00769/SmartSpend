@@ -60,7 +60,8 @@ Return ONLY the category name.`;
         },
       });
 
-      const responseText = result.response.text().trim();
+      let responseText = result.response.text().trim();
+      responseText = responseText.replace(/```[a-z]*\n?/g, '').replace(/```/g, '').replace(/['"]/g, '').trim();
       
       console.log(`[expenseCategorizer|${modelName}] Input: "${description}" | Gemini: "${responseText}"`);
 

@@ -56,7 +56,8 @@ Give 1 recommendation.`;
         },
       });
 
-      const text = result.response.text().trim();
+      let text = result.response.text().trim();
+      text = text.replace(/```[a-z]*\n?/g, '').replace(/```/g, '').replace(/^["']|["']$/g, '').trim();
       if (text) {
          console.log(`[behavioralCoach|${modelName}] Input category: ${input.category} -> Advice: "${text}"`);
          return text;
