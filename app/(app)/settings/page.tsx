@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { apiGet, apiPost } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { AlertCircle, ShieldCheck, Trash2, LogOut, Camera } from 'lucide-react';
+import { AlertCircle, ShieldCheck, Trash2, LogOut, Camera, Calculator, Info } from 'lucide-react';
 import { useSmartSpend } from '@/context/smartspend-context';
 import { refreshCurrency } from '@/hooks/use-currency';
 import { notifyAvatarRefresh } from '@/hooks/use-avatar';
@@ -43,6 +43,8 @@ export default function SettingsPage() {
   // Avatar upload state
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [formulas, setFormulas] = useState<any[]>([]);
+  const [loadingFormulas, setLoadingFormulas] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch full profile from API
@@ -71,9 +73,32 @@ export default function SettingsPage() {
     }
   };
 
+  const loadFormulas = async (curr: string) => {
+    setLoadingFormulas(true);
+    try {
+      const data = await apiGet<any>(`/api/settings/formulas?currency=${encodeURIComponent(curr)}`);
+      setFormulas(data.formulas || []);
+    } catch (err) {
+      console.error('Failed to load formulas:', err);
+    } finally {
+      setLoadingFormulas(false);
+    }
+  };
+
   useEffect(() => {
-    if (session) loadProfile();
+    if (session) {
+      loadProfile().then(() => {
+        // We need currency from profile to fetch correct formulas
+        // But since loadProfile sets state, we might need a better way or just use profile.currency
+      });
+    }
   }, [session]);
+
+  useEffect(() => {
+     if (profile.currency) {
+        loadFormulas(profile.currency);
+     }
+  }, [profile.currency]);
 
   const [passwordForm, setPasswordForm] = useState({
     current: '',
@@ -437,6 +462,50 @@ export default function SettingsPage() {
               {saving ? 'Updating...' : 'Save All General Settings'}
             </Button>
           </form>
+        </Card>
+
+        {/* Financial Logic Explained */}
+        <Card className="p-6 h-fit bg-gradient-to-br from-indigo-50/50 to-white dark:from-indigo-950/20 dark:to-background border-indigo-100 dark:border-indigo-900/50">
+          <div className="flex items-center gap-2 mb-6">
+            <Calculator className="w-5 h-5 text-indigo-500" />
+            <h2 className="text-xl font-bold text-foreground">Financial System Logic</h2>
+          </div>
+          <p className="text-sm text-muted-foreground mb-6">
+            SmartSpend calculates your metrics using real-world financial principles. Here is the exact logic behind your dashboard.
+          </p>
+
+          {loadingFormulas ? (
+            <div className="space-y-4">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-24 bg-muted animate-pulse rounded-lg" />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {formulas.map((item, idx) => (
+                <div key={idx} className="group">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-1 p-1.5 bg-indigo-100 dark:bg-indigo-900/40 rounded-md text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform">
+                      <Info className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="space-y-1.5 flex-1">
+                      <h4 className="font-semibold text-sm text-foreground">{item.name}</h4>
+                      <div className="inline-block px-2 py-1 bg-white dark:bg-muted font-mono text-[11px] border border-indigo-100 dark:border-indigo-800 rounded text-indigo-700 dark:text-indigo-300">
+                        {item.formula}
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        {item.explanation}
+                      </p>
+                      <div className="text-[10px] italic text-indigo-500/80 dark:text-indigo-400/80">
+                        Example: {item.example}
+                      </div>
+                    </div>
+                  </div>
+                  {idx < formulas.length - 1 && <div className="ml-8 mt-6 border-b border-border/50" />}
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
 
         {/* Security & Access */}
