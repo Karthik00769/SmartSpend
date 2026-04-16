@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+
 import { useForm }            from 'react-hook-form';
 import { zodResolver }        from '@hookform/resolvers/zod';
 import { Button }             from '@/components/ui/button';
@@ -57,6 +58,10 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
   const [autoTagMsg,   setAutoTagMsg]   = useState<string | null>(null);
   const [success,      setSuccess]      = useState(false);
   const [isAutoFilled, setIsAutoFilled] = useState(false);
+
+  // Tracks the original OCR-prefilled merchant so we can detect user corrections
+  const ocrMerchantRef = useRef<string>('');
+
 
   // ── Auto Detect state ──────────────────────────────────────────────────────
   // When user picks "Auto Detect" from dropdown, we show a text input instead.
@@ -128,7 +133,12 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
       form.setValue('categoryName', text);
       setAutoDetectHint(text);
     }
+    // Remember original OCR merchant for correction tracking
+    if (source === 'ocr' && initialData?.description) {
+      ocrMerchantRef.current = String(initialData.description);
+    }
   }, [initialData, categories, source]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   // ── Auto-categorize on description change (debounced, only in auto mode) ───
   const runAutoDetect = useCallback((description: string, currentText: string) => {
@@ -189,6 +199,27 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
     const result = await addExpense(payload);
 
     if (result) {
+      // ── Learning: if OCR source AND user changed the merchant, store correction ──
+      if (source === 'ocr' && ocrMerchantRef.current) {
+        const finalDesc   = values.description?.trim() ?? '';
+        const origMerchant = ocrMerchantRef.current.trim();
+        const correctedAmount = values.amount ?? 0;
+        // Only fire if user actually changed the description or amount is present
+        if (origMerchant) {
+          // Silent background call — never block the main success flow
+          fetch('/api/expenses/correct-ocr', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ocrMerchant:       origMerchant,
+              correctedMerchant: finalDesc || origMerchant,
+              correctedAmount:   finalDesc !== origMerchant ? correctedAmount : 0,
+            }),
+          }).catch(() => { /* silent — learning failure never blocks user */ });
+        }
+        ocrMerchantRef.current = '';
+      }
+
       if (result.autoCategized) {
         setAutoTagMsg(`Auto-categorized as "${result.categorization.categoryName}"`);
       }

@@ -19,12 +19,14 @@
 import path        from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { cleanOCRText }  from './receipt-parser';
+import { preprocessImageWithOpenCV } from './opencv-preprocess';
 import Tesseract from 'tesseract.js';
 import sharp from 'sharp';
 // NOTE: pdf-parse and pdfjs-dist are intentionally NOT required at the top level.
 // They transitively load browser globals (DOMMatrix etc.) which crash Node.js
 // serverless environments at module-load time. Both are required lazily inside
 // processPDF() which is itself only called via a dynamic import.
+
 
 // ─── Node polyfills required by pdfjs-dist ────────────────────────────────────
 // pdfjs-dist expects browser globals. Polyfill them before any dynamic import.
@@ -100,30 +102,13 @@ export interface PDFExtractResult {
   warning?:   string;    // set if partial extraction occurred
 }
 
-// ─── Shared image OCR (same passes as the scan/upload route) ─────────────────
+// ─── Shared image OCR (OpenCV-enhanced + Sharp fallback) ─────────────────────
 
 async function ocrBuffer(buffer: Buffer): Promise<string> {
   const workerPath = pathToFileURL(TESSERACT_WORKER).href;
 
-  const passes = [
-    {
-      name: 'gentle',
-      fn: () => (sharp as any)(buffer).grayscale().normalize().sharpen({ sigma: 1.2, m1: 0.5, m2: 0.5 }).png({ compressionLevel: 1 }).toBuffer() as Promise<Buffer>,
-    },
-    {
-      name: 'contrast-boost',
-      fn: () => (sharp as any)(buffer).grayscale().normalize().linear(1.6, -(128 * 0.6)).sharpen({ sigma: 1.5 }).png({ compressionLevel: 1 }).toBuffer() as Promise<Buffer>,
-    },
-    {
-      name: 'threshold',
-      fn: () => (sharp as any)(buffer).grayscale().normalize().threshold(145).png({ compressionLevel: 1 }).toBuffer() as Promise<Buffer>,
-    },
-  ];
-
-  const worker = await Tesseract.createWorker('eng', 1, {
-    workerPath,
-  });
-  await worker.setParameters({ 
+  const worker = await Tesseract.createWorker('eng', 1, { workerPath });
+  await worker.setParameters({
     tessedit_pageseg_mode: '6' as any,
     preserve_interword_spaces: '1',
   });
@@ -131,28 +116,57 @@ async function ocrBuffer(buffer: Buffer): Promise<string> {
   let bestText = '';
   let bestConf = 0;
 
-  for (const p of passes) {
+  const tryBuf = async (buf: Buffer, label: string) => {
     try {
-      const prep  = await p.fn();
-      const { data: { text, confidence } } = await worker.recognize(prep);
+      const prep  = await (sharp as any)(buf).png({ compressionLevel: 1 }).toBuffer().catch(() => buf);
+      const { data: { text, confidence } } = await worker.recognize(buf);
       const cleaned = cleanOCRText(text);
       const tLen  = cleaned.trim().length;
       const conf  = confidence ?? 0;
-      console.log(`[PDF-OCR/${p.name}] conf=${conf.toFixed(0)} chars=${tLen}`);
-
+      console.log(`[PDF-OCR/${label}] conf=${conf.toFixed(0)} chars=${tLen}`);
       if (tLen > bestText.trim().length * 1.15 || (conf > bestConf + 10 && tLen > 20)) {
         bestText = cleaned;
         bestConf = conf;
       }
-      if (bestConf >= 80 && bestText.trim().length > 100) break;
     } catch (e: any) {
-      console.warn(`[PDF-OCR/${p.name}] skip:`, e?.message);
+      console.warn(`[PDF-OCR/${label}] skip:`, e?.message);
+    }
+  };
+
+  // STAGE 1: OpenCV variants (adaptive threshold, deskew, 2× upscale)
+  let opencvUsed = false;
+  try {
+    const cvVariants = await preprocessImageWithOpenCV(buffer);
+    if (cvVariants.length > 0) {
+      opencvUsed = true;
+      for (const v of cvVariants) {
+        await tryBuf(v.buffer, `opencv-${v.variantName}`);
+        if (bestConf >= 85 && bestText.trim().length > 150) break;
+      }
+    }
+  } catch (e: any) {
+    console.warn('[PDF-OCR] OpenCV failed:', e?.message);
+  }
+
+  // STAGE 2: Classic Sharp fallback
+  if (!opencvUsed || bestConf < 80 || bestText.trim().length < 100) {
+    const passes = [
+      { name: 'gentle',    fn: () => (sharp as any)(buffer).grayscale().normalize().sharpen({ sigma: 1.2, m1: 0.5, m2: 0.5 }).png({ compressionLevel: 1 }).toBuffer() as Promise<Buffer> },
+      { name: 'contrast',  fn: () => (sharp as any)(buffer).grayscale().normalize().linear(1.6, -(128 * 0.6)).sharpen({ sigma: 1.5 }).png({ compressionLevel: 1 }).toBuffer() as Promise<Buffer> },
+      { name: 'threshold', fn: () => (sharp as any)(buffer).grayscale().normalize().threshold(145).png({ compressionLevel: 1 }).toBuffer() as Promise<Buffer> },
+    ];
+    for (const p of passes) {
+      try {
+        await tryBuf(await p.fn(), p.name);
+        if (bestConf >= 80 && bestText.trim().length > 100) break;
+      } catch (e: any) { console.warn(`[PDF-OCR/${p.name}] skip:`, e?.message); }
     }
   }
 
   await worker.terminate();
   return bestText;
 }
+
 
 // ─── Render one PDF page to a PNG buffer via pdfjs-dist ──────────────────────
 

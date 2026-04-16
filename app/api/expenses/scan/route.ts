@@ -2,20 +2,27 @@
  * app/api/expenses/scan/route.ts
  * POST /api/expenses/scan
  *
- * Pipeline:
+ * Updated Pipeline (STEP-BY-STEP):
  *  1. Receive image (JPEG / PNG / WebP)
- *  2. Preprocess with Sharp (multi-pass: gentle → aggressive → ultra)
- *  3. Run Tesseract OCR on best result
- *  4. Parse with improved receipt-parser engine
- *  5. Validate amount (1 ≤ x ≤ 1,00,000)
- *  6. Return structured data or "needs manual review" signal
+ *  2. OpenCV preprocessing → 3 enhanced variants
+ *     (adaptive threshold / aggressive boost / edge-enhanced, all deskewed + 2×)
+ *  3. Sharp classic pipeline (3 passes) as fallback
+ *  4. Run Tesseract OCR on ALL candidates; pick best (text length + confidence)
+ *  5. Parse with receipt-parser engine
+ *  6. Validate amount (1 ≤ x ≤ 1,00,000)
+ *  7. Return structured data or "needs manual review" signal
+ *
+ * FALLBACK: If OpenCV preprocessing fails, falls through to existing Sharp pipeline.
+ * API response shape is identical — no UI changes required.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession }          from 'next-auth/next';
 import { authOptions }               from '@/lib/auth/authOptions';
 import path                          from 'node:path';
 import { pathToFileURL }             from 'node:url';
-import { parseReceiptText, cleanOCRText } from '@/lib/ocr/receipt-parser';
+import { parseReceiptTextWithLearning, cleanOCRText } from '@/lib/ocr/receipt-parser';
+
+import { preprocessImageWithOpenCV }      from '@/lib/ocr/opencv-preprocess';
 
 const NM = path.join(process.cwd(), 'node_modules');
 const TESSERACT_WORKER = path.join(NM, 'tesseract.js/src/worker-script/node/index.js');
@@ -26,64 +33,54 @@ export const runtime = 'nodejs';
 const MAX_BYTES   = 10 * 1024 * 1024; // 10 MB
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
-// ─── Sharp preprocessing passes ──────────────────────────────────────────────
-// We run up to 3 passes and keep the OCR result with the most text / best
-// confidence. Each pass progressively increases contrast for harder images.
+// ─── Classic Sharp fallback passes ───────────────────────────────────────────
+// Used when OpenCV preprocessing fails or produces no variants.
+// Each pass progressively increases contrast.
 
 interface PreprocessPass {
-  name:       string;
-  transform:  (sharp: any, buf: Buffer) => Promise<Buffer>;
+  name:      string;
+  getBuffer: (sharp: any, buf: Buffer) => Promise<Buffer>;
 }
 
-function buildPreprocessPasses(sharp: any, buf: Buffer): PreprocessPass[] {
+function buildSharpFallbackPasses(sharp: any, buf: Buffer): PreprocessPass[] {
   return [
-    // Pass 1 — Gentle: good for clean, high-contrast images
     {
-      name: 'gentle',
-      transform: async (s, b) =>
-        s(b)
-          .grayscale()
-          .normalize()                         // auto levels
-          .sharpen({ sigma: 1.2, m1: 0.5, m2: 0.5 })
-          .png({ compressionLevel: 1 })
-          .toBuffer(),
+      name:      'sharp-gentle',
+      getBuffer: async (s, b) =>
+        s(b).grayscale().normalize().sharpen({ sigma: 1.2, m1: 0.5, m2: 0.5 }).png({ compressionLevel: 1 }).toBuffer(),
     },
-    // Pass 2 — Contrast boost: thermal receipts and faded prints
     {
-      name: 'contrast-boost',
-      transform: async (s, b) =>
-        s(b)
-          .grayscale()
-          .normalize()
-          .linear(1.6, -(128 * 0.6))           // brightness/contrast equivalent
-          .sharpen({ sigma: 1.5 })
-          .png({ compressionLevel: 1 })
-          .toBuffer(),
+      name:      'sharp-contrast',
+      getBuffer: async (s, b) =>
+        s(b).grayscale().normalize().linear(1.6, -(128 * 0.6)).sharpen({ sigma: 1.5 }).png({ compressionLevel: 1 }).toBuffer(),
     },
-    // Pass 3 — Hard threshold (binarize): dark/dirty receipts
     {
-      name: 'threshold',
-      transform: async (s, b) =>
-        s(b)
-          .grayscale()
-          .normalize()
-          .threshold(145)                       // binary black/white
-          .png({ compressionLevel: 1 })
-          .toBuffer(),
+      name:      'sharp-threshold',
+      getBuffer: async (s, b) =>
+        s(b).grayscale().normalize().threshold(145).png({ compressionLevel: 1 }).toBuffer(),
     },
   ];
 }
 
 // ─── OCR runner ──────────────────────────────────────────────────────────────
 
-interface OCRResult {
+interface OCRCandidate {
   text:       string;
   confidence: number;
   pass:       string;
 }
 
-async function runOCR(buffer: Buffer): Promise<OCRResult> {
-  const sharp = require('sharp');
+/**
+ * runOCR
+ * Multi-stage OCR pipeline:
+ *  1. Run OpenCV preprocessing → up to 3 enhanced variants (adaptive threshold,
+ *     aggressive boost, edge-enhanced), all deskewed and 2× upscaled.
+ *  2. If OpenCV produces no variants, fall through to classic Sharp pipeline.
+ *  3. Run Tesseract on ALL candidate buffers.
+ *  4. Pick the result with most text AND highest confidence.
+ */
+async function runOCR(buffer: Buffer): Promise<OCRCandidate> {
+  const sharp     = require('sharp');
   const Tesseract = require('tesseract.js');
   const workerPath = pathToFileURL(TESSERACT_WORKER);
 
@@ -91,43 +88,79 @@ async function runOCR(buffer: Buffer): Promise<OCRResult> {
     workerPath,
     preserve_interword_spaces: '1',
   });
-
-  // Configure Tesseract for receipt layout (single column, mixed sizes)
   await worker.setParameters({
-    tessedit_pageseg_mode:       '6',   // assume single uniform block of text
-    tessedit_char_whitelist:     '',    // allow all chars
-    preserve_interword_spaces:   '1',
+    tessedit_pageseg_mode:     '6',   // single uniform text block
+    tessedit_char_whitelist:   '',    // allow all chars
+    preserve_interword_spaces: '1',
   });
 
-  const passes = buildPreprocessPasses(sharp, buffer);
-  let best: OCRResult = { text: '', confidence: 0, pass: 'none' };
+  let best: OCRCandidate = { text: '', confidence: 0, pass: 'none' };
 
-  for (const pass of passes) {
+  // ── Helper: try a prepared buffer, update best if better ─────────────────
+  const tryBuffer = async (prepared: Buffer, passName: string) => {
     try {
-      const preprocessed = await pass.transform(sharp, buffer);
-      const { data: { text, confidence } } = await worker.recognize(preprocessed);
+      const { data: { text, confidence } } = await worker.recognize(prepared);
       const cleaned = cleanOCRText(text);
-      const textLen  = cleaned.trim().length;
+      const textLen = cleaned.trim().length;
+      const conf    = confidence ?? 0;
 
-      console.log(`[SCAN/${pass.name}] conf=${confidence?.toFixed(0) ?? '?'} chars=${textLen}`);
+      console.log(`[SCAN/${passName}] conf=${conf.toFixed(0)} chars=${textLen}`);
 
-      // Keep this pass if it gives more text OR significantly higher confidence
+      // Prefer: significantly more text, OR much higher confidence
       if (
-        textLen > best.text.trim().length * 1.15 ||  // 15% more chars
-        (confidence > best.confidence + 10 && textLen > 20)
+        textLen > best.text.trim().length * 1.15 ||
+        (conf > best.confidence + 10 && textLen > 20)
       ) {
-        best = { text: cleaned, confidence: confidence ?? 0, pass: pass.name };
+        best = { text: cleaned, confidence: conf, pass: passName };
       }
+    } catch (e: any) {
+      console.warn(`[SCAN/${passName}] Skipped:`, e?.message ?? e);
+    }
+  };
 
-      // If confidence is already great, stop early
-      if (best.confidence >= 80 && best.text.trim().length > 100) break;
+  // ══════════════════════════════════════════════════════════════════════════
+  // STAGE 1 — OpenCV preprocessing variants (adaptive threshold + deskew)
+  // ══════════════════════════════════════════════════════════════════════════
+  let opencvUsed = false;
+  try {
+    const cvVariants = await preprocessImageWithOpenCV(buffer);
 
-    } catch (err: any) {
-      console.warn(`[SCAN/${pass.name}] Failed:`, err?.message ?? err);
+    if (cvVariants.length > 0) {
+      opencvUsed = true;
+      for (const variant of cvVariants) {
+        await tryBuffer(variant.buffer, `opencv-${variant.variantName}`);
+        // Early exit: if first variant already got excellent OCR, no need to continue
+        if (best.confidence >= 85 && best.text.trim().length > 150) break;
+      }
+      console.log(`[SCAN] OpenCV stage: ${cvVariants.length} variants, best=${best.pass} conf=${best.confidence.toFixed(0)}`);
+    } else {
+      console.log('[SCAN] OpenCV returned no variants — using Sharp fallback.');
+    }
+  } catch (err: any) {
+    console.warn('[SCAN] OpenCV preprocessing threw:', err?.message ?? err);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // STAGE 2 — Classic Sharp fallback passes
+  // Always runs; may improve on OpenCV result for clean images.
+  // Skipped early if OpenCV already achieved high confidence.
+  // ══════════════════════════════════════════════════════════════════════════
+  if (!opencvUsed || best.confidence < 80 || best.text.trim().length < 100) {
+    const sharpPasses = buildSharpFallbackPasses(sharp, buffer);
+    for (const pass of sharpPasses) {
+      try {
+        const prepared = await pass.getBuffer(sharp, buffer);
+        await tryBuffer(prepared, pass.name);
+        if (best.confidence >= 80 && best.text.trim().length > 100) break; // good enough
+      } catch (e: any) {
+        console.warn(`[SCAN/${pass.name}] Failed:`, e?.message ?? e);
+      }
     }
   }
 
   await worker.terminate();
+
+  console.log(`[SCAN] Final winner: pass="${best.pass}" conf=${best.confidence.toFixed(0)} chars=${best.text.trim().length}`);
   return best;
 }
 
@@ -164,7 +197,7 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
 
     // ── Step 1: Run multi-pass OCR ──────────────────────────────────────────
-    let ocrResult: OCRResult;
+    let ocrResult: OCRCandidate;
     try {
       ocrResult = await runOCR(buffer);
     } catch (err: any) {
@@ -183,8 +216,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── Step 2: Parse with improved engine ─────────────────────────────────
-    const parsed = parseReceiptText(rawText);
+    // STEP 2: Parse with contextual engine + learning correction
+    const parsed = await parseReceiptTextWithLearning(rawText);
+
 
     // ── Step 3: Expense date is always today (server-enforced) ─────────────
     const date = new Date().toISOString().slice(0, 10);

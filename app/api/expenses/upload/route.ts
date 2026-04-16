@@ -22,7 +22,8 @@ import { authOptions }               from '@/lib/auth/authOptions';
 import path                          from 'node:path';
 import { pathToFileURL }             from 'node:url';
 import {
-  parseReceiptText,
+  parseReceiptTextWithLearning,
+
   cleanOCRText,
   detectCSVDelimiter,
   splitCSVLine,
@@ -31,6 +32,8 @@ import {
   validateCSVAmount,
   parsePDFBankStatement,
 } from '@/lib/ocr/receipt-parser';
+import { preprocessImageWithOpenCV } from '@/lib/ocr/opencv-preprocess';
+
 // NOTE: pdf-processor is intentionally NOT imported here at the top level.
 // pdfjs-dist (used inside pdf-processor) requires browser globals (DOMMatrix etc.)
 // that don't exist in Node.js at module-load time. We polyfill them here first,
@@ -383,19 +386,12 @@ export async function POST(req: NextRequest) {
     let rawText  = '';
     const todayDate = new Date().toISOString().slice(0, 10);
 
-    // ── IMAGE — multi-pass sharp + tesseract ──────────────────────────────
+    // ── IMAGE — OpenCV + Sharp multi-pass Tesseract OCR ──────────────────
     if (isImage) {
       try {
         const workerPath = pathToFileURL(TESSERACT_WORKER).href;
-
-        const passes = [
-          { name: 'gentle',         fn: () => sharp(buffer).grayscale().normalize().sharpen({ sigma: 1.2, m1: 0.5, m2: 0.5 }).png({ compressionLevel: 1 }).toBuffer() },
-          { name: 'contrast-boost', fn: () => sharp(buffer).grayscale().normalize().linear(1.6, -(128 * 0.6)).sharpen({ sigma: 1.5 }).png({ compressionLevel: 1 }).toBuffer() },
-          { name: 'threshold',      fn: () => sharp(buffer).grayscale().normalize().threshold(145).png({ compressionLevel: 1 }).toBuffer() },
-        ];
-
         const worker = await Tesseract.createWorker('eng', 1, { workerPath });
-        await worker.setParameters({ 
+        await worker.setParameters({
           tessedit_pageseg_mode: '6' as any,
           preserve_interword_spaces: '1',
         });
@@ -403,29 +399,61 @@ export async function POST(req: NextRequest) {
         let bestText = '';
         let bestConf = 0;
 
-        for (const p of passes) {
+        // Helper: try a buffer, update best if better
+        const tryBuf = async (buf: Buffer, label: string) => {
           try {
-            const prep = await p.fn();
-            const { data: { text, confidence } } = await worker.recognize(prep);
+            const { data: { text, confidence } } = await worker.recognize(buf);
             const cleaned = cleanOCRText(text);
             const tLen = cleaned.trim().length;
-            console.log(`[UPLOAD/${p.name}] conf=${(confidence ?? 0).toFixed(0)} chars=${tLen}`);
-
-            if (tLen > bestText.trim().length * 1.15 || (confidence > bestConf + 10 && tLen > 20)) {
+            const conf = confidence ?? 0;
+            console.log(`[UPLOAD/${label}] conf=${conf.toFixed(0)} chars=${tLen}`);
+            if (tLen > bestText.trim().length * 1.15 || (conf > bestConf + 10 && tLen > 20)) {
               bestText = cleaned;
-              bestConf = confidence ?? 0;
+              bestConf = conf;
             }
-            if (bestConf >= 80 && bestText.trim().length > 100) break;
-          } catch (e: any) { console.warn(`[UPLOAD/${p.name}] skip:`, e?.message); }
+          } catch (e: any) { console.warn(`[UPLOAD/${label}] skip:`, e?.message); }
+        };
+
+        // STAGE 1: OpenCV variants (adaptive threshold, aggressive boost, edge-enhanced)
+        let opencvUsed = false;
+        try {
+          const cvVariants = await preprocessImageWithOpenCV(buffer);
+          if (cvVariants.length > 0) {
+            opencvUsed = true;
+            for (const v of cvVariants) {
+              await tryBuf(v.buffer, `opencv-${v.variantName}`);
+              if (bestConf >= 85 && bestText.trim().length > 150) break;
+            }
+            console.log(`[UPLOAD] OpenCV: ${cvVariants.length} variants, bestConf=${bestConf.toFixed(0)}`);
+          }
+        } catch (e: any) {
+          console.warn('[UPLOAD] OpenCV failed:', e?.message);
+        }
+
+        // STAGE 2: Classic Sharp fallback (always runs if OpenCV didn't get good result)
+        if (!opencvUsed || bestConf < 80 || bestText.trim().length < 100) {
+          const sharpPasses = [
+            { name: 'gentle',    fn: () => sharp(buffer).grayscale().normalize().sharpen({ sigma: 1.2, m1: 0.5, m2: 0.5 }).png({ compressionLevel: 1 }).toBuffer() },
+            { name: 'contrast',  fn: () => sharp(buffer).grayscale().normalize().linear(1.6, -(128 * 0.6)).sharpen({ sigma: 1.5 }).png({ compressionLevel: 1 }).toBuffer() },
+            { name: 'threshold', fn: () => sharp(buffer).grayscale().normalize().threshold(145).png({ compressionLevel: 1 }).toBuffer() },
+          ];
+          for (const p of sharpPasses) {
+            try {
+              await tryBuf(await p.fn(), `sharp-${p.name}`);
+              if (bestConf >= 80 && bestText.trim().length > 100) break;
+            } catch (e: any) { console.warn(`[UPLOAD/sharp-${p.name}] skip:`, e?.message); }
+          }
         }
 
         await worker.terminate();
         rawText = bestText;
+        console.log(`[UPLOAD] Final OCR: conf=${bestConf.toFixed(0)} chars=${bestText.trim().length}`);
       } catch (err: any) {
         console.error('[UPLOAD/OCR] Failed:', err);
         return NextResponse.json({ ok: false, error: 'Failed to process image via OCR.' }, { status: 422 });
       }
     }
+
 
     // ── PDF — smart detection: digital vs scanned ──────────────────────────
     else if (isPDF) {
@@ -507,7 +535,8 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Single-transaction fallback (image receipt / single-entry PDF) ──────
-    const parsed = parseReceiptText(rawText);
+    const parsed = await parseReceiptTextWithLearning(rawText);
+
 
     const amountWarning = parsed.amount === 0
       ? 'Could not detect a valid amount — please enter it manually.'
