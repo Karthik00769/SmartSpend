@@ -309,41 +309,60 @@ export async function POST(req: NextRequest) {
     // ── CSV / TSV: hardened multi-transaction path ─────────────────────────
     if (isText) {
       const parseResult = parseCSV(rawText, todayDate);
-      if (parseResult.transactions.length > 0) {
-        console.log(`[UPLOAD/CSV] ${parseResult.transactions.length} transactions | mode=${parseResult.parseMode}`);
-        // Warn if all rows are low-confidence (positional mode)
-        const allLow = parseResult.transactions.every(t => t.confidence === 'low');
+      const rowCount = parseResult.totalRows;
+      const validCount = parseResult.transactions.length;
+      const accuracy = rowCount > 0 ? (validCount / rowCount) : 0;
+
+      if (validCount > 0) {
+        console.log(`[UPLOAD/CSV] ${validCount}/${rowCount} rows | acc=${(accuracy * 100).toFixed(0)}%`);
+
+        if (accuracy < 0.7 && rowCount > 5) {
+          return NextResponse.json({
+            ok: false,
+            error: 'LOW_ACCURACY',
+            message: 'Unable to parse bank statement accurately. Please try a different format or clearer file.'
+          }, { status: 422 });
+        }
+
         return NextResponse.json({
           ok: true,
           data: {
             transactions: parseResult.transactions,
             source:       'bank',
             parseMode:    parseResult.parseMode,
-            warning:      parseResult.warning ?? (allLow ? 'Column structure unclear — all transactions need review.' : undefined),
           },
         });
       }
-      // No transactions found — fall through to single-receipt parse
       console.log('[UPLOAD/CSV] Zero transactions extracted — trying single-receipt parser');
     }
 
     // ── PDF: try hardened bank-statement row parser, then single-receipt parse ─
     if (isPDF) {
       const parseResult = parsePDFBankText(rawText, todayDate);
-      if (parseResult.transactions.length > 1) {
-        console.log(`[UPLOAD/PDF] Bank statement: ${parseResult.transactions.length} transactions`);
-        const allLow = parseResult.transactions.every(t => t.confidence === 'low');
+      const rowCount = parseResult.totalRows;
+      const validCount = parseResult.transactions.length;
+      const accuracy = rowCount > 0 ? (validCount / rowCount) : 0;
+
+      if (validCount > 1) {
+        console.log(`[UPLOAD/PDF] Bank statement: ${validCount}/${rowCount} rows | acc=${(accuracy * 100).toFixed(0)}%`);
+
+        if (accuracy < 0.7 && rowCount > 5) {
+          return NextResponse.json({
+            ok: false,
+            error: 'LOW_ACCURACY',
+            message: 'Unable to parse bank statement accurately. Please try a different format or clearer file.'
+          }, { status: 422 });
+        }
+
         return NextResponse.json({
           ok: true,
           data: {
             transactions: parseResult.transactions,
             source:       'bank',
             parseMode:    'pdf-lines',
-            warning:      parseResult.warning ?? (allLow ? 'PDF column structure unclear — all transactions need review.' : undefined),
           },
         });
       }
-      // Single transaction or receipt PDF → receipt parser
       console.log('[UPLOAD/PDF] Single-entry or no-structure PDF — using receipt parser');
     }
 

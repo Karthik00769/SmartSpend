@@ -196,22 +196,35 @@ export async function POST(req: NextRequest) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
 
-    // ── Step 1: Run multi-pass OCR ──────────────────────────────────────────
+    // ── Step 1: Run multi-pass OCR with Hard Timeout ───────────────────────
+    const TIMEOUT_MS = 10000;
     let ocrResult: OCRCandidate;
+    
     try {
-      ocrResult = await runOCR(buffer);
+      ocrResult = await Promise.race([
+        runOCR(buffer),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('OCR_TIMEOUT')), TIMEOUT_MS)
+        ),
+      ]);
     } catch (err: any) {
+      if (err.message === 'OCR_TIMEOUT') {
+        console.error('[SCAN] OCR timed out after 10s');
+        return NextResponse.json(
+          { ok: false, error: 'OCR_TIMEOUT', message: 'Scanning took too long. Please try again.' },
+          { status: 504 }
+        );
+      }
       console.error('[SCAN] OCR pipeline failed:', err);
       return NextResponse.json({ ok: false, error: 'OCR processing failed.' }, { status: 422 });
     }
 
     const { text: rawText, confidence: ocrConf, pass: bestPass } = ocrResult;
     console.log(`[SCAN] Best OCR pass: ${bestPass} | conf=${ocrConf.toFixed(0)} | chars=${rawText.trim().length}`);
-    console.log('[SCAN] Text preview:', rawText.slice(0, 400).replace(/\n/g, ' | '));
 
-    if (!rawText || rawText.trim().length < 5) {
+    if (!rawText || rawText.trim().length < 20) {
       return NextResponse.json(
-        { ok: false, error: 'Could not extract text from this image. Try a clearer photo.' },
+        { ok: false, message: 'Unable to detect receipt clearly.' },
         { status: 422 },
       );
     }

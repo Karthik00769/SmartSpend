@@ -108,7 +108,7 @@ export function ScanReceiptArea({ onDataExtracted }: ScanReceiptAreaProps) {
       const json = await res.json();
 
       if (!json.ok) {
-        throw new Error(json.error || 'Parsing failed');
+        throw new Error(json.message || json.error || 'Parsing failed');
       }
 
       const extracted:     ExtractedData = json.data?.extracted;
@@ -128,14 +128,10 @@ export function ScanReceiptArea({ onDataExtracted }: ScanReceiptAreaProps) {
         toast.info('Date adjusted to today', { duration: 5000 });
       }
 
-      if (amountWarning) {
-        toast.warning(amountWarning);
-      } else if (needsReview || confidence === 'low') {
-        toast.warning('Receipt scanned with low confidence — please verify all fields.');
-      } else if (confidence === 'medium') {
-        toast.info('Receipt scanned. Please review the pre-filled details.');
+      if (needsReview || confidence === 'low') {
+        toast.warning('Please verify extracted details', { description: 'Some values might be inaccurate.' });
       } else {
-        toast.success('Receipt scanned successfully. Review and confirm the details.');
+        toast.success('Receipt scanned successfully');
       }
 
       // Pass data to parent (AddExpensePage) for pre-filling the form
@@ -145,7 +141,7 @@ export function ScanReceiptArea({ onDataExtracted }: ScanReceiptAreaProps) {
       setScannedList(prev =>
         prev.map(f => f.name === file.name ? { ...f, status: 'error' } : f)
       );
-      toast.error(err.message || 'OCR processing failed');
+      toast.error(err.message || 'Unable to scan receipt. Try again.');
     } finally {
       setIsScanning(false);
     }

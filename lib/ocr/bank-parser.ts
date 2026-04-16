@@ -65,7 +65,18 @@ function safeAmount(raw: string | undefined): number {
   return isAcctNeg ? v : v;
 }
 
-function validAmount(v: number): boolean {
+function validAmount(v: number, raw: string = ''): boolean {
+  // Reject if looks like account number (too many digits)
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length > 10) return false;
+  
+  // Reject if no decimal point (often an ID or year)
+  if (!raw.includes('.')) {
+    // Some banks use whole numbers for amounts, but usually decimals are present.
+    // If it's a large whole number without decimal, it's likely an ID.
+    if (v > 1000) return false;
+  }
+
   return v >= MIN_AMOUNT && v <= MAX_AMOUNT;
 }
 
@@ -87,8 +98,8 @@ function hasDate(line: string): boolean {
  * Parses a date string and ensures it is not in the future.
  * Fallback to defaultDate if invalid or future.
  */
-function extractDateFromRow(raw: string | undefined, defaultDate: string): { date: string; adjusted: boolean } {
-  if (!raw) return { date: defaultDate, adjusted: false };
+function extractDateFromRow(raw: string | undefined, todayDate: string): { date: string | null; adjusted: boolean } {
+  if (!raw) return { date: null, adjusted: false };
   
   const today = new Date();
   const todayStr = today.toISOString().slice(0, 10);
@@ -103,7 +114,7 @@ function extractDateFromRow(raw: string | undefined, defaultDate: string): { dat
         
         const iso = parsed.toISOString().slice(0, 10);
         if (iso > todayStr) {
-           return { date: defaultDate, adjusted: true };
+           return { date: null, adjusted: true }; // SKIP future
         }
         return { date: iso, adjusted: false };
       } catch {
@@ -111,7 +122,7 @@ function extractDateFromRow(raw: string | undefined, defaultDate: string): { dat
       }
     }
   }
-  return { date: defaultDate, adjusted: false };
+  return { date: null, adjusted: false };
 }
 
 // ─── Column map ───────────────────────────────────────────────────────────────
@@ -214,12 +225,14 @@ interface ResolvedRow {
 function resolveRowAmount(cols: string[], map: ColMap): ResolvedRow {
   // Case 1: explicit debit + credit columns
   if (map.debitCol !== -1 && map.creditCol !== -1) {
-    const debit  = safeAmount(cols[map.debitCol]);
-    const credit = safeAmount(cols[map.creditCol]);
-    if (debit > 0) {
+    const rawDebit = cols[map.debitCol];
+    const rawCredit = cols[map.creditCol];
+    const debit  = safeAmount(rawDebit);
+    const credit = safeAmount(rawCredit);
+    if (debit > 0 && validAmount(debit, rawDebit)) {
       return { amount: debit, confidence: 'high', source: 'debit-col', skip: false };
     }
-    if (credit > 0) {
+    if (credit > 0 && validAmount(credit, rawCredit)) {
       return { amount: 0, confidence: 'high', source: 'credit-col', skip: true }; // SKIP
     }
     return { amount: 0, confidence: 'low', source: 'empty-row', skip: true };
@@ -227,33 +240,31 @@ function resolveRowAmount(cols: string[], map: ColMap): ResolvedRow {
 
   // Case 2: debit column only
   if (map.debitCol !== -1) {
-    const v = safeAmount(cols[map.debitCol]);
-    return v > 0
+    const raw = cols[map.debitCol];
+    const v = safeAmount(raw);
+    return v > 0 && validAmount(v, raw)
       ? { amount: v, confidence: 'high', source: 'debit-col', skip: false }
       : { amount: 0, confidence: 'low', source: 'debit-empty', skip: true };
   }
 
   // Case 3: single amount column (NOT balance col)
   if (map.amountCol !== -1 && map.amountCol !== map.balanceCol) {
-    const v = safeAmount(cols[map.amountCol]);
-    if (v > 0) {
-      // If credit column also exists and has a value, this might be a credit → mark medium
+    const raw = cols[map.amountCol];
+    const v = safeAmount(raw);
+    if (v > 0 && validAmount(v, raw)) {
       const conf = map.creditCol !== -1 ? 'medium' : 'high';
       return { amount: v, confidence: conf, source: 'amount-col', skip: false };
     }
     return { amount: 0, confidence: 'low', source: 'amount-empty', skip: true };
   }
 
-  // Case 4: positional fallback — scan columns EXCEPT last (balance) and dateCol
-  // Take the first valid amount from the middle columns
-  const middleCols = cols.slice(
-    0,
-    Math.max(1, cols.length - 1)  // exclude last col (usually balance)
-  );
+  // Case 4: positional fallback
+  const middleCols = cols.slice(0, Math.max(1, cols.length - 1));
   for (let i = middleCols.length - 1; i >= 0; i--) {
     if (i === map.dateCol || i === map.balanceCol) continue;
-    const v = safeAmount(cols[i]);
-    if (validAmount(v)) {
+    const raw = cols[i];
+    const v = safeAmount(raw);
+    if (validAmount(v, raw)) {
       return { amount: v, confidence: 'low', source: `positional-col-${i}`, skip: false };
     }
   }
@@ -400,18 +411,20 @@ export function parseCSV(text: string, todayDate: string): BankParseResult {
         // Skip known noise lines
         if (shouldSkipLine(lines[i])) { result.skipped++; continue; }
 
-        // Resolve amount
+        // Resolve amount (Strict: must be valid debit)
         const resolved = resolveRowAmount(cols, colMap);
         if (resolved.skip || !validAmount(resolved.amount)) {
           result.skipped++;
           continue;
         }
 
-        // Date extraction
+        // Date extraction (Strict: must exist)
         const { date, adjusted: dateAdjusted } = extractDateFromRow(cols[colMap.dateCol], todayDate);
+        if (!date) { result.skipped++; continue; }
 
-        // Description
+        // Description extraction (Strict: must be length > 3)
         const description = extractDescription(cols, colMap, lines[i]);
+        if (description.length <= 3) { result.skipped++; continue; }
 
         result.transactions.push({
           amount:      resolved.amount,
@@ -462,18 +475,22 @@ function parsePositional(
       // Scan columns EXCLUDING last (usually balance) for valid amounts
       let amount = 0;
       let amtIdx = -1;
-      for (let c = cols.length - 2; c >= 0; c--) {  // stop BEFORE last col
+      for (let c = cols.length - 2; c >= 0; c--) {
         const v = safeAmount(cols[c]);
-        if (validAmount(v)) { amount = v; amtIdx = c; break; }
+        if (validAmount(v, cols[c])) { amount = v; amtIdx = c; break; }
       }
       if (!amount) { result.skipped++; continue; }
+
+      // Positional Date Check
+      const { date, adjusted: dateAdjusted } = extractDateFromRow(line, todayDate);
+      if (!date) { result.skipped++; continue; }
 
       const description = cols
         .filter((_, i) => i !== amtIdx)
         .join(' ').trim().replace(/\s{2,}/g, ' ')
         .slice(0, 120) || 'Bank transaction';
-
-      const { date, adjusted: dateAdjusted } = extractDateFromRow(line, todayDate);
+      
+      if (description.length <= 3) { result.skipped++; continue; }
 
       result.transactions.push({
         amount, date, dateAdjusted, description,
@@ -618,6 +635,7 @@ export function parsePDFBankText(text: string, todayDate: string): BankParseResu
         if (desc.length < 3) desc = 'Bank transaction';
 
         const { date, adjusted: dateAdjusted } = extractDateFromRow(line, todayDate);
+        if (!date) { result.skipped++; continue; }
 
         result.transactions.push({
           amount,

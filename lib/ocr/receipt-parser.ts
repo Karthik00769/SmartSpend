@@ -478,12 +478,14 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
   }
 
   // STEP 7: Fail-safe — needsReview when uncertain
-  const needsReview =
-    finalAmount === 0 ||
-    confidence === 'low' ||
-    merchant.trim().length === 0;
+  // ACCEPT ONLY: amount > 0, merchant length > 2, confidence >= 50 (medium/high)
+  const isConfident = confidence === 'high' || confidence === 'medium';
+  const hasValidMerchant = merchant.trim().length > 2;
+  const hasValidAmount = finalAmount > 0;
 
-  const errorMessage = finalAmount === 0
+  const needsReview = !isConfident || !hasValidMerchant || !hasValidAmount;
+
+  const errorMessage = !hasValidAmount
     ? 'Unable to detect amount — please enter it manually.'
     : undefined;
 
