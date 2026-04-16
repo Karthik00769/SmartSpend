@@ -9,6 +9,10 @@ export interface UserFinancialData {
   goalProgress: Array<{ title: string; target: number; current: number }>;
   currencySymbol?: string; // e.g. '₹', '$', '£' — defaults to '₹'
   last3MonthsSpending?: number; // optional context for trend insights
+  monthlyIncome?: number;
+  savings?: number;
+  savingsRate?: number;
+  comparison?: { lastMonthSpend: number; changePercent: number };
 }
 
 // ─── Output Types ────────────────────────────────────────────────────────────
@@ -131,40 +135,72 @@ export async function generateInsights(data: UserFinancialData): Promise<Generat
   }
 
   const sym = data.currencySymbol ?? '₹';
-  const prompt = `
-    You are an expert financial advisor for the SmartSpend app.
-    Analyze the following user financial data and generate 1 to 3 natural language insights.
-    IMPORTANT: Use the currency symbol "${sym}" for ALL amounts (never use $).
-    
-    CRITICAL RULES:
-    1. NEVER generate or include any numeric financial health scores or percentages (e.g., "Health Score: 85").
-    2. NEVER invent mock statistics or data points not provided in the context.
-    3. ONLY use natural language to explain trends, identification of risks (overspending), or goal progress.
-    4. If the data is empty (no spending, no budgets), encourage the user to add transactions to unlock insights.
-    5. Be professional, concise, and highly actionable.
-    6. Use the currency symbol ${sym} for ALL monetary amounts.
 
-    Data Context:
-    - Monthly Spending: ${sym}${data.monthlySpending}
-    - Category Breakdown: ${JSON.stringify(data.categoryDistribution)}
-    - Budget Status: ${JSON.stringify(data.budgetUsage)}
-    - Active Goals: ${JSON.stringify(data.goalProgress)}${data.last3MonthsSpending !== undefined ? `
-    - Last 3 months average spending: ${sym}${(data.last3MonthsSpending / 3).toFixed(0)}/month` : ''}
+  // Sort and pick top categories
+  const topCategories = Object.entries(data.categoryDistribution)
+    .map(([name, amount]) => ({ name, amount }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 3);
 
-    Output Format:
-    Return as a clean JSON array:
-    [
-      {
-        "type": "warning | opportunity | trend",
-        "content": "Actionable insight using ${sym} for currency."
-      }
-    ]
-  `;
+  // Construct strict JSON input for Gemini
+  const promptData = {
+    currency: sym,
+    monthlyIncome: data.monthlyIncome ?? 0,
+    totalSpent: data.monthlySpending,
+    savings: data.savings ?? 0,
+    savingsRate: data.savingsRate ?? 0,
+    topCategories,
+    comparison: data.comparison ?? {
+      lastMonthSpend: 0,
+      changePercent: 0
+    }
+  };
 
+  const prompt = `SYSTEM:
+
+You are a financial advisor AI.
+
+Give concise, actionable financial insights.
+
+STRICT RULES:
+* Use the given currency symbol ONLY
+* Use real numbers from input
+* DO NOT hallucinate data
+* DO NOT generalize
+* Keep insights practical and human-like
+* Max 3–5 insights
+
+---
+USER:
+
+Analyze the financial data and provide:
+1. Spending summary
+2. Key warning (if any)
+3. Opportunity to save
+4. Specific recommendation
+
+Data:
+${JSON.stringify(promptData, null, 2)}
+
+---
+OUTPUT FORMAT (STRICT JSON ARRAY ONLY):
+[
+  {
+    "type": "summary",
+    "text": "..."
+  },
+  {
+    "type": "warning",
+    "text": "..."
+  },
+  {
+    "type": "recommendation",
+    "text": "..."
+  }
+]`;
 
   const genAI = new GoogleGenerativeAI(apiKey);
 
-  // Try each model candidate in sequence
   for (const modelName of MODEL_CANDIDATES) {
     try {
       const model = genAI.getGenerativeModel({ model: modelName });
@@ -173,38 +209,46 @@ export async function generateInsights(data: UserFinancialData): Promise<Generat
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: {
           responseMimeType: 'application/json',
+          temperature: 0.2, // Low randomness for strict adherence
         },
       });
 
       const responseText = result.response.text();
       const raw = JSON.parse(responseText);
 
-      // Normalise — accept both a bare array and { insights: [...] }
       const arr: any[] = Array.isArray(raw) ? raw : (Array.isArray(raw?.insights) ? raw.insights : []);
 
-      const valid = arr.filter(
-        (i: any) => i?.content && ['warning', 'opportunity', 'trend'].includes(i?.type),
-      ) as GeneratedInsight[];
+      const valid = arr
+        .filter((i: any) => typeof i?.text === 'string' && i.text.trim().length > 0)
+        .map((i: any) => ({
+          // Map Gemini's types back to our system's expected 'trend' | 'warning' | 'opportunity'
+          type: (i.type === 'warning' ? 'warning' : i.type === 'opportunity' ? 'opportunity' : 'trend') as 'trend' | 'warning' | 'opportunity',
+          content: i.text.trim()
+        }));
 
       if (valid.length > 0) {
-        console.log(`[insightGenerator] Generated ${valid.length} insights via ${modelName}`);
+        console.log(`[insightGenerator] Generated ${valid.length} strictly formatted insights via ${modelName}`);
+        
+        // Ensure currency symbol enforcement
+        const hasWrongCurrency = valid.some(v => v.content.includes('$') || v.content.includes('€') || v.content.includes('£'));
+        if (sym === '₹' && (valid.some(v => v.content.includes('$')))) {
+           // Basic replacement if the model ignored the strict instruction
+           valid.forEach(v => v.content = v.content.replace(/\$/g, sym));
+        }
+
         return valid;
       }
-
-      // Empty but no error → try next model
     } catch (err: any) {
       const is404 = err?.status === 404 || String(err?.message).includes('404') || String(err?.message).includes('not found');
       if (is404) {
-        console.warn(`[insightGenerator] Model "${modelName}" not found — trying next candidate.`);
-        continue; // try next model
+        console.warn(`[insightGenerator] Model "${modelName}" not found — trying next.`);
+        continue;
       }
-      // Non-404 error: log and break to fallback immediately
       console.error(`[insightGenerator] Gemini error with "${modelName}":`, err?.message ?? err);
       break;
     }
   }
 
-  // All AI paths failed — use rule-based fallback
-  console.warn('[insightGenerator] All Gemini models failed — using rule-based fallback.');
+  console.warn('[insightGenerator] All Gemini models failed or returned empty data — using rule-based fallback.');
   return generateFallbackInsights(data);
 }

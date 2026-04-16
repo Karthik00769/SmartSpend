@@ -60,6 +60,9 @@ export async function GET(_req: NextRequest) {
 
     const healthData = calculateHealthScore({ monthlyIncome, totalSpent, budgets, goals });
 
+    const trendLabels = trendRows.map(r => r.month_label);
+    const trendValues = trendRows.map(r => parseFloat(r.total_spent));
+
     // ── 3. Insight generation (with guaranteed fallback) ──────────────────────
     let finalInsights = insightsBundle.insights;
     const hasThisMonth = finalInsights.some(
@@ -75,14 +78,28 @@ export async function GET(_req: NextRequest) {
           return acc;
         }, {});
 
+        // Get last month's spend for comparison
+        const lastMonthSpend = trendValues.length >= 2 ? trendValues[trendValues.length - 2] : 0;
+        const changePercent = lastMonthSpend > 0
+          ? Math.round(((totalSpent - lastMonthSpend) / lastMonthSpend) * 100)
+          : 0;
+
         const aiData: UserFinancialData = {
           monthlySpending:      totalSpent,
           categoryDistribution: catDist,
           budgetUsage:   budgets.categories.map(b => ({ category: b.category, limit: b.allocated, spent: b.spent })),
           goalProgress:  goals.map(g => ({ title: g.title, target: g.targetAmount, current: g.savedAmount })),
+          monthlyIncome,
+          savings: Math.max(0, monthlyIncome - totalSpent),
+          savingsRate,
+          comparison: {
+            lastMonthSpend,
+            changePercent,
+          }
         };
 
         // RULE-BASED ONLY: Remove fake data, bypass AI generator
+
         const newInsights = [];
         if (totalSpent > (monthlyIncome * 0.8)) {
           newInsights.push({ type: 'warning', message: 'You have spent over 80% of your income this month.', content: 'High spending detected based on your monthly income.' });
@@ -122,9 +139,6 @@ export async function GET(_req: NextRequest) {
         console.warn('[dashboard-summary] Insight generation failed (non-fatal):', genErr);
       }
     }
-
-    const trendLabels = trendRows.map(r => r.month_label);
-    const trendValues = trendRows.map(r => parseFloat(r.total_spent));
 
     return ok({
       totalSpending: totalSpent,
