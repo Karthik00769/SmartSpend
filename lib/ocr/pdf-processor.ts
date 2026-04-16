@@ -21,7 +21,10 @@ import { pathToFileURL } from 'node:url';
 import { cleanOCRText }  from './receipt-parser';
 import Tesseract from 'tesseract.js';
 import sharp from 'sharp';
-const pdfParse = require('pdf-parse');
+// NOTE: pdf-parse and pdfjs-dist are intentionally NOT required at the top level.
+// They transitively load browser globals (DOMMatrix etc.) which crash Node.js
+// serverless environments at module-load time. Both are required lazily inside
+// processPDF() which is itself only called via a dynamic import.
 
 // ─── Node polyfills required by pdfjs-dist ────────────────────────────────────
 // pdfjs-dist expects browser globals. Polyfill them before any dynamic import.
@@ -287,6 +290,8 @@ export async function processPDF(buffer: Buffer): Promise<PDFExtractResult> {
   let pageCount   = 0;
 
   try {
+    // Lazy require — pdf-parse (and pdfjs-dist inside it) must only load at runtime
+    const pdfParse = require('pdf-parse');
     const result   = await pdfParse(buffer);
     digitalText    = (result.text ?? '').trim();
     pageCount      = result.numpages ?? 0;

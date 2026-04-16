@@ -31,9 +31,55 @@ import {
   validateCSVAmount,
   parsePDFBankStatement,
 } from '@/lib/ocr/receipt-parser';
-import { processPDF } from '@/lib/ocr/pdf-processor';
+// NOTE: pdf-processor is intentionally NOT imported here at the top level.
+// pdfjs-dist (used inside pdf-processor) requires browser globals (DOMMatrix etc.)
+// that don't exist in Node.js at module-load time. We polyfill them here first,
+// then dynamically import pdf-processor only when a PDF is actually received.
 import Tesseract from 'tesseract.js';
 import sharp from 'sharp';
+
+// ─── Browser-global polyfills for pdfjs-dist ─────────────────────────────────
+if (typeof globalThis.DOMMatrix === 'undefined') {
+  (globalThis as any).DOMMatrix = class DOMMatrix {
+    is2D = true; isIdentity = true;
+    a=1;b=0;c=0;d=1;e=0;f=0;
+    m11=1;m12=0;m13=0;m14=0;m21=0;m22=1;m23=0;m24=0;
+    m31=0;m32=0;m33=1;m34=0;m41=0;m42=0;m43=0;m44=1;
+    static fromFloat64Array() { return new (globalThis as any).DOMMatrix(); }
+    static fromFloat32Array() { return new (globalThis as any).DOMMatrix(); }
+    static fromMatrix()       { return new (globalThis as any).DOMMatrix(); }
+    translate() { return this; } scale()    { return this; }
+    rotate()    { return this; } inverse()  { return this; }
+    multiply()  { return this; } flipX()    { return this; }
+    flipY()     { return this; } skewX()    { return this; }
+    skewY()     { return this; } transformPoint(p: any) { return p; }
+    toFloat32Array() { return new Float32Array(16); }
+    toFloat64Array() { return new Float64Array(16); }
+    toString() { return 'matrix(1,0,0,1,0,0)'; }
+  };
+}
+if (typeof globalThis.Path2D === 'undefined') {
+  (globalThis as any).Path2D = class Path2D {
+    constructor(_?: any) {}
+    addPath(){} closePath(){} moveTo(){} lineTo(){}
+    arc(){}     arcTo(){}    ellipse(){} rect(){}
+    bezierCurveTo(){} quadraticCurveTo(){}
+  };
+}
+if (typeof globalThis.ImageData === 'undefined') {
+  (globalThis as any).ImageData = class ImageData {
+    data: Uint8ClampedArray; width: number; height: number; colorSpace = 'srgb';
+    constructor(wOrArr: number | Uint8ClampedArray, h: number, w?: number) {
+      if (typeof wOrArr === 'number') {
+        this.width = wOrArr; this.height = h;
+        this.data  = new Uint8ClampedArray(wOrArr * h * 4);
+      } else {
+        this.data = wOrArr; this.width = h;
+        this.height = w ?? wOrArr.length / (4 * h);
+      }
+    }
+  };
+}
 
 // Worker path for Tesseract — built from process.cwd() so webpack cannot intercept it
 const NM = path.join(process.cwd(), 'node_modules');
@@ -384,6 +430,8 @@ export async function POST(req: NextRequest) {
     // ── PDF — smart detection: digital vs scanned ──────────────────────────
     else if (isPDF) {
       try {
+        // Dynamically import pdf-processor to prevent pdfjs-dist loading at build time.
+        const { processPDF } = await import('@/lib/ocr/pdf-processor');
         const pdfResult = await processPDF(buffer);
         rawText = pdfResult.text;
 
