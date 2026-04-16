@@ -22,6 +22,7 @@ import {
 } from '@/lib/ocr/receipt-classifier';
 
 import { lookupCorrection } from '@/lib/ocr/correction-store';
+import { validateOCRWithGemini } from '@/lib/ai/receiptValidator';
 
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -477,6 +478,39 @@ export async function parseReceiptTextWithLearning(rawText: string): Promise<Par
     }
   } catch (e: any) {
     console.warn('[PARSER/learn] Correction lookup failed:', e?.message);
+  }
+
+  // ── Step 2: Gemini Secondary Validation ──────────────────────────────────
+  try {
+    const aiValidation = await validateOCRWithGemini(base.merchant, base.amount, rawText);
+    if (aiValidation) {
+      let boosted = false;
+      const result = { ...base };
+
+      if (aiValidation.merchant && aiValidation.merchant !== base.merchant) {
+        console.log(`[PARSER/AI] Corrected merchant: "${base.merchant}" → "${aiValidation.merchant}"`);
+        result.merchant = aiValidation.merchant;
+        result.description = aiValidation.merchant;
+        boosted = true;
+      }
+      
+      // Assume AI amount is better if our base amount was 0 OR confidence was low
+      if (aiValidation.amount && (base.amount === 0 || base.confidence === 'low')) {
+         console.log(`[PARSER/AI] Corrected amount: ${base.amount} → ${aiValidation.amount}`);
+         result.amount = aiValidation.amount;
+         boosted = true;
+      }
+
+      if (boosted) {
+        result.confidence = 'high';
+        result.needsReview = result.amount === 0;
+        result.errorMessage = result.amount === 0 ? 'Unable to detect amount — please enter it manually.' : undefined;
+      }
+
+      return result;
+    }
+  } catch (e: any) {
+    console.warn('[PARSER/AI] Gemini validation failed:', e?.message);
   }
 
   return base;
