@@ -22,13 +22,57 @@ import { cleanOCRText }  from './receipt-parser';
 import Tesseract from 'tesseract.js';
 import sharp from 'sharp';
 const pdfParse = require('pdf-parse');
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 
-// In Next.js server environment, setting workerSrc with require.resolve 
-// breaks build because it's transformed into a module ID.
-// We assign a primitive string to avoid "Invalid workerSrc type" error.
-if (pdfjsLib?.GlobalWorkerOptions) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdfjs-dist/legacy/build/pdf.worker.mjs';
+// ─── Node polyfills required by pdfjs-dist ────────────────────────────────────
+// pdfjs-dist expects browser globals. Polyfill them before any dynamic import.
+if (typeof globalThis.DOMMatrix === 'undefined') {
+  (globalThis as any).DOMMatrix = class DOMMatrix {
+    constructor() {}
+    static fromFloat64Array(a: Float64Array) { return new (globalThis as any).DOMMatrix(); }
+    static fromFloat32Array(a: Float32Array) { return new (globalThis as any).DOMMatrix(); }
+    static fromMatrix(m?: any)               { return new (globalThis as any).DOMMatrix(); }
+    is2D = true; isIdentity = true;
+    a=1;b=0;c=0;d=1;e=0;f=0;
+    m11=1;m12=0;m13=0;m14=0;
+    m21=0;m22=1;m23=0;m24=0;
+    m31=0;m32=0;m33=1;m34=0;
+    m41=0;m42=0;m43=0;m44=1;
+    translate() { return this; } scale()   { return this; }
+    rotate()    { return this; } inverse() { return this; }
+    multiply()  { return this; } flipX()   { return this; }
+    flipY()     { return this; } skewX()   { return this; }
+    skewY()     { return this; } transformPoint(p: any) { return p; }
+    toFloat32Array() { return new Float32Array(16); }
+    toFloat64Array() { return new Float64Array(16); }
+    toString() { return 'matrix(1,0,0,1,0,0)'; }
+  };
+}
+if (typeof globalThis.Path2D === 'undefined') {
+  (globalThis as any).Path2D = class Path2D {
+    constructor(_?: any) {}
+    addPath() {} closePath() {} moveTo() {} lineTo() {}
+    arc()    {} arcTo()    {} ellipse() {} rect()    {}
+    bezierCurveTo() {} quadraticCurveTo() {}
+  };
+}
+if (typeof globalThis.ImageData === 'undefined') {
+  (globalThis as any).ImageData = class ImageData {
+    data: Uint8ClampedArray;
+    width: number;
+    height: number;
+    colorSpace: string = 'srgb';
+    constructor(widthOrArr: number | Uint8ClampedArray, height: number, w?: number) {
+      if (typeof widthOrArr === 'number') {
+        this.width  = widthOrArr;
+        this.height = height;
+        this.data   = new Uint8ClampedArray(widthOrArr * height * 4);
+      } else {
+        this.data   = widthOrArr;
+        this.width  = height;
+        this.height = w ?? widthOrArr.length / (4 * height);
+      }
+    }
+  };
 }
 
 const NM = path.join(process.cwd(), 'node_modules');
@@ -270,6 +314,12 @@ export async function processPDF(buffer: Buffer): Promise<PDFExtractResult> {
   let actualPageCount = pageCount;
 
   try {
+    // Dynamic import so pdfjs-dist is NOT bundled at module load time.
+    // This prevents the DOMMatrix crash in Node.js serverless environments.
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs' as any);
+    if (pdfjsLib?.GlobalWorkerOptions) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdfjs-dist/legacy/build/pdf.worker.mjs';
+    }
     const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
     pdfDoc = await loadingTask.promise;
     actualPageCount = pdfDoc.numPages;
