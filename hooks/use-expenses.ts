@@ -3,11 +3,17 @@
  * ─────────────────────────────────────────────────────────────────────
  * GET  — list recent expenses (with category names/icons)
  * POST — create a new expense (triggers engine processing)
+ *
+ * OFFLINE SUPPORT:
+ * When navigator.onLine === false, addExpense() saves the payload to
+ * IndexedDB/localStorage via offlineStorage and returns a synthetic
+ * "saved offline" result. The online path is completely unchanged.
  */
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { apiGet, apiPost, buildQuery, ApiRequestError } from '@/lib/api-client';
+import { saveExpenseOffline } from '@/lib/offline/offlineStorage';
 import type { ExpenseDTO } from '@/types/api';
 
 // ─── Payload for creating an expense ──────────────────────────────────────────
@@ -92,6 +98,34 @@ export function useExpenses(opts: UseExpensesOptions = {}): UseExpensesReturn {
   // ── Add expense ─────────────────────────────────────────────────────────────
   const addExpense = useCallback(
     async (payload: AddExpensePayload) => {
+      // ── OFFLINE PATH ──────────────────────────────────────────────────────────
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        try {
+          await saveExpenseOffline(payload);
+          // Return a synthetic "offline" sentinel that callers treat as truthy.
+          // The fields match the online response shape so the UI still works.
+          return {
+            expense:        null as unknown as ExpenseDTO,
+            dateAdjusted:   false,
+            message:        `Saved offline for ${payload.date} — will sync when back online.`,
+            budgetStatus:   null,
+            goalStatus:     null,
+            expenseId:      `offline-${Date.now()}`,
+            autoCategized:  false,
+            categorization: {
+              categoryId:   0,
+              categoryName: payload.categoryName ?? 'Uncategorized',
+              confidence:   'low',
+            },
+            _offline: true,
+          } as const;
+        } catch {
+          setSubmitError('Failed to save expense offline.');
+          return false;
+        }
+      }
+
+      // ── ONLINE PATH (unchanged) ───────────────────────────────────────────────
       setSubmitting(true);
       setSubmitError(null);
       try {

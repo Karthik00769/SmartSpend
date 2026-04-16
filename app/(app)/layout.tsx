@@ -6,6 +6,7 @@ import { useSession }         from 'next-auth/react';
 import { useRouter }          from 'next/navigation';
 import { useEffect }          from 'react';
 import { Skeleton }           from '@/components/ui/skeleton';
+import { Toaster }            from '@/components/ui/sonner';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
@@ -32,6 +33,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <SmartSpendProvider>
       <AppLayout>{children}</AppLayout>
+      <Toaster richColors position="top-right" />
     </SmartSpendProvider>
   );
 }

@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { toast } from 'sonner';
+import { useSmartSpend } from '@/context/smartspend-context';
 
 export interface ExtractedData {
   amount: number | null;
@@ -21,6 +22,7 @@ const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif
 const ALLOWED_IMAGE_EXTS  = ['.jpg', '.jpeg', '.png', '.webp'];
 
 export function ScanReceiptArea({ onDataExtracted }: ScanReceiptAreaProps) {
+  const { isOnline } = useSmartSpend();
   const [isDragging,  setIsDragging]  = useState(false);
   const [isScanning,  setIsScanning]  = useState(false);
   const [useCamera,   setUseCamera]   = useState(false);
@@ -157,7 +159,12 @@ export function ScanReceiptArea({ onDataExtracted }: ScanReceiptAreaProps) {
         <button
           type="button"
           onClick={useCamera ? stopCamera : startCamera}
-          className="text-sm font-medium text-primary hover:underline bg-primary/10 px-3 py-1 rounded-full"
+          disabled={!isOnline}
+          className={`text-sm font-medium px-3 py-1 rounded-full transition-all ${
+            !isOnline
+              ? 'bg-muted text-muted-foreground cursor-not-allowed opacity-50'
+              : 'text-primary hover:underline bg-primary/10'
+          }`}
         >
           {useCamera ? 'Close Camera' : '📷 Use Camera'}
         </button>
@@ -172,7 +179,7 @@ export function ScanReceiptArea({ onDataExtracted }: ScanReceiptAreaProps) {
             <button
               type="button"
               onClick={captureFrame}
-              disabled={isScanning}
+              disabled={isScanning || !isOnline}
               className="bg-primary text-primary-foreground px-8 py-3 rounded-full font-bold shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
             >
               {isScanning ? 'Processing…' : 'Capture Receipt'}
@@ -183,32 +190,46 @@ export function ScanReceiptArea({ onDataExtracted }: ScanReceiptAreaProps) {
 
       {/* Drag-and-drop zone */}
       <div
-        onDragEnter={handleDragEnter}
-        onDragLeave={handleDragLeave}
+        onDragEnter={!isOnline ? undefined : handleDragEnter}
+        onDragLeave={!isOnline ? undefined : handleDragLeave}
         onDragOver={(e) => e.preventDefault()}
-        onDrop={handleDrop}
+        onDrop={!isOnline ? undefined : handleDrop}
         className={`border-2 border-dashed rounded-xl p-12 text-center transition-all duration-300 ${
-          isDragging ? 'border-primary bg-primary/10 scale-[0.99] shadow-inner' : 'border-border hover:border-primary/50'
-        } ${isScanning ? 'opacity-50 pointer-events-none' : ''}`}
+          isDragging ? 'border-primary bg-primary/10 scale-[0.99] shadow-inner' : 'border-border'
+        } ${!isOnline ? 'bg-muted/30 border-muted-foreground/20' : 'hover:border-primary/50'} ${
+          isScanning ? 'opacity-50 pointer-events-none' : ''
+        }`}
       >
         <input
           type="file"
           id="receipt-upload"
           accept="image/jpeg,image/png,image/webp"
           onChange={handleFileInput}
-          disabled={isScanning}
+          disabled={isScanning || !isOnline}
           className="hidden"
         />
-        <div className="text-6xl mb-6 drop-shadow-sm">📸</div>
-        <h3 className="text-xl font-bold text-foreground mb-2">Upload Receipt Picture</h3>
-        <p className="text-muted-foreground mb-6 max-w-xs mx-auto">
-          Drop your receipt here or click to browse. Supported: JPG, PNG, WebP.
-        </p>
-        <label htmlFor="receipt-upload" className="inline-block">
-          <div className={`bg-primary text-primary-foreground px-8 py-3 rounded-lg font-bold shadow-md transition-all ${isScanning ? 'cursor-not-allowed' : 'cursor-pointer hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0'}`}>
-            {isScanning ? 'Analyzing…' : 'Select Image'}
+        {!isOnline ? (
+          <div className="py-2">
+            <div className="text-6xl mb-6 opacity-30 grayscale">📡</div>
+            <h3 className="text-xl font-bold text-muted-foreground mb-2">Offline</h3>
+            <p className="text-sm text-balance text-muted-foreground max-w-xs mx-auto">
+              Receipt scanning requires an internet connection. Please reconnect to use this feature.
+            </p>
           </div>
-        </label>
+        ) : (
+          <>
+            <div className="text-6xl mb-6 drop-shadow-sm">📸</div>
+            <h3 className="text-xl font-bold text-foreground mb-2">Upload Receipt Picture</h3>
+            <p className="text-muted-foreground mb-6 max-w-xs mx-auto">
+              Drop your receipt here or click to browse. Supported: JPG, PNG, WebP.
+            </p>
+            <label htmlFor="receipt-upload" className="inline-block">
+              <div className={`bg-primary text-primary-foreground px-8 py-3 rounded-lg font-bold shadow-md transition-all ${isScanning ? 'cursor-not-allowed' : 'cursor-pointer hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0'}`}>
+                {isScanning ? 'Analyzing…' : 'Select Image'}
+              </div>
+            </label>
+          </>
+        )}
       </div>
 
       {scannedList.length > 0 && (

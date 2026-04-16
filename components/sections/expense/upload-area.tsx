@@ -8,6 +8,8 @@ import { toast }    from 'sonner';
 import { type ExtractedData } from './scan-receipt';
 import { autoCategorizeName } from '@/lib/expense-engine/auto-categorize';
 
+import { useSmartSpend } from '@/context/smartspend-context';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface ParsedTransaction {
@@ -30,6 +32,7 @@ const ALLOWED_EXTS  = ['.pdf', '.csv'];
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function UploadArea({ onDataExtracted, onBatchConfirm }: UploadAreaProps) {
+  const { isOnline } = useSmartSpend();
   const [isDragging,    setIsDragging]    = useState(false);
   const [isProcessing,  setIsProcessing]  = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<{ name: string; status: 'processing' | 'done' | 'error' }[]>([]);
@@ -164,28 +167,42 @@ export function UploadArea({ onDataExtracted, onBatchConfirm }: UploadAreaProps)
 
       {/* Drop zone */}
       <div
-        onDragEnter={handleDragEnter}
-        onDragLeave={handleDragLeave}
+        onDragEnter={!isOnline ? undefined : handleDragEnter}
+        onDragLeave={!isOnline ? undefined : handleDragLeave}
         onDragOver={(e) => e.preventDefault()}
-        onDrop={handleDrop}
+        onDrop={!isOnline ? undefined : handleDrop}
         className={`border-2 border-dashed rounded-xl p-12 text-center transition-all duration-300 ${
-          isDragging ? 'border-primary bg-primary/10 scale-[0.99]' : 'border-border hover:border-primary/50'
-        } ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}
+          isDragging ? 'border-primary bg-primary/10 scale-[0.99]' : 'border-border'
+        } ${!isOnline ? 'bg-muted/30 border-muted-foreground/20' : 'hover:border-primary/50'} ${
+          isProcessing ? 'opacity-50 pointer-events-none' : ''
+        }`}
       >
         <input
           type="file" id="file-upload" multiple accept=".pdf,.csv"
-          onChange={handleFileInput} disabled={isProcessing} className="hidden"
+          onChange={handleFileInput} disabled={isProcessing || !isOnline} className="hidden"
         />
-        <div className="text-6xl mb-6">📄</div>
-        <h3 className="text-xl font-bold text-foreground mb-2">Upload Bank Statement</h3>
-        <p className="text-muted-foreground mb-6 max-w-xs mx-auto">
-          PDF or CSV. Transactions are extracted and auto-categorized instantly.
-        </p>
-        <label htmlFor="file-upload" className="inline-block">
-          <div className={`bg-primary text-primary-foreground px-8 py-3 rounded-lg font-bold shadow-md transition-all ${isProcessing ? 'cursor-not-allowed' : 'cursor-pointer hover:shadow-lg active:scale-95'}`}>
-            {isProcessing ? 'Extracting…' : 'Select File'}
+        {!isOnline ? (
+          <div className="py-2">
+            <div className="text-6xl mb-6 opacity-30 grayscale">📡</div>
+            <h3 className="text-xl font-bold text-muted-foreground mb-2">Offline</h3>
+            <p className="text-sm text-balance text-muted-foreground max-w-xs mx-auto">
+              Bank statement upload requires an internet connection. Please reconnect to use this feature.
+            </p>
           </div>
-        </label>
+        ) : (
+          <>
+            <div className="text-6xl mb-6">📄</div>
+            <h3 className="text-xl font-bold text-foreground mb-2">Upload Bank Statement</h3>
+            <p className="text-muted-foreground mb-6 max-w-xs mx-auto">
+              PDF or CSV. Transactions are extracted and auto-categorized instantly.
+            </p>
+            <label htmlFor="file-upload" className="inline-block">
+              <div className={`bg-primary text-primary-foreground px-8 py-3 rounded-lg font-bold shadow-md transition-all ${isProcessing ? 'cursor-not-allowed' : 'cursor-pointer hover:shadow-lg active:scale-95'}`}>
+                {isProcessing ? 'Extracting…' : 'Select File'}
+              </div>
+            </label>
+          </>
+        )}
       </div>
 
       {/* File status */}

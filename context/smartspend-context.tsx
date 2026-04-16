@@ -24,6 +24,7 @@ import { useExpenses,   type AddExpensePayload }          from '@/hooks/use-expe
 import { useBudgets,    type UpsertBudgetPayload }        from '@/hooks/use-budgets';
 import { useGoals,      type CreateGoalPayload }          from '@/hooks/use-goals';
 import { useCurrency }                                    from '@/hooks/use-currency';
+import { useOfflineSync }                                 from '@/hooks/use-offline-sync';
 
 // Module-level signal so insights pages re-fetch after any expense mutation
 let _insightsTick = 0;
@@ -63,9 +64,15 @@ interface SmartSpendContextValue {
   submitting:      boolean;
   submitError:     string | null;
   addExpense: (p: AddExpensePayload) => Promise<{
+    expense:        import('@/types/api').ExpenseDTO | null;
+    dateAdjusted:   boolean;
+    message:        string;
+    budgetStatus?:  { usedPercent: number; status: 'under' | 'near' | 'over' } | null;
+    goalStatus?:    { progress: number } | null;
     expenseId:      string;
     autoCategized:  boolean;
     categorization: { categoryId: number; categoryName: string; confidence: string; matchedOn?: string };
+    _offline?:      boolean;
   } | false>;
 
   // Budgets
@@ -91,6 +98,12 @@ interface SmartSpendContextValue {
   refreshAll: () => void;
   currency:   string;
   fmt:        (amount: number) => string;
+
+  // Offline
+  isOnline:     boolean;
+  pendingCount: number;
+  isSyncing:    boolean;
+  triggerSync:  () => Promise<void>;
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -130,6 +143,22 @@ export function SmartSpendProvider({ children }: SmartSpendProviderProps) {
     budH.refresh();
     goaH.refresh();
   }, [dashH.refresh, summaryH.refresh, expH.refresh, budH.refresh, goaH.refresh]);
+
+  // ── Offline sync ─────────────────────────────────────────────────────────
+  const offlineSync = useOfflineSync({
+    poster: expH.addExpense,
+    onSynced: (count) => {
+      refreshAll();
+      notifyInsightsRefresh();
+      // Lazy-import toast to avoid a hard SSR dep on sonner in this context module
+      import('sonner').then(({ toast }) => {
+        toast.success(
+          `${count} offline expense${count > 1 ? 's' : ''} synced successfully!`,
+          { duration: 5000 },
+        );
+      });
+    },
+  });
 
   // ── After adding an expense, refresh all affected hooks ──────────────────
   const addExpense = useCallback(
@@ -238,6 +267,11 @@ export function SmartSpendProvider({ children }: SmartSpendProviderProps) {
     refreshAll,
     currency: currH.currency,
     fmt:      currH.fmt,
+
+    isOnline:     offlineSync.isOnline,
+    pendingCount: offlineSync.pendingCount,
+    isSyncing:    offlineSync.isSyncing,
+    triggerSync:  offlineSync.triggerSync,
   };
 
   return (

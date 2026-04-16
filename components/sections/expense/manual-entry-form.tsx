@@ -27,6 +27,7 @@ import { apiGet }         from '@/lib/api-client';
 import { expenseSchema, type ExpenseFormValues } from '@/lib/validation/schemas';
 import { autoCategorizeName } from '@/lib/expense-engine/auto-categorize';
 import { useTimezone }    from '@/hooks/use-timezone';
+import { toast }          from 'sonner';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -222,21 +223,29 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
         setAutoTagMsg(`Auto-categorized as "${result.categorization.categoryName}"`);
       }
 
-      // ── Strict Feedback Logic (User Request) ────────────────────────────────
-      if (result.dateAdjusted) {
-        toast.info('Date adjusted to today', { duration: 4000 });
-      }
+      // ── Offline sentinel — expense was queued, not yet sent to server ────────
+      if ('_offline' in result && result._offline) {
+        toast.info(result.message, {
+          description: 'Will sync automatically when you reconnect.',
+          duration: 6000,
+        });
+      } else {
+        // ── Online feedback ────────────────────────────────────────────────────
+        if (result.dateAdjusted) {
+          toast.info('Date adjusted to today', { duration: 4000 });
+        }
 
-      const budgetUsed = result.budgetStatus?.usedPercent;
-      let successMsg = result.message || `Expense added for ${values.date}`;
-      if (budgetUsed !== undefined) {
-        successMsg += ` – Budget used: ${Math.round(budgetUsed)}%`;
-      }
+        const budgetUsed = result.budgetStatus?.usedPercent;
+        let successMsg = result.message || `Expense added for ${values.date}`;
+        if (budgetUsed !== undefined) {
+          successMsg += ` – Budget used: ${Math.round(budgetUsed)}%`;
+        }
 
-      toast.success(successMsg, {
-        description: result.budgetStatus?.status === 'over' ? '⚠️ You are over budget!' : undefined,
-        duration: 6000,
-      });
+        toast.success(successMsg, {
+          description: result.budgetStatus?.status === 'over' ? '⚠️ You are over budget!' : undefined,
+          duration: 6000,
+        });
+      }
 
       setSuccess(true);
       setIsAutoFilled(false);

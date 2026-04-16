@@ -41,7 +41,7 @@ export default function AddExpensePage() {
   }, [prefill]);
 
   const handleBatchConfirm = async (transactions: ParsedTransaction[]) => {
-    let saved = 0, failed = 0;
+    let saved = 0, savedOffline = 0, failed = 0;
     const impacts: { category: string; percent: number }[] = [];
 
     for (const tx of transactions) {
@@ -49,20 +49,31 @@ export default function AddExpensePage() {
         amount: tx.amount, date: tx.date, description: tx.description,
         categoryName: tx.category || undefined, source: 'bank_import',
       });
+
       if (result) {
-        saved++;
-        if (result.budgetImpact) {
-          impacts.push({ category: result.categorization.categoryName, percent: result.budgetImpact.percent });
+        // Offline sentinel — queued locally, not sent to server yet
+        if ('_offline' in result && result._offline) {
+          savedOffline++;
+        } else {
+          saved++;
+          if (result.budgetStatus) {
+            impacts.push({
+              category: result.categorization.categoryName,
+              percent:  result.budgetStatus.usedPercent,
+            });
+          }
         }
       } else {
         failed++;
       }
     }
 
+    if (savedOffline > 0) {
+      toast.info(`${savedOffline} transaction${savedOffline > 1 ? 's' : ''} saved offline — will sync when reconnected.`);
+    }
     if (saved > 0) {
       toast.success(`${saved} transaction${saved > 1 ? 's' : ''} saved.`);
-      
-      // Show summary of budget impacts
+      // Budget over-limit summary
       const overBudget = impacts.filter(i => i.percent > 100);
       if (overBudget.length > 0) {
         toast.warning(`Budget Alert: ${overBudget.length} category(s) now over budget!`, {
