@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 export interface ValidationResult {
   merchant?: string;
   amount?: number;
+  date?: string;
 }
 
 const MODEL_CANDIDATES = [
@@ -14,6 +15,7 @@ const MODEL_CANDIDATES = [
 export async function validateOCRWithGemini(
   merchant: string,
   amount: number,
+  date: string | undefined,
   rawText: string
 ): Promise<ValidationResult | null> {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -26,6 +28,7 @@ You are a receipt validation AI.
 Your job:
 * Identify correct merchant name
 * Identify correct total amount
+* Identify correct date
 
 STRICT RULES:
 * Extract ONLY from given text
@@ -37,16 +40,21 @@ STRICT RULES:
 ---
 USER:
 
-Fix this OCR result using the raw text.
+Correct this receipt data. Return:
+- merchant
+- amount
+- date
+Only return valid JSON.
 
 Input:
-${JSON.stringify({ merchant, amount, rawText: rawText.slice(0, 1500) }, null, 2)}
+${JSON.stringify({ merchant, amount, date, rawText: rawText.slice(0, 1500) }, null, 2)}
 
 ---
 OUTPUT FORMAT (STRICT JSON ONLY):
 {
   "merchant": "...",
-  "amount": 450
+  "amount": 450,
+  "date": "2024-01-15"
 }`;
 
   const genAI = new GoogleGenerativeAI(apiKey);
@@ -80,9 +88,14 @@ OUTPUT FORMAT (STRICT JSON ONLY):
         ? raw.merchant.trim() 
         : undefined;
 
+      const validatedDate = typeof raw.date === 'string' && raw.date.trim().length >= 10
+        ? raw.date.trim().slice(0, 10)
+        : undefined;
+
       return {
         merchant: validatedMerchant,
         amount: validatedAmount,
+        date: validatedDate,
       };
 
     } catch (err: any) {

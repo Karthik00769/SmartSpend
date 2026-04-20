@@ -104,7 +104,15 @@ export function ScanReceiptArea({ onDataExtracted }: ScanReceiptAreaProps) {
       const formData = new FormData();
       formData.append('file', file);
 
-      const res  = await fetch('/api/expenses/scan', { method: 'POST', body: formData });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const res  = await fetch('/api/expenses/scan', { 
+        method: 'POST', 
+        body: formData,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
       const json = await res.json();
 
       if (!json.ok) {
@@ -141,7 +149,11 @@ export function ScanReceiptArea({ onDataExtracted }: ScanReceiptAreaProps) {
       setScannedList(prev =>
         prev.map(f => f.name === file.name ? { ...f, status: 'error' } : f)
       );
-      toast.error(err.message || 'Unable to scan receipt. Try again.');
+      if (err.name === 'AbortError') {
+        toast.error('Scanning timed out after 10 seconds. Please try again.');
+      } else {
+        toast.error(err.message || 'Unable to scan receipt. Try again.');
+      }
     } finally {
       setIsScanning(false);
     }

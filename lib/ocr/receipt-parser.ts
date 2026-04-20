@@ -279,9 +279,51 @@ function extractAmountFromZones(
  * Legacy/compat export — wraps the zone-aware pipeline.
  * Called by the main parseReceiptText; also available for direct use.
  */
-export function extractAmount(text: string): { value: number; confidence: number; source: string } {
-  const classified = classifyReceiptLines(text);
-  return extractAmountFromZones(classified);
+export function extractAmount(text: string): { amount: number; confidence: 'high' | 'medium' | 'low' } {
+  // Simple extraction per user specification
+  const cleaned = cleanOCRText(text);
+  const lines = cleaned.split('\n');
+
+  // Helper to parse numbers with decimal, ignoring commas and ensuring within bounds
+  const parseNumbers = (line: string): number[] => {
+    const nums: number[] = [];
+    const regex = /\b\d{1,3}(?:,\d{3})*(?:\.\d{1,2})\b/g;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(line)) !== null) {
+      const raw = match[0].replace(/,/g, '');
+      const val = parseFloat(raw);
+      if (!isNaN(val) && val >= MIN_AMOUNT && val <= MAX_AMOUNT && raw.includes('.')) {
+        // ignore numbers longer than 6 digits before decimal (account numbers)
+        const intPart = raw.split('.')[0];
+        if (intPart.length <= 6) nums.push(val);
+      }
+    }
+    return nums;
+  };
+
+  // 1. Look for lines containing total keywords
+  const totalLines = lines.filter(l => TOTAL_LINE_PATTERN.test(l) && !FALSE_POSITIVE_PATTERN.test(l));
+  for (let i = totalLines.length - 1; i >= 0; i--) {
+    const nums = parseNumbers(totalLines[i]);
+    if (nums.length > 0) {
+      return { amount: nums[0], confidence: 'high' };
+    }
+  }
+
+  // 2. Fallback: find largest decimal number in entire text
+  let maxAmt = 0;
+  for (const line of lines) {
+    const nums = parseNumbers(line);
+    for (const n of nums) {
+      if (n > maxAmt) maxAmt = n;
+    }
+  }
+  if (maxAmt > 0) {
+    return { amount: maxAmt, confidence: 'medium' };
+  }
+
+  // No amount found
+  return { amount: 0, confidence: 'low' };
 }
 
 // ─── Zone-aware merchant extraction ──────────────────────────────────────────
@@ -443,7 +485,7 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
   const classified = classifyReceiptLines(text);
 
   // STEP 3: Zone-aware amount extraction
-  const { value: amount, confidence: amtConf, source: amtSource } = extractAmountFromZones(classified);
+  const { amount, confidence: amtConf } = extractAmount(text);
 
   // STEP 4: Extract date
   const { date, adjusted: dateAdjusted } = extractDateFromReceipt(text);
@@ -467,15 +509,7 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
   const validAmount = amount >= MIN_AMOUNT && amount <= MAX_AMOUNT;
   const finalAmount = validAmount ? amount : 0;
 
-  let confidence: 'high' | 'medium' | 'low';
-  if (amtConf >= 90) {
-    confidence = 'high';
-  } else if (amtConf >= 60) {
-    // Downgrade to low if cross-validation failed with enough item evidence
-    confidence = (!xv.valid && xv.itemCount >= 3) ? 'low' : 'medium';
-  } else {
-    confidence = 'low';
-  }
+  let confidence: 'high' | 'medium' | 'low' = amtConf;
 
   // STEP 7: Fail-safe — needsReview when uncertain
   // ACCEPT ONLY: amount > 0, merchant length > 2, confidence >= 50 (medium/high)
@@ -490,7 +524,7 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
     : undefined;
 
   console.log(
-    `[PARSER] amount=${finalAmount} (conf=${amtConf}, src=${amtSource})`,
+    `[PARSER] amount=${finalAmount} (conf=${amtConf})`,
     `| merchant="${merchant}"`,
     `| confidence=${confidence}`,
     `| needsReview=${needsReview}`,
@@ -554,36 +588,43 @@ export async function parseReceiptTextWithLearning(rawText: string): Promise<Par
   }
 
   // ── Step 2: Gemini Secondary Validation ──────────────────────────────────
-  try {
-    const aiValidation = await validateOCRWithGemini(base.merchant, base.amount, rawText);
-    if (aiValidation) {
-      let boosted = false;
-      const result = { ...base };
+  if (base.confidence !== 'high') {
+    try {
+      const aiValidation = await validateOCRWithGemini(base.merchant, base.amount, base.date, rawText);
+      if (aiValidation) {
+        let boosted = false;
+        const result = { ...base };
 
-      if (aiValidation.merchant && aiValidation.merchant !== base.merchant) {
-        console.log(`[PARSER/AI] Corrected merchant: "${base.merchant}" → "${aiValidation.merchant}"`);
-        result.merchant = aiValidation.merchant;
-        result.description = aiValidation.merchant;
-        boosted = true;
-      }
-      
-      // Assume AI amount is better if our base amount was 0 OR confidence was low
-      if (aiValidation.amount && (base.amount === 0 || base.confidence === 'low')) {
-         console.log(`[PARSER/AI] Corrected amount: ${base.amount} → ${aiValidation.amount}`);
-         result.amount = aiValidation.amount;
-         boosted = true;
-      }
+        if (aiValidation.merchant && aiValidation.merchant !== base.merchant) {
+          console.log(`[PARSER/AI] Corrected merchant: "${base.merchant}" → "${aiValidation.merchant}"`);
+          result.merchant = aiValidation.merchant;
+          result.description = aiValidation.merchant;
+          boosted = true;
+        }
+        
+        if (aiValidation.amount && aiValidation.amount !== base.amount) {
+           console.log(`[PARSER/AI] Corrected amount: ${base.amount} → ${aiValidation.amount}`);
+           result.amount = aiValidation.amount;
+           boosted = true;
+        }
 
-      if (boosted) {
-        result.confidence = 'high';
-        result.needsReview = result.amount === 0;
-        result.errorMessage = result.amount === 0 ? 'Unable to detect amount — please enter it manually.' : undefined;
-      }
+        if (aiValidation.date && aiValidation.date !== base.date) {
+           console.log(`[PARSER/AI] Corrected date: ${base.date} → ${aiValidation.date}`);
+           result.date = aiValidation.date;
+           boosted = true;
+        }
 
-      return result;
+        if (boosted) {
+          result.confidence = 'high';
+          result.needsReview = result.amount === 0;
+          result.errorMessage = result.amount === 0 ? 'Unable to detect amount — please enter it manually.' : undefined;
+        }
+
+        return result;
+      }
+    } catch (e: any) {
+      console.warn('[PARSER/AI] Gemini validation failed:', e?.message);
     }
-  } catch (e: any) {
-    console.warn('[PARSER/AI] Gemini validation failed:', e?.message);
   }
 
   return base;
