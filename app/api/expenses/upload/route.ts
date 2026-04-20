@@ -26,7 +26,6 @@ import {
   cleanOCRText,
 } from '@/lib/ocr/receipt-parser';
 import { parseCSV, parsePDFBankText } from '@/lib/ocr/bank-parser';
-import { preprocessImageWithOpenCV } from '@/lib/ocr/opencv-preprocess';
 
 
 // NOTE: pdf-processor is intentionally NOT imported here at the top level.
@@ -91,58 +90,7 @@ const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const PDF_TYPE    = 'application/pdf';
 const TEXT_TYPES  = new Set(['text/csv', 'text/plain', 'text/tab-separated-values']);
 
-// ─── Multi-pass image preprocessor (same as scan route) ─────────────────────
-
-async function preprocessImage(sharp: any, buf: Buffer): Promise<{ buffer: Buffer; pass: string }> {
-  const passes = [
-    {
-      name: 'gentle',
-      fn: async () => sharp(buf).grayscale().normalize().sharpen({ sigma: 1.2, m1: 0.5, m2: 0.5 }).png({ compressionLevel: 1 }).toBuffer(),
-    },
-    {
-      name: 'contrast-boost',
-      fn: async () => sharp(buf).grayscale().normalize().linear(1.6, -(128 * 0.6)).sharpen({ sigma: 1.5 }).png({ compressionLevel: 1 }).toBuffer(),
-    },
-    {
-      name: 'threshold',
-      fn: async () => sharp(buf).grayscale().normalize().threshold(145).png({ compressionLevel: 1 }).toBuffer(),
-    },
-  ];
-
-  let best: { buffer: Buffer; textLen: number; conf: number; pass: string } | null = null;
-  const workerPath = pathToFileURL(TESSERACT_WORKER).href;
-  const worker     = await Tesseract.createWorker('eng', 1, {
-    workerPath,
-  });
-  await worker.setParameters({ 
-    tessedit_pageseg_mode: '6' as any,
-    preserve_interword_spaces: '1',
-  });
-
-  for (const p of passes) {
-    try {
-      const processed = await p.fn();
-      const { data: { text, confidence } } = await worker.recognize(processed);
-      const cleaned = cleanOCRText(text);
-      const tLen = cleaned.trim().length;
-      const conf = confidence ?? 0;
-      console.log(`[UPLOAD/${p.name}] conf=${conf.toFixed(0)} chars=${tLen}`);
-
-      if (!best || tLen > best.textLen * 1.15 || (conf > best.conf + 10 && tLen > 20)) {
-        best = { buffer: processed, textLen: tLen, conf, pass: p.name };
-      }
-      if (best.conf >= 80 && best.textLen > 100) break;
-    } catch (e: any) {
-      console.warn(`[UPLOAD/${p.name}] skip:`, e?.message);
-    }
-  }
-
-  // Get final text using best buffer
-  const { data: { text: finalText } } = await worker.recognize(best!.buffer);
-  await worker.terminate();
-  return { buffer: best!.buffer, pass: best!.pass };
-}
-
+// ─── Single pass preprocessing ────────────────────────────────────────────────
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -189,58 +137,24 @@ export async function POST(req: NextRequest) {
           preserve_interword_spaces: '1',
         });
 
-        let bestText = '';
+        const meta = await sharp(buffer).metadata();
+        const width = meta.width ? Math.round(meta.width * 2) : undefined;
+        const preprocessed = await sharp(buffer)
+          .resize({ width })
+          .grayscale()
+          .threshold(150)
+          .toBuffer();
+
         let bestConf = 0;
-
-        // Helper: try a buffer, update best if better
-        const tryBuf = async (buf: Buffer, label: string) => {
-          try {
-            const { data: { text, confidence } } = await worker.recognize(buf);
-            const cleaned = cleanOCRText(text);
-            const tLen = cleaned.trim().length;
-            const conf = confidence ?? 0;
-            console.log(`[UPLOAD/${label}] conf=${conf.toFixed(0)} chars=${tLen}`);
-            if (tLen > bestText.trim().length * 1.15 || (conf > bestConf + 10 && tLen > 20)) {
-              bestText = cleaned;
-              bestConf = conf;
-            }
-          } catch (e: any) { console.warn(`[UPLOAD/${label}] skip:`, e?.message); }
-        };
-
-        // STAGE 1: OpenCV variants (adaptive threshold, aggressive boost, edge-enhanced)
-        let opencvUsed = false;
         try {
-          const cvVariants = await preprocessImageWithOpenCV(buffer);
-          if (cvVariants.length > 0) {
-            opencvUsed = true;
-            for (const v of cvVariants) {
-              await tryBuf(v.buffer, `opencv-${v.variantName}`);
-              if (bestConf >= 85 && bestText.trim().length > 150) break;
-            }
-            console.log(`[UPLOAD] OpenCV: ${cvVariants.length} variants, bestConf=${bestConf.toFixed(0)}`);
-          }
-        } catch (e: any) {
-          console.warn('[UPLOAD] OpenCV failed:', e?.message);
+          const { data: { text, confidence } } = await worker.recognize(preprocessed);
+          rawText = cleanOCRText(text);
+          bestConf = confidence ?? 0;
+        } finally {
+          await worker.terminate();
         }
 
-        // STAGE 2: Classic Sharp fallback (always runs if OpenCV didn't get good result)
-        if (!opencvUsed || bestConf < 80 || bestText.trim().length < 100) {
-          const sharpPasses = [
-            { name: 'gentle',    fn: () => sharp(buffer).grayscale().normalize().sharpen({ sigma: 1.2, m1: 0.5, m2: 0.5 }).png({ compressionLevel: 1 }).toBuffer() },
-            { name: 'contrast',  fn: () => sharp(buffer).grayscale().normalize().linear(1.6, -(128 * 0.6)).sharpen({ sigma: 1.5 }).png({ compressionLevel: 1 }).toBuffer() },
-            { name: 'threshold', fn: () => sharp(buffer).grayscale().normalize().threshold(145).png({ compressionLevel: 1 }).toBuffer() },
-          ];
-          for (const p of sharpPasses) {
-            try {
-              await tryBuf(await p.fn(), `sharp-${p.name}`);
-              if (bestConf >= 80 && bestText.trim().length > 100) break;
-            } catch (e: any) { console.warn(`[UPLOAD/sharp-${p.name}] skip:`, e?.message); }
-          }
-        }
-
-        await worker.terminate();
-        rawText = bestText;
-        console.log(`[UPLOAD] Final OCR: conf=${bestConf.toFixed(0)} chars=${bestText.trim().length}`);
+        console.log(`[UPLOAD] Final OCR: conf=${bestConf.toFixed(0)} chars=${rawText.trim().length}`);
       } catch (err: any) {
         console.error('[UPLOAD/OCR] Failed:', err);
         return NextResponse.json({ ok: false, error: 'Failed to process image via OCR.' }, { status: 422 });

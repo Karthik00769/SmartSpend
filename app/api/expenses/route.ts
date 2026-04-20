@@ -25,9 +25,9 @@ const ExpenseIntakeSchema = z.object({
   userId:       z.union([z.string(), z.number()]).transform(String).optional(),
   categoryId:   z.preprocess((val) => val != null && val !== '' ? Number(val) : undefined, z.number().optional()),
   categoryName: z.string().trim().max(100).optional(),
-  amount:       z.union([z.string(), z.number()]),
+  amount:       z.coerce.number().min(1, 'Amount must be at least 1').max(100000, 'Amount must be 100,000 or less'),
   date:         z.string(),
-  description:  z.string().trim().max(500).default(''),
+  description:  z.string().trim().min(3, 'Description must be at least 3 characters long').max(500),
   source:       z.enum(['manual', 'receipt_scan', 'bank_import']).default('manual'),
 });
 
@@ -83,13 +83,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (dateParsed > today) {
-      if (parsed.data.source === 'manual') {
-        return fail('Future dates are not allowed.', 422, { date: ['Future dates are not allowed'] });
-      } else {
-        // OCR / Bank Data fallback
-        parsed.data.date = todayDateStr;
-        dateAdjusted = true;
-      }
+      return fail('Future dates are not allowed.', 422, { date: ['Future dates are not allowed'] });
     }
 
     const result = await processExpense(
