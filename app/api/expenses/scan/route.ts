@@ -10,6 +10,7 @@ import { authOptions } from '@/lib/auth/authOptions';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseReceiptTextWithLearning, cleanOCRText } from '@/lib/ocr/receipt-parser';
+import { preprocessImageWithOpenCV } from '@/lib/ocr/opencv-preprocess';
 
 const NM = path.join(process.cwd(), 'node_modules');
 const TESSERACT_WORKER = path.join(NM, 'tesseract.js/src/worker-script/node/index.js');
@@ -37,31 +38,71 @@ async function runOCR(buffer: Buffer): Promise<OCRCandidate> {
     preserve_interword_spaces: '1',
   });
   await worker.setParameters({
-    tessedit_pageseg_mode: '6', // single uniform text block
+    tessedit_pageseg_mode: '6', 
     preserve_interword_spaces: '1',
   });
 
-  // Basic preprocessing – upscale 2×, grayscale, fixed threshold.
-  const meta = await sharp(buffer).metadata();
-  const width = meta.width ? Math.round(meta.width * 2) : undefined;
-  const preprocessed = await sharp(buffer)
-    .resize({ width })
-    .grayscale()
-    .threshold(150)
-    .toBuffer();
+  const candidates: OCRCandidate[] = [];
 
-  let cleaned = '';
-  let confidenceResult = 0;
-  
+  const tryBuffer = async (buf: Buffer, pass: string) => {
+    try {
+      const { data: { text, confidence } } = await worker.recognize(buf);
+      const cleaned = cleanOCRText(text);
+      candidates.push({ text: cleaned, confidence: confidence ?? 0, pass });
+    } catch (e: any) {
+      console.warn(`[OCR/${pass}] skip:`, e?.message);
+    }
+  };
+
   try {
-    const { data: { text, confidence } } = await worker.recognize(preprocessed);
-    cleaned = cleanOCRText(text);
-    confidenceResult = confidence ?? 0;
+    // 1 & 2: OpenCV Adaptive Threshold, Enhanced Edge, and Contrast Variants
+    const cvVariants = await preprocessImageWithOpenCV(buffer);
+    for (const v of cvVariants) {
+      await tryBuffer(v.buffer, `opencv-${v.variantName}`);
+    }
+
+    // Baseline Grayscale + Threshold (Fallback/Variant 4)
+    const meta = await sharp(buffer).metadata();
+    const width = meta.width ? Math.round(meta.width * 2) : undefined;
+    const preprocessed = await sharp(buffer)
+      .resize({ width })
+      .grayscale()
+      .threshold(150)
+      .toBuffer();
+    await tryBuffer(preprocessed, 'sharp-baseline');
+
+    // SCORING: confidence (40%), currency/amount (30%), keywords (30%)
+    let bestScore = -1;
+    let bestCandidate: OCRCandidate | null = null;
+
+    for (const cand of candidates) {
+      const lower = cand.text.toLowerCase();
+      
+      let keywordCount = 0;
+      if (lower.includes('total')) keywordCount++;
+      if (lower.includes('amount')) keywordCount++;
+      if (lower.includes('paid')) keywordCount++;
+      const keywordScore = Math.min(keywordCount / 2, 1) * 30; // Max 30 points
+
+      let currencyScore = 0;
+      if (/[\$\£\€\₹]/.test(lower) || /rs\.?|inr|usd/.test(lower) || /\d+\.\d{2}/.test(lower)) {
+        currencyScore = 30; // Max 30 points
+      }
+
+      const confScore = (cand.confidence / 100) * 40; // Max 40 points
+      
+      const totalScore = confScore + keywordScore + currencyScore;
+      
+      if (totalScore > bestScore) {
+        bestScore = totalScore;
+        bestCandidate = cand;
+      }
+    }
+
+    return bestCandidate ?? candidates[0] ?? { text: '', confidence: 0, pass: 'none' };
   } finally {
     await worker.terminate();
   }
-
-  return { text: cleaned, confidence: confidenceResult, pass: 'sharp-simple' };
 }
 
 export async function POST(req: NextRequest) {

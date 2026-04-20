@@ -15,9 +15,6 @@
  */
 
 import {
-  classifyReceiptLines,
-  getZoneLines,
-  crossValidateAmount,
   type ClassifiedLine,
 } from '@/lib/ocr/receipt-classifier';
 
@@ -161,113 +158,54 @@ function isYearLike(v: number): boolean {
 
 // ─── Zone-aware amount extraction ────────────────────────────────────────────
 
-/**
- * extractAmountFromZones
- * Context-aware amount extraction using classified line zones.
- *
- * Priority cascade (scoring per spec):
- *  Score 100 — TOTAL zone line with a keyword match
- *  Score  80 — TOTAL zone line (positional, last 30%)
- *  Score  60 — Line with explicit currency symbol (Rs/₹/INR)
- *  Score  40 — Line with any decimal (last resort)
- *
- * Cross-validation: if multiple TOTAL lines found, prefer the highest value
- * that is also consistent with the sum of ITEM lines (±15% tolerance).
- *
- * Junk, phone numbers, GSTINs, years — all barred by the classifier.
- */
-function extractAmountFromZones(
-  classified: ClassifiedLine[],
-): { value: number; confidence: number; source: string } {
-  interface ZoneCandidate {
-    value:      number;
-    confidence: number;
-    source:     string;
-    lineIdx:    number;
-    lineText:   string;
-  }
-  const candidates: ZoneCandidate[] = [];
-
-  // ── PASS 1 (score 100): TOTAL zone lines ─────────────────────────────────
-  const totalLines = getZoneLines(classified, 'total');
-  for (const cl of totalLines) {
-    if (cl.numbers.length === 0) continue;
-    // Rightmost number = value column (label | amount layout)
-    const val = cl.numbers[cl.numbers.length - 1];
-    // Boost to 110 if line also has an explicit total keyword
-    const hasKeyword = TOTAL_LINE_PATTERN.test(cl.raw);
-    const conf = hasKeyword ? 110 : 100;
-    candidates.push({ value: val, confidence: conf, source: 'total-zone', lineIdx: cl.lineIndex, lineText: cl.raw });
-  }
-
-  // ── PASS 2 (score 60): Currency-symbol lines (any zone except noise) ──────
-  const CURRENCY_RE = /(?:[₹$€£¥]|Rs\.?|INR|USD|EUR|GBP)\s*(\d{1,6}(?:\.\d{1,2})?)/gi;
-  for (const cl of classified) {
-    if (cl.zone === 'noise') continue;
-    if (FALSE_POSITIVE_PATTERN.test(cl.raw)) continue;
-    let m: RegExpExecArray | null;
-    const re = new RegExp(CURRENCY_RE.source, 'gi');
-    while ((m = re.exec(cl.cleaned)) !== null) {
-      const v = parseFloat(m[1] ?? '');
-      if (isNaN(v) || v < MIN_AMOUNT || v > MAX_AMOUNT || isYearLike(v)) continue;
-      const conf = TOTAL_LINE_PATTERN.test(cl.raw) ? 90 : 60;
-      candidates.push({ value: v, confidence: conf, source: 'currency-symbol', lineIdx: cl.lineIndex, lineText: cl.raw });
-    }
-  }
-
-  // ── PASS 3 (score 40): Last decimal in any non-noise, non-tax line ────────
-  for (let i = classified.length - 1; i >= 0; i--) {
-    const cl = classified[i];
-    if (cl.zone === 'noise' || cl.zone === 'tax') continue;
-    const decimals = cl.numbers.filter(v => !Number.isInteger(v));
-    if (decimals.length === 0) continue;
-    candidates.push({
-      value: decimals[decimals.length - 1],
-      confidence: 40,
-      source: 'last-decimal-fallback',
-      lineIdx: cl.lineIndex,
-      lineText: cl.raw,
-    });
-    break;
-  }
-
-  if (candidates.length === 0) return { value: 0, confidence: 0, source: 'none' };
-
-  // ── Sort: higher confidence first; ties → later line wins ─────────────────
-  candidates.sort((a, b) => b.confidence - a.confidence || b.lineIdx - a.lineIdx || b.value - a.value);
-
-  // ── Cross-validation: if multiple high-conf candidates, pick best consistent ─
-  // Among top-tier (score >= 80) candidates, prefer the one closest to itemSum
-  const topTier = candidates.filter(c => c.confidence >= 80);
-  let winner = candidates[0]; // default: highest confidence
-
-  if (topTier.length > 1) {
-    // Check which among top-tier passes cross-validation
-    for (const cand of topTier) {
-      const xv = crossValidateAmount(cand.value, classified);
-      if (xv.valid) {
-        winner = cand;
-        break;
-      }
-    }
-    // If none passed cross-validation, keep highest value among TOTAL zone
-    // (higher totals are usually more meaningful — tax-inclusive vs exclusive)
-    if (winner === candidates[0] && topTier.length > 1) {
-      const highestTotal = topTier.reduce((a, b) => (b.value > a.value ? b : a));
-      // Only take highest if it's not astronomically different
-      if (highestTotal.value <= topTier[0].value * 2) {
-        winner = highestTotal;
+function extractAmountStrict(lines: string[]): { value: number; confidence: number; source: string } {
+  // STRICT PRIORITY 1: Lines containing total, grand total, amount paid
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (TOTAL_LINE_PATTERN.test(line) && !FALSE_POSITIVE_PATTERN.test(line)) {
+      const match = line.match(/\d{1,3}(?:,\d{3})*(?:\.\d{1,2})/g);
+      if (match) {
+        const val = parseFloat(match[match.length - 1].replace(/,/g, ''));
+        if (val >= MIN_AMOUNT && val <= MAX_AMOUNT) {
+          return { value: val, confidence: 100, source: 'strict-total-keyword' };
+        }
       }
     }
   }
 
-  console.log(
-    '[PARSER/zones] candidates:',
-    candidates.slice(0, 6).map(c => `${c.source}:${c.value}(sc=${c.confidence},ln=${c.lineIdx})`).join(' | '),
-  );
-  console.log('[PARSER/zones] WINNER:', winner.value, '| src:', winner.source, '| line:"', winner.lineText?.trim(), '"');
+  // STRICT PRIORITY 2: Regex currency + decimal
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (FALSE_POSITIVE_PATTERN.test(line) || isJunkLine(line)) continue;
+    const currMatch = /(?:[\$\£\€\₹]|Rs\.?|INR|USD)\s*(\d{1,6}(?:\.\d{1,2})?)/gi.exec(line);
+    if (currMatch) {
+       const val = parseFloat(currMatch[1]);
+       if (val >= MIN_AMOUNT && val <= MAX_AMOUNT) {
+          return { value: val, confidence: 80, source: 'strict-currency-regex' };
+       }
+    }
+  }
 
-  return { value: winner.value, confidence: winner.confidence, source: winner.source };
+  // Fallback: highest valid decimal
+  let maxVal = 0;
+  for (const line of lines) {
+    if (FALSE_POSITIVE_PATTERN.test(line) || isJunkLine(line)) continue;
+    const match = line.match(/\d{1,5}\.\d{2}/g);
+    if (match) {
+       for (const m of match) {
+          const val = parseFloat(m);
+          if (val > maxVal && val <= MAX_AMOUNT) {
+             maxVal = val;
+          }
+       }
+    }
+  }
+
+  if (maxVal > 0) {
+     return { value: maxVal, confidence: 50, source: 'highest-valid-decimal' };
+  }
+
+  return { value: 0, confidence: 0, source: 'none' };
 }
 
 // ─── Kept for CSV/PDF compatibility ──────────────────────────────────────────
@@ -280,119 +218,48 @@ function extractAmountFromZones(
  * Called by the main parseReceiptText; also available for direct use.
  */
 export function extractAmount(text: string): { amount: number; confidence: 'high' | 'medium' | 'low' } {
-  // Simple extraction per user specification
   const cleaned = cleanOCRText(text);
-  const lines = cleaned.split('\n');
+  const lines = cleaned.split('\n').map(l => l.trim()).filter(Boolean);
+  const { value, confidence: score } = extractAmountStrict(lines);
+  
+  let conf: 'high' | 'medium' | 'low' = 'low';
+  if (score >= 80) conf = 'high';
+  else if (score >= 50) conf = 'medium';
 
-  // Helper to parse numbers with decimal, ignoring commas and ensuring within bounds
-  const parseNumbers = (line: string): number[] => {
-    const nums: number[] = [];
-    const regex = /\b\d{1,3}(?:,\d{3})*(?:\.\d{1,2})\b/g;
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(line)) !== null) {
-      const raw = match[0].replace(/,/g, '');
-      const val = parseFloat(raw);
-      if (!isNaN(val) && val >= MIN_AMOUNT && val <= MAX_AMOUNT && raw.includes('.')) {
-        // ignore numbers longer than 6 digits before decimal (account numbers)
-        const intPart = raw.split('.')[0];
-        if (intPart.length <= 6) nums.push(val);
-      }
-    }
-    return nums;
-  };
-
-  // 1. Look for lines containing total keywords
-  const totalLines = lines.filter(l => TOTAL_LINE_PATTERN.test(l) && !FALSE_POSITIVE_PATTERN.test(l));
-  for (let i = totalLines.length - 1; i >= 0; i--) {
-    const nums = parseNumbers(totalLines[i]);
-    if (nums.length > 0) {
-      return { amount: nums[0], confidence: 'high' };
-    }
-  }
-
-  // 2. Fallback: find largest decimal number in entire text
-  let maxAmt = 0;
-  for (const line of lines) {
-    const nums = parseNumbers(line);
-    for (const n of nums) {
-      if (n > maxAmt) maxAmt = n;
-    }
-  }
-  if (maxAmt > 0) {
-    return { amount: maxAmt, confidence: 'medium' };
-  }
-
-  // No amount found
-  return { amount: 0, confidence: 'low' };
+  return { amount: value, confidence: conf };
 }
 
 // ─── Zone-aware merchant extraction ──────────────────────────────────────────
 
-/**
- * extractMerchantFromZones
- * Extracts the merchant name from HEADER zone lines only (first 5).
- *
- * Rules:
- *  1. Only use lines classified as 'header'
- *  2. Reject: numbers, GSTIN, invoice, phone, URL
- *  3. Prefer: ALL-CAPS multi-word (thermal receipt store names)
- *  4. Fallback: any alpha line from first 5 non-noise lines
- */
-function extractMerchantFromZones(classified: ClassifiedLine[]): string {
-  const headerLines = getZoneLines(classified, 'header').slice(0, 5);
+function extractMerchantStrict(lines: string[]): string {
+  // MERCHANT DETECTION: ONLY from first 5-7 lines
+  const topLines = lines.slice(0, 7);
 
-  const isNoiseMerchantLine = (line: string): boolean => {
-    const lower = line.toLowerCase();
-    if (/^[\d\s\u20B9$€£.,:\-/\\|()%#*=_]+$/.test(line)) return true;
-    if (/\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{3}\b/i.test(line)) return true;
-    if (/\b\d{7,}\b/.test(line)) return true;
-    if (/[@.](?:com|in|org|net|co)\b|www\./i.test(line)) return true;
-    if (/^[\$\u20B9€£¥]/.test(line)) return true;
-    if (/^\s*(invoice|order|bill|receipt|txn|ref)\s*(no|num|#|id)?\s*[:.]?/i.test(line)) return true;
-    const words = lower.split(/\s+/);
-    if (words.length === 1 && SKIP_WORDS.has(lower.trim())) return true;
-    if (words.filter(w => SKIP_WORDS.has(w)).length >= 2) return true;
-    if (/^[a-z\s]+[:\-]\s*[\d\u20B9]+$/i.test(line)) return true;
-    return false;
-  };
+  interface RankedMerchant { text: string; score: number };
+  const candidates: RankedMerchant[] = [];
 
-  const cleanLine = (line: string): string =>
-    line.replace(/^[^a-zA-Z]+/, '').replace(/[^\w\s&',.\-]+$/, '').trim();
+  for (const line of topLines) {
+     if (isJunkLine(line)) continue;
+     
+     // basic clean
+     const cleanLine = line.replace(/^[^a-zA-Z]+/, '').replace(/[^\w\s&',.\-]+$/, '').trim();
+     if (cleanLine.length < 3) continue;
 
-  const scoreLine = (line: string): number => {
-    let score = line.length;
-    if (/^[A-Z0-9\s&'.,-]+$/.test(line)) score += 40;  // ALL-CAPS boost
-    if (line.split(/\s+/).length >= 2)    score += 20;  // multi-word boost
-    return score;
-  };
+     let score = 0;
+     // ALL CAPS → +30
+     if (/^[A-Z\s&',.\-]+$/.test(cleanLine)) score += 30;
+     // multi-word → +20
+     if (cleanLine.split(/\s+/).length > 1) score += 20;
+     // no numbers → +20
+     if (!/\d/.test(cleanLine)) score += 20;
 
-  // Primary: use classified HEADER lines
-  const primary = headerLines
-    .map(cl => cl.raw)
-    .filter(l => !isNoiseMerchantLine(l))
-    .map(cleanLine)
-    .filter(l => l.length >= 3 && /[a-zA-Z]{2,}/.test(l));
-
-  if (primary.length > 0) {
-    primary.sort((a, b) => scoreLine(b) - scoreLine(a));
-    return primary[0].slice(0, 60);
+     if (score > 0) {
+        candidates.push({ text: cleanLine, score });
+     }
   }
 
-  // Fallback: first 8 non-noise lines from full text
-  const fallback = classified
-    .filter(cl => cl.zone !== 'noise')
-    .slice(0, 8)
-    .map(cl => cl.raw)
-    .filter(l => !isNoiseMerchantLine(l))
-    .map(cleanLine)
-    .filter(l => l.length >= 3 && /[a-zA-Z]{3,}/.test(l));
-
-  if (fallback.length > 0) {
-    fallback.sort((a, b) => scoreLine(b) - scoreLine(a));
-    return fallback[0].slice(0, 60);
-  }
-
-  return '';
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates.length > 0 ? candidates[0].text.substring(0, 60) : '';
 }
 
 /**
@@ -400,8 +267,9 @@ function extractMerchantFromZones(classified: ClassifiedLine[]): string {
  * Compat export — wraps zone-aware implementation.
  */
 export function extractMerchant(text: string): string {
-  const classified = classifyReceiptLines(text);
-  return extractMerchantFromZones(classified);
+  const cleaned = cleanOCRText(text);
+  const lines = cleaned.split('\n').map(l => l.trim()).filter(Boolean);
+  return extractMerchantStrict(lines);
 }
 
 /**
@@ -478,46 +346,25 @@ function extractDateFromReceipt(text: string): { date: string; adjusted: boolean
  * Returns ParsedReceipt — identical shape to previous version.
  */
 export function parseReceiptText(rawText: string): ParsedReceipt {
-  // STEP 1: Clean
   const text = cleanOCRText(rawText);
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
-  // STEP 2: Classify all lines into zones
-  const classified = classifyReceiptLines(text);
+  // STEP 1: Amount
+  const { value: amount, confidence: amtScore } = extractAmountStrict(lines);
+  const amtConf: 'high' | 'medium' | 'low' = amtScore >= 80 ? 'high' : amtScore >= 50 ? 'medium' : 'low';
 
-  // STEP 3: Zone-aware amount extraction
-  const { amount, confidence: amtConf } = extractAmount(text);
-
-  // STEP 4: Extract date
+  // STEP 2: Date
   const { date, adjusted: dateAdjusted } = extractDateFromReceipt(text);
 
-  // STEP 5: Zone-aware merchant extraction
-  let merchant = extractMerchantFromZones(classified);
+  // STEP 3: Merchant
+  const merchant = extractMerchantStrict(lines);
 
-  // STEP 5: Cross-validation (log only — doesn't block, but downgrades confidence)
-  const xv = crossValidateAmount(amount, classified);
-  if (!xv.valid && xv.itemCount > 2) {
-    // We have enough item lines to trust cross-validation — flag for review
-    console.log(
-      `[PARSER/xvalidate] MISMATCH: total=${amount} itemSum=${xv.itemSum} items=${xv.itemCount}`,
-      `reason: ${xv.reason}`,
-    );
-  } else if (xv.itemCount > 0) {
-    console.log(`[PARSER/xvalidate] OK: total=${amount} itemSum=${xv.itemSum} items=${xv.itemCount}`);
-  }
-
-  // STEP 6: Consistency check
   const validAmount = amount >= MIN_AMOUNT && amount <= MAX_AMOUNT;
   const finalAmount = validAmount ? amount : 0;
 
-  let confidence: 'high' | 'medium' | 'low' = amtConf;
-
-  // STEP 7: Fail-safe — needsReview when uncertain
-  // ACCEPT ONLY: amount > 0, merchant length > 2, confidence >= 50 (medium/high)
-  const isConfident = confidence === 'high' || confidence === 'medium';
-  const hasValidMerchant = merchant.trim().length > 2;
+  const hasValidMerchant = merchant.trim().length >= 3;
   const hasValidAmount = finalAmount > 0;
-
-  const needsReview = !isConfident || !hasValidMerchant || !hasValidAmount;
+  const needsReview = amtConf === 'low' || !hasValidMerchant || !hasValidAmount;
 
   const errorMessage = !hasValidAmount
     ? 'Unable to detect amount — please enter it manually.'
@@ -526,13 +373,7 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
   console.log(
     `[PARSER] amount=${finalAmount} (conf=${amtConf})`,
     `| merchant="${merchant}"`,
-    `| confidence=${confidence}`,
     `| needsReview=${needsReview}`,
-    `| zones: header=${getZoneLines(classified,'header').length}`,
-    `item=${getZoneLines(classified,'item').length}`,
-    `tax=${getZoneLines(classified,'tax').length}`,
-    `total=${getZoneLines(classified,'total').length}`,
-    errorMessage ? `| ERROR: ${errorMessage}` : '',
   );
 
   return {
@@ -542,7 +383,7 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
     merchant,
     description:  merchant,
     needsReview,
-    confidence,
+    confidence:   amtConf,
     errorMessage,
     rawSnippet:   text.slice(0, 300),
   };

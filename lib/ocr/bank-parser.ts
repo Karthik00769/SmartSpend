@@ -276,17 +276,98 @@ export function parseCSV(text: string, todayDate: string): BankParseResult {
 }
 
 export function parsePDFBankText(text: string, todayDate: string): BankParseResult {
-  let lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-  if (lines.length === 0) return { transactions: [], totalRows: 0, skipped: 0, parseMode: 'pdf-lines' };
-  
-  // FILTER lines containing: date + number
-  lines = lines.filter(line => {
-    const hasDate = extractDate(line, todayDate).date !== null;
-    const hasNumber = /\d+/.test(line);
-    return hasDate && hasNumber;
-  });
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const result: BankParseResult = { transactions: [], totalRows: lines.length, skipped: 0, parseMode: 'pdf-lines' };
 
-  // Apply CSV column logic to pure extracted text by tokenizing all spaces
-  const rows = lines.map(line => line.split(/\s+/).filter(c => c.length > 0));
-  return processRows(rows, todayDate, 'pdf-lines');
+  for (const line of lines) {
+    // STEP 1: LINE FILTER (Date + Number)
+    const { date, dateAdjusted } = extractDate(line, todayDate);
+    if (!date) {
+      result.skipped++;
+      continue;
+    }
+    
+    // STEP 2: TOKEN CLASSIFICATION
+    // Extract tokens - any solid block of text or numbers
+    const tokens = line.split(/\s+/).filter(t => t.length > 0);
+    
+    const amounts: number[] = [];
+    const textTokens: string[] = [];
+    
+    for (const token of tokens) {
+      // Is it a date? (heuristic: wait, we already extracted date from the line, just remove the date string if it matched but let's be simpler)
+      // We know `date` is extracted. To find amount vs text:
+      // Strip commas from numbers
+      const numStr = token.replace(/,/g, '');
+      const parsedNum = parseFloat(numStr);
+      
+      // If it's a valid decimal or integer amount and looks like an amount not a date
+      if (!isNaN(parsedNum) && /[0-9]+\.[0-9]{2}$/.test(numStr)) {
+        amounts.push(parsedNum);
+      } else if (!isNaN(parsedNum) && /^[0-9]+$/.test(numStr) && numStr.length >= 2 && numStr.length <= 6) {
+        amounts.push(parsedNum);
+      } else {
+        // Also ensure not matching the parsed date directly
+        textTokens.push(token);
+      }
+    }
+    
+    // STEP 3: AMOUNT DETECTION
+    // Pick LAST valid amount in line. BUT ignore largest (balance).
+    let finalAmount = 0;
+    let desc = '';
+    
+    if (amounts.length === 0) {
+      result.skipped++;
+      continue;
+    } else if (amounts.length === 1) {
+      finalAmount = amounts[0];
+    } else {
+      // Find largest (usually balance)
+      const maxAmt = Math.max(...amounts);
+      // Remove maxAmt if it's strictly greater than other amounts 
+      // (in case amount == balance, we shouldn't drop both actually)
+      const filteredAmounts = amounts.filter(a => a !== maxAmt);
+      if (filteredAmounts.length > 0) {
+        // Pick the last valid amount from the filtered list (usually credit/debit)
+        finalAmount = filteredAmounts[filteredAmounts.length - 1];
+      } else {
+        finalAmount = amounts[amounts.length - 1];
+      }
+    }
+    
+    if (finalAmount < MIN_AMOUNT || finalAmount > MAX_AMOUNT) {
+      result.skipped++;
+      continue;
+    }
+    
+    // STEP 4: DESCRIPTION
+    // Everything except date + amount -> re-build description from text tokens
+    // Make sure we strip any dates
+    desc = textTokens.join(' ')
+           .replace(new RegExp(DATE_PATTERNS.map(p => p.source).join('|'), 'gi'), '')
+           .replace(/^[0-9.,]+$/, '') // drop single dangling references
+           .trim();
+           
+    if (desc.length <= 3) {
+      result.skipped++;
+      continue;
+    }
+    
+    // CRITICAL: if confidence < 70% needsReview: true 
+    // Here we strictly define confidence based on token clarity
+    // If we had many ambiguous amounts, confidence drops
+    const isMediumConfidence = amounts.length > 3 || desc.length < 5;
+    
+    result.transactions.push({
+      amount: finalAmount,
+      date,
+      dateAdjusted,
+      description: desc.slice(0, 120),
+      confidence: isMediumConfidence ? 'low' : 'high',
+      needsReview: isMediumConfidence
+    });
+  }
+  
+  return result;
 }

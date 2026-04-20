@@ -19,6 +19,7 @@
 import path        from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { cleanOCRText }  from './receipt-parser';
+import { preprocessImageWithOpenCV } from './opencv-preprocess';
 import Tesseract from 'tesseract.js';
 import sharp from 'sharp';
 // NOTE: pdf-parse and pdfjs-dist are intentionally NOT required at the top level.
@@ -112,6 +113,24 @@ async function ocrBuffer(buffer: Buffer): Promise<string> {
     preserve_interword_spaces: '1',
   });
 
+  interface OCRCandidate { text: string; confidence: number; pass: string; }
+  const candidates: OCRCandidate[] = [];
+
+  const tryBuffer = async (buf: Buffer, pass: string) => {
+    try {
+      const { data: { text, confidence } } = await worker.recognize(buf);
+      const cleaned = cleanOCRText(text);
+      candidates.push({ text: cleaned, confidence: confidence ?? 0, pass });
+    } catch (e: any) {
+      console.warn(`[PDF-OCR/${pass}] skip:`, e?.message);
+    }
+  };
+
+  const cvVariants = await preprocessImageWithOpenCV(buffer);
+  for (const v of cvVariants) {
+    await tryBuffer(v.buffer, `opencv-${v.variantName}`);
+  }
+
   const meta = await sharp(buffer).metadata();
   const width = meta.width ? Math.round(meta.width * 2) : undefined;
   const preprocessed = await sharp(buffer)
@@ -119,13 +138,39 @@ async function ocrBuffer(buffer: Buffer): Promise<string> {
     .grayscale()
     .threshold(150)
     .toBuffer();
+    
+  await tryBuffer(preprocessed, 'sharp-baseline');
+
+  let bestScore = -1;
+  let bestCandidate: OCRCandidate | null = null;
+
+  for (const cand of candidates) {
+    const lower = cand.text.toLowerCase();
+    
+    let keywordCount = 0;
+    if (lower.includes('total')) keywordCount++;
+    if (lower.includes('amount')) keywordCount++;
+    if (lower.includes('paid')) keywordCount++;
+    const keywordScore = Math.min(keywordCount / 2, 1) * 30;
+
+    let currencyScore = 0;
+    if (/[\$\£\€\₹]/.test(lower) || /rs\.?|inr|usd/.test(lower) || /\d+\.\d{2}/.test(lower)) {
+      currencyScore = 30;
+    }
+
+    const confScore = (cand.confidence / 100) * 40;
+    const totalScore = confScore + keywordScore + currencyScore;
+    
+    if (totalScore > bestScore) {
+      bestScore = totalScore;
+      bestCandidate = cand;
+    }
+  }
 
   let finalText = '';
   try {
-    const { data: { text } } = await worker.recognize(preprocessed);
-    finalText = cleanOCRText(text);
-  } catch (e: any) {
-    console.warn(`[PDF-OCR] skip:`, e?.message);
+    finalText = bestCandidate ? bestCandidate.text : candidates[0]?.text ?? '';
+    console.log(`[PDF-OCR] Final pass: conf=${bestCandidate?.confidence.toFixed(0)} chars=${finalText.length}`);
   } finally {
     await worker.terminate();
   }

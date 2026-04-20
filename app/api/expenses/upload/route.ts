@@ -25,6 +25,7 @@ import {
   parseReceiptTextWithLearning,
   cleanOCRText,
 } from '@/lib/ocr/receipt-parser';
+import { preprocessImageWithOpenCV } from '@/lib/ocr/opencv-preprocess';
 import { parseCSV, parsePDFBankText } from '@/lib/ocr/bank-parser';
 
 
@@ -137,6 +138,24 @@ export async function POST(req: NextRequest) {
           preserve_interword_spaces: '1',
         });
 
+        interface OCRCandidate { text: string; confidence: number; pass: string; }
+        const candidates: OCRCandidate[] = [];
+
+        const tryBuffer = async (buf: Buffer, pass: string) => {
+          try {
+            const { data: { text, confidence } } = await worker.recognize(buf);
+            const cleaned = cleanOCRText(text);
+            candidates.push({ text: cleaned, confidence: confidence ?? 0, pass });
+          } catch (e: any) {
+             console.warn(`[UPLOAD/${pass}] skip:`, e?.message);
+          }
+        };
+
+        const cvVariants = await preprocessImageWithOpenCV(buffer);
+        for (const v of cvVariants) {
+          await tryBuffer(v.buffer, `opencv-${v.variantName}`);
+        }
+
         const meta = await sharp(buffer).metadata();
         const width = meta.width ? Math.round(meta.width * 2) : undefined;
         const preprocessed = await sharp(buffer)
@@ -144,17 +163,41 @@ export async function POST(req: NextRequest) {
           .grayscale()
           .threshold(150)
           .toBuffer();
+        
+        await tryBuffer(preprocessed, 'sharp-baseline');
 
-        let bestConf = 0;
+        let bestScore = -1;
+        let bestCandidate: OCRCandidate | null = null;
+
+        for (const cand of candidates) {
+          const lower = cand.text.toLowerCase();
+          
+          let keywordCount = 0;
+          if (lower.includes('total')) keywordCount++;
+          if (lower.includes('amount')) keywordCount++;
+          if (lower.includes('paid')) keywordCount++;
+          const keywordScore = Math.min(keywordCount / 2, 1) * 30;
+
+          let currencyScore = 0;
+          if (/[\$\£\€\₹]/.test(lower) || /rs\.?|inr|usd/.test(lower) || /\d+\.\d{2}/.test(lower)) {
+            currencyScore = 30;
+          }
+
+          const confScore = (cand.confidence / 100) * 40;
+          const totalScore = confScore + keywordScore + currencyScore;
+          
+          if (totalScore > bestScore) {
+            bestScore = totalScore;
+            bestCandidate = cand;
+          }
+        }
+
         try {
-          const { data: { text, confidence } } = await worker.recognize(preprocessed);
-          rawText = cleanOCRText(text);
-          bestConf = confidence ?? 0;
+          rawText = bestCandidate ? bestCandidate.text : candidates[0]?.text ?? '';
+          console.log(`[UPLOAD] Final OCR: conf=${bestCandidate?.confidence.toFixed(0)} chars=${rawText.trim().length}`);
         } finally {
           await worker.terminate();
         }
-
-        console.log(`[UPLOAD] Final OCR: conf=${bestConf.toFixed(0)} chars=${rawText.trim().length}`);
       } catch (err: any) {
         console.error('[UPLOAD/OCR] Failed:', err);
         return NextResponse.json({ ok: false, error: 'Failed to process image via OCR.' }, { status: 422 });
