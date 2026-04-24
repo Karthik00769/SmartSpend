@@ -6,10 +6,21 @@ __v0_jsx-dev-runtime.ts
 # Common ignores
 node_modules/
 .next/
-.env*.local
-.DS_Store
-tsconfig.tsbuildinfo
 
-# OCR learning store — generated at runtime, not committed
-data/*.json
-!data/.gitkeep
+# environment variables
+.env
+.env*.local
+
+# logs
+*.log
+
+# typescript
+*.tsbuildinfo
+
+# misc
+.DS_Store
+
+# builds
+dist/
+build/
+out/

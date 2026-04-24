@@ -8,7 +8,6 @@ html {
 }
 
 :root {
-  /* Light mode — Green fintech theme */
   --background: oklch(0.98 0.004 143);
   --foreground: oklch(0.15 0.04 143);
   --card: oklch(1 0 0);
@@ -45,7 +44,6 @@ html {
 }
 
 .dark {
-  /* Dark mode — Green fintech theme */
   --background: oklch(0.13 0.04 143);
   --foreground: oklch(0.95 0.01 0);
   --card: oklch(0.18 0.04 143);

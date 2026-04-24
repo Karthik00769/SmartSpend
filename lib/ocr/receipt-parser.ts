@@ -42,14 +42,14 @@ const SKIP_WORDS = new Set([
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface ParsedReceipt {
-  amount:       number;        // 0 if not found or out of bounds
-  date?:         string;        // extracted date in YYYY-MM-DD format
-  merchant:     string;        // '' if not found
-  description:  string;        // same as merchant, kept for API compat
-  needsReview:  boolean;       // true when confidence is low or amount missing
-  confidence:   'high' | 'medium' | 'low';
+  amount: number;        // 0 if not found or out of bounds
+  date?: string;        // extracted date in YYYY-MM-DD format
+  merchant: string;        // '' if not found
+  description: string;        // same as merchant, kept for API compat
+  needsReview: boolean;       // true when confidence is low or amount missing
+  confidence: 'high' | 'medium' | 'low';
   errorMessage?: string;       // set when amount cannot be extracted at all
-  rawSnippet?:  string;        // first 300 chars of cleaned text, for debugging
+  rawSnippet?: string;        // first 300 chars of cleaned text, for debugging
   dateAdjusted?: boolean;      // truthy if the extracted date was future and fallback to today was used
 }
 
@@ -179,10 +179,10 @@ function extractAmountStrict(lines: string[]): { value: number; confidence: numb
     if (FALSE_POSITIVE_PATTERN.test(line) || isJunkLine(line)) continue;
     const currMatch = /(?:[\$\£\€\₹]|Rs\.?|INR|USD)\s*(\d{1,6}(?:\.\d{1,2})?)/gi.exec(line);
     if (currMatch) {
-       const val = parseFloat(currMatch[1]);
-       if (val >= MIN_AMOUNT && val <= MAX_AMOUNT) {
-          return { value: val, confidence: 80, source: 'strict-currency-regex' };
-       }
+      const val = parseFloat(currMatch[1]);
+      if (val >= MIN_AMOUNT && val <= MAX_AMOUNT) {
+        return { value: val, confidence: 80, source: 'strict-currency-regex' };
+      }
     }
   }
 
@@ -192,17 +192,17 @@ function extractAmountStrict(lines: string[]): { value: number; confidence: numb
     if (FALSE_POSITIVE_PATTERN.test(line) || isJunkLine(line)) continue;
     const match = line.match(/\d{1,5}\.\d{2}/g);
     if (match) {
-       for (const m of match) {
-          const val = parseFloat(m);
-          if (val > maxVal && val <= MAX_AMOUNT) {
-             maxVal = val;
-          }
-       }
+      for (const m of match) {
+        const val = parseFloat(m);
+        if (val > maxVal && val <= MAX_AMOUNT) {
+          maxVal = val;
+        }
+      }
     }
   }
 
   if (maxVal > 0) {
-     return { value: maxVal, confidence: 50, source: 'highest-valid-decimal' };
+    return { value: maxVal, confidence: 50, source: 'highest-valid-decimal' };
   }
 
   return { value: 0, confidence: 0, source: 'none' };
@@ -221,7 +221,7 @@ export function extractAmount(text: string): { amount: number; confidence: 'high
   const cleaned = cleanOCRText(text);
   const lines = cleaned.split('\n').map(l => l.trim()).filter(Boolean);
   const { value, confidence: score } = extractAmountStrict(lines);
-  
+
   let conf: 'high' | 'medium' | 'low' = 'low';
   if (score >= 80) conf = 'high';
   else if (score >= 50) conf = 'medium';
@@ -239,23 +239,23 @@ function extractMerchantStrict(lines: string[]): string {
   const candidates: RankedMerchant[] = [];
 
   for (const line of topLines) {
-     if (isJunkLine(line)) continue;
-     
-     // basic clean
-     const cleanLine = line.replace(/^[^a-zA-Z]+/, '').replace(/[^\w\s&',.\-]+$/, '').trim();
-     if (cleanLine.length < 3) continue;
+    if (isJunkLine(line)) continue;
 
-     let score = 0;
-     // ALL CAPS → +30
-     if (/^[A-Z\s&',.\-]+$/.test(cleanLine)) score += 30;
-     // multi-word → +20
-     if (cleanLine.split(/\s+/).length > 1) score += 20;
-     // no numbers → +20
-     if (!/\d/.test(cleanLine)) score += 20;
+    // basic clean
+    const cleanLine = line.replace(/^[^a-zA-Z]+/, '').replace(/[^\w\s&',.\-]+$/, '').trim();
+    if (cleanLine.length < 3) continue;
 
-     if (score > 0) {
-        candidates.push({ text: cleanLine, score });
-     }
+    let score = 0;
+    // ALL CAPS → +30
+    if (/^[A-Z\s&',.\-]+$/.test(cleanLine)) score += 30;
+    // multi-word → +20
+    if (cleanLine.split(/\s+/).length > 1) score += 20;
+    // no numbers → +20
+    if (!/\d/.test(cleanLine)) score += 20;
+
+    if (score > 0) {
+      candidates.push({ text: cleanLine, score });
+    }
   }
 
   candidates.sort((a, b) => b.score - a.score);
@@ -280,10 +280,10 @@ export function extractMerchant(text: string): string {
 function extractDateFromReceipt(text: string): { date: string; adjusted: boolean } {
   const today = new Date();
   const todayStr = today.toISOString().slice(0, 10);
-  
+
   const lines = text.split('\n');
   const sample = [...lines.slice(0, 15), ...lines.slice(-10)];
-  
+
   for (const line of sample) {
     for (const pattern of RECEIPT_DATE_PATTERNS) {
       const match = pattern.exec(line);
@@ -297,28 +297,28 @@ function extractDateFromReceipt(text: string): { date: string; adjusted: boolean
             // YYYY-MM-DD
             [y, m, d] = [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])];
           } else if (pattern.source.includes('Jan|Feb')) {
-             // 15 Jan 2024
-             d = parseInt(match[1]);
-             y = parseInt(match[3]);
-             const monthMap: any = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
-             m = monthMap[match[2].toLowerCase()];
+            // 15 Jan 2024
+            d = parseInt(match[1]);
+            y = parseInt(match[3]);
+            const monthMap: any = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+            m = monthMap[match[2].toLowerCase()];
           } else {
-             // D/M/YY fallback - skip for now as ambiguous
-             continue;
+            // D/M/YY fallback - skip for now as ambiguous
+            continue;
           }
 
           if (y < 2000 || y > 2100) continue;
-          
+
           const isoDate = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
           const parsed = new Date(isoDate + 'T00:00:00Z');
           if (isNaN(parsed.getTime())) continue;
 
           // Reject future dates
           if (isoDate > todayStr) {
-             console.log(`[PARSER/date] Future date detected (${isoDate}) - falling back to today.`);
-             return { date: todayStr, adjusted: true };
+            console.log(`[PARSER/date] Future date detected (${isoDate}) - falling back to today.`);
+            return { date: todayStr, adjusted: true };
           }
-          
+
           console.log(`[PARSER/date] Detected valid date: ${isoDate}`);
           return { date: isoDate, adjusted: false };
         } catch { continue; }
@@ -377,15 +377,15 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
   );
 
   return {
-    amount:       finalAmount,
+    amount: finalAmount,
     date,
     dateAdjusted,
     merchant,
-    description:  merchant,
+    description: merchant,
     needsReview,
-    confidence:   amtConf,
+    confidence: amtConf,
     errorMessage,
-    rawSnippet:   text.slice(0, 300),
+    rawSnippet: text.slice(0, 300),
   };
 }
 
@@ -411,7 +411,7 @@ export async function parseReceiptTextWithLearning(rawText: string): Promise<Par
         );
         return {
           ...base,
-          merchant:    correction.correctedMerchant,
+          merchant: correction.correctedMerchant,
           description: correction.correctedMerchant,
           // Only override amount if the correction explicitly stores one
           // AND the current detection is low-confidence
@@ -419,7 +419,7 @@ export async function parseReceiptTextWithLearning(rawText: string): Promise<Par
             ? correction.correctedAmount
             : base.amount,
           // If we applied a correction, bump confidence
-          confidence:  'high',
+          confidence: 'high',
           needsReview: base.amount === 0, // still need review if amount missing
         };
       }
@@ -442,17 +442,17 @@ export async function parseReceiptTextWithLearning(rawText: string): Promise<Par
           result.description = aiValidation.merchant;
           boosted = true;
         }
-        
+
         if (aiValidation.amount && aiValidation.amount !== base.amount) {
-           console.log(`[PARSER/AI] Corrected amount: ${base.amount} → ${aiValidation.amount}`);
-           result.amount = aiValidation.amount;
-           boosted = true;
+          console.log(`[PARSER/AI] Corrected amount: ${base.amount} → ${aiValidation.amount}`);
+          result.amount = aiValidation.amount;
+          boosted = true;
         }
 
         if (aiValidation.date && aiValidation.date !== base.date) {
-           console.log(`[PARSER/AI] Corrected date: ${base.date} → ${aiValidation.date}`);
-           result.date = aiValidation.date;
-           boosted = true;
+          console.log(`[PARSER/AI] Corrected date: ${base.date} → ${aiValidation.date}`);
+          result.date = aiValidation.date;
+          boosted = true;
         }
 
         if (boosted) {
@@ -534,11 +534,11 @@ export function splitCSVLine(line: string, delim: string): string[] {
  * Returns -1 for any column not found.
  */
 export interface CSVColumnMap {
-  dateCol:   number;
+  dateCol: number;
   amountCol: number;  // primary amount column (debit/credit/total)
-  debitCol:  number;  // separate debit column (some banks split debit/credit)
+  debitCol: number;  // separate debit column (some banks split debit/credit)
   creditCol: number;
-  descCol:   number;
+  descCol: number;
 }
 
 export function detectCSVColumns(headers: string[]): CSVColumnMap {
@@ -609,8 +609,8 @@ export function validateCSVAmount(amount: number): boolean {
 // ─── Bank Statement PDF Parser ────────────────────────────────────────────────
 
 export interface ParsedPDFTransaction {
-  amount:      number;
-  date:        string;   // always today (server-enforced)
+  amount: number;
+  date: string;   // always today (server-enforced)
   description: string;
 }
 

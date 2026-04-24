@@ -38,7 +38,7 @@ async function runOCR(buffer: Buffer): Promise<OCRCandidate> {
     preserve_interword_spaces: '1',
   });
   await worker.setParameters({
-    tessedit_pageseg_mode: '6', 
+    tessedit_pageseg_mode: '6',
     preserve_interword_spaces: '1',
   });
 
@@ -77,7 +77,7 @@ async function runOCR(buffer: Buffer): Promise<OCRCandidate> {
 
     for (const cand of candidates) {
       const lower = cand.text.toLowerCase();
-      
+
       let keywordCount = 0;
       if (lower.includes('total')) keywordCount++;
       if (lower.includes('amount')) keywordCount++;
@@ -90,9 +90,9 @@ async function runOCR(buffer: Buffer): Promise<OCRCandidate> {
       }
 
       const confScore = (cand.confidence / 100) * 40; // Max 40 points
-      
+
       const totalScore = confScore + keywordScore + currencyScore;
-      
+
       if (totalScore > bestScore) {
         bestScore = totalScore;
         bestCandidate = cand;

@@ -11,11 +11,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { apiGet, apiPatch, apiDelete, buildQuery, ApiRequestError } from '@/lib/api-client';
-import { useTimezone } from '@/hooks/use-timezone';
+import { format } from 'date-fns';
 import type { ExpenseDTO } from '@/types/api';
-import { useCurrency }    from '@/hooks/use-currency';
-
-// ─── Source badge ─────────────────────────────────────────────────────────────
 
 const SOURCE_META: Record<string, { label: string; emoji: string; cls: string }> = {
   manual:       { label: 'Manual', emoji: '✏️', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' },
@@ -32,21 +29,17 @@ function SourceBadge({ source }: { source: string }) {
   );
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 interface Category { id: number; label: string; icon: string; }
 
 interface EditState {
-  amount: string; description: string;
-  categoryName: string; categoryId: string;
+  amount: string;
+  description: string;
+  categoryName: string;
+  categoryId: string;
   date: string;
 }
 
-// ─── Inline edit row ──────────────────────────────────────────────────────────
-// Category field behavior:
-//   manual source  → dropdown (pick from existing categories)
-//   auto/OCR/bank  → free text input (editable, find-or-create on save)
-
+// EditRow: manual source → category dropdown, auto/OCR/bank → free text
 function EditRow({ expense, categories, onSave, onCancel, saving }: {
   expense:    ExpenseDTO;
   categories: Category[];
@@ -65,16 +58,14 @@ function EditRow({ expense, categories, onSave, onCancel, saving }: {
   const set = (k: keyof EditState) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(p => ({ ...p, [k]: e.target.value }));
 
-  // manual → dropdown; auto/OCR/bank → free text
   const isManual = !expense.source || expense.source === 'manual';
 
   return (
     <TableRow className="bg-primary/5 border-l-2 border-primary">
       <TableCell className="text-xs text-muted-foreground">
-        {formatDT(expense.createdAt)}
+        {format(new Date(expense.createdAt), 'MMM dd, HH:mm')}
       </TableCell>
 
-      {/* Category cell — conditional */}
       <TableCell>
         {isManual ? (
           <Select
@@ -132,57 +123,41 @@ function EditRow({ expense, categories, onSave, onCancel, saving }: {
   );
 }
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
 const PAGE_SIZE = 25;
 
 export default function ExpensesHistoryPage() {
-  const { formatDT } = useTimezone();
-  const { fmt } = useCurrency();
   const [expenses,   setExpenses]   = useState<ExpenseDTO[]>([]);
   const [total,      setTotal]      = useState(0);
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState<string | null>(null);
   const [page,       setPage]       = useState(0);
-
-  // Filters
   const [search,     setSearch]     = useState('');
   const [startDate,  setStartDate]  = useState('');
   const [endDate,    setEndDate]    = useState('');
   const [minAmount,  setMinAmount]  = useState('');
   const [maxAmount,  setMaxAmount]  = useState('');
   const [source,     setSource]     = useState('');
-  const [catFilter,  setCatFilter]  = useState('');   // category id
-
-  // Categories for filter dropdown + edit dropdown (fetched once)
+  const [catFilter,  setCatFilter]  = useState('');
   const [categories, setCategories] = useState<Category[]>([]);
-
-  // Debounced search
   const debRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [dbSearch, setDbSearch] = useState('');
-
-  // Edit / delete state
+  const [dbSearch,   setDbSearch]   = useState('');
   const [editingId,  setEditingId]  = useState<string | null>(null);
   const [savingId,   setSavingId]   = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Fetch categories once
   useEffect(() => {
     apiGet<{ categories: Category[] }>('/api/categories')
       .then(d => setCategories(d.categories ?? []))
       .catch(() => {});
   }, []);
 
-  // Debounce search input
   useEffect(() => {
     if (debRef.current) clearTimeout(debRef.current);
     debRef.current = setTimeout(() => { setDbSearch(search); setPage(0); }, 350);
   }, [search]);
 
-  // Reset page on filter change
   useEffect(() => { setPage(0); }, [startDate, endDate, minAmount, maxAmount, source, catFilter]);
 
-  // Fetch expenses
   const fetchExpenses = useCallback(async () => {
     setLoading(true); setError(null);
     try {
@@ -209,7 +184,6 @@ export default function ExpensesHistoryPage() {
 
   useEffect(() => { fetchExpenses(); }, [fetchExpenses]);
 
-  // Save edit — manual uses categoryId (dropdown), others use categoryName (text)
   const handleSave = async (id: string, patch: EditState) => {
     setSavingId(id);
     try {
@@ -246,7 +220,6 @@ export default function ExpensesHistoryPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-foreground mb-1">Expense History</h1>
@@ -257,18 +230,14 @@ export default function ExpensesHistoryPage() {
         </Button>
       </div>
 
-      {/* Filters */}
       <Card className="p-5 no-print">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-
-          {/* Search — spans 2 cols */}
           <div className="relative lg:col-span-2">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">🔍</span>
             <Input placeholder="Search description or category…" className="pl-9 h-10"
               value={search} onChange={e => setSearch(e.target.value)} />
           </div>
 
-          {/* Source filter */}
           <Select value={source || 'all'} onValueChange={v => { setSource(v === 'all' ? '' : v); setPage(0); }}>
             <SelectTrigger className="h-10"><SelectValue placeholder="All sources" /></SelectTrigger>
             <SelectContent>
@@ -279,7 +248,6 @@ export default function ExpensesHistoryPage() {
             </SelectContent>
           </Select>
 
-          {/* Category filter */}
           <Select value={catFilter || 'all'} onValueChange={v => { setCatFilter(v === 'all' ? '' : v); setPage(0); }}>
             <SelectTrigger className="h-10"><SelectValue placeholder="All categories" /></SelectTrigger>
             <SelectContent>
@@ -292,7 +260,6 @@ export default function ExpensesHistoryPage() {
             </SelectContent>
           </Select>
 
-          {/* Date range */}
           <div className="flex gap-2 sm:col-span-2">
             <Input type="date" className="h-10 text-sm flex-1" value={startDate}
               onChange={e => setStartDate(e.target.value)} />
@@ -301,19 +268,17 @@ export default function ExpensesHistoryPage() {
               onChange={e => setEndDate(e.target.value)} />
           </div>
 
-          {/* Amount range + clear */}
           <div className="flex gap-2 sm:col-span-2">
             <Input type="number" min="0" step="0.01" placeholder="Min $" className="h-10 text-sm flex-1"
               value={minAmount} onChange={e => setMinAmount(e.target.value)} />
             <Input type="number" min="0" step="0.01" placeholder="Max $" className="h-10 text-sm flex-1"
               value={maxAmount} onChange={e => setMaxAmount(e.target.value)} />
-            <Button variant="ghost" className="h-10 px-3 text-muted-foreground shrink-0" onClick={clearFilters}
-              title="Clear all filters">✕</Button>
+            <Button variant="ghost" className="h-10 px-3 text-muted-foreground shrink-0"
+              onClick={clearFilters} title="Clear all filters">✕</Button>
           </div>
         </div>
       </Card>
 
-      {/* Table */}
       <Card className="overflow-hidden border">
         {error && (
           <div className="p-4 bg-red-500/10 text-red-600 dark:text-red-400 text-sm font-medium border-b">
@@ -361,21 +326,26 @@ export default function ExpensesHistoryPage() {
                 ) : (
                   <TableRow key={exp.id} className="hover:bg-muted/30 transition-colors group">
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                      {formatDT(exp.createdAt)}
+                      {format(new Date(exp.createdAt), 'MMM dd, HH:mm')}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1.5">
                         <span>{exp.categoryIcon}</span>
-                        <span className="font-medium text-sm">{exp.categoryName}</span>
+                        <div className="min-w-0">
+                          <span className="font-medium text-sm">{exp.categoryName}</span>
+                          {exp.description && (
+                            <span className="text-xs text-muted-foreground ml-1">({exp.description})</span>
+                          )}
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell className="max-w-[220px]">
-                      <span className="truncate block text-sm">{exp.description || '—'}</span>
+                      <span className="truncate block text-sm text-muted-foreground">{exp.description || '—'}</span>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">{exp.date}</TableCell>
                     <TableCell><SourceBadge source={exp.source} /></TableCell>
                     <TableCell className="text-right font-bold tabular-nums">
-                      {fmt(exp.amount)}
+                      ${exp.amount.toFixed(2)}
                     </TableCell>
                     <TableCell className="no-print">
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
@@ -395,7 +365,6 @@ export default function ExpensesHistoryPage() {
           </Table>
         </div>
 
-        {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t bg-muted/20 no-print">
             <span className="text-xs text-muted-foreground">
@@ -403,10 +372,10 @@ export default function ExpensesHistoryPage() {
             </span>
             <div className="flex items-center gap-2">
               <Button size="sm" variant="outline" disabled={page === 0}
-                onClick={() => setPage(p => p - 1)}>← Prev</Button>
+                onClick={() => setPage((p: number) => p - 1)}>← Prev</Button>
               <span className="text-xs text-muted-foreground px-1">{page + 1} / {totalPages}</span>
               <Button size="sm" variant="outline" disabled={page >= totalPages - 1}
-                onClick={() => setPage(p => p + 1)}>Next →</Button>
+                onClick={() => setPage((p: number) => p + 1)}>Next →</Button>
             </div>
           </div>
         )}

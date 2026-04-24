@@ -37,19 +37,6 @@ export function HeroSection() {
           </Link>
         </div>
 
-        {/* Stats row */}
-        <div className="flex flex-wrap justify-center gap-8 mb-20 text-center">
-          {[
-            { value: '10k+', label: 'Active Users' },
-            { value: '₹2Cr+', label: 'Expenses Tracked' },
-            { value: '98%',   label: 'Satisfaction Rate' },
-          ].map(stat => (
-            <div key={stat.label}>
-              <div className="text-3xl font-bold text-primary">{stat.value}</div>
-              <div className="text-sm text-muted-foreground mt-1">{stat.label}</div>
-            </div>
-          ))}
-        </div>
 
         {/* Feature cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
