@@ -7,6 +7,7 @@ import { Card }          from '@/components/ui/card';
 import { Skeleton }      from '@/components/ui/skeleton';
 import { Progress }      from '@/components/ui/progress';
 import { SpendingChart } from '@/components/sections/dashboard/spending-chart';
+import { Analytics }     from '@/lib/finance';
 import type { BudgetCategoryDTO, GoalDTO, ExpenseDTO } from '@/types/api';
 
 // ─── Alert types ──────────────────────────────────────────────────────────────
@@ -105,7 +106,7 @@ function computeAlerts(
       .reduce((s, e) => s + e.amount, 0);
 
     if (lastWeekTotal > 10 && thisWeekTotal > lastWeekTotal * 1.5) {
-      const spikePct = Math.round(((thisWeekTotal - lastWeekTotal) / lastWeekTotal) * 100);
+      const spikePct = Math.round(Analytics.calculateGrowthPct(thisWeekTotal, lastWeekTotal));
       alerts.push({
         id:        'spending-spike',
         level:     'warning',
@@ -121,9 +122,7 @@ function computeAlerts(
   // 4. Goal milestones — show highest reached milestone per active goal
   const MILESTONES = [100, 75, 50, 25];
   for (const g of goals.filter(g => g.status === 'active')) {
-    const pct = g.targetAmount > 0
-      ? Math.round((g.savedAmount / g.targetAmount) * 100)
-      : 0;
+    const pct = Math.round(Analytics.calculateGoalProgressPct(g.savedAmount, g.targetAmount));
     for (const milestone of MILESTONES) {
       if (pct >= milestone) {
         alerts.push({
@@ -459,7 +458,7 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-3">
               {activeGoals.map(g => {
-                const pct = Math.min(100, Math.round((g.savedAmount / g.targetAmount) * 100));
+                const pct = Math.min(100, Math.round(Analytics.calculateGoalProgressPct(g.savedAmount, g.targetAmount)));
                 const remaining = Math.max(0, g.targetAmount - g.savedAmount);
                 return (
                   <div key={g.id}>

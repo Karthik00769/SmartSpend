@@ -20,10 +20,10 @@ import type {
   MonthOverMonthResult,
   GoalProbabilityResult,
   SpendingPattern,
-  MetricDelta,
 } from './types';
 import type { MonthlySummary } from '@/lib/expense-engine/types';
 import { directionPhrase, formatDelta } from './comparator';
+import { Analytics } from '@/lib/finance';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -239,7 +239,7 @@ export function generateMonthAdvice(
  */
 export function generateGoalAdvice(goals: GoalProbabilityResult[]): TextAdvice[] {
   return goals.map(g => {
-    const pct    = Math.min(100, Math.round((g.savedAmount / g.targetAmount) * 100));
+    const pct    = Math.min(100, Math.round(Analytics.calculateGoalProgressPct(g.savedAmount, g.targetAmount)));
     const needed = $(g.requiredDailyAmount);
 
     if (g.risk === 'completed') {

@@ -20,6 +20,7 @@ import type {
 import type { ExpenseDTO } from '@/types/api';
 import type { CategorySummary, MonthlySummary } from '@/lib/expense-engine/types';
 import { getCategoryMeta } from '@/lib/expense-engine/categorizer';
+import { Analytics } from '@/lib/finance';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -45,7 +46,7 @@ export function calcDelta(current: number, previous: number): MetricDelta {
     direction  = 'new';
     percentage = 100;
   } else {
-    percentage = ((current - previous) / Math.abs(previous)) * 100;
+    percentage = Analytics.calculateGrowthPct(current, previous);
     if (Math.abs(percentage) < SIGNIFICANCE_THRESHOLD) direction = 'stable';
     else if (current > previous)                        direction = 'up';
     else                                                direction = 'down';

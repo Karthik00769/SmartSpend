@@ -3,6 +3,7 @@ import { query } from '@/lib/db';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth/authOptions';
 import { ok, fail } from '@/lib/api-response';
+import { Analytics } from '@/lib/finance';
 
 interface MonthlyStats {
   total_transactions: string;
@@ -63,7 +64,7 @@ export async function GET(req: NextRequest) {
 
     const totalIncome  = parseFloat(userRow?.monthly_income ?? '0');
     const totalSpent   = parseFloat(statsRow?.total_spent ?? '0');
-    const savings      = totalIncome - totalSpent;
+    const savings      = Analytics.calculateSavings(totalIncome, totalSpent);
 
     const categories = await query<CategoryRow[]>(`
       SELECT
@@ -109,9 +110,7 @@ export async function GET(req: NextRequest) {
       chartData: categories.map(c => ({
         name:       c.category,
         value:      parseFloat(c.total_spent),
-        percentage: totalSpent > 0
-          ? Math.round((parseFloat(c.total_spent) / totalSpent) * 100)
-          : 0,
+        percentage: Math.round(Analytics.calculateCategoryPct(parseFloat(c.total_spent), totalSpent)),
         color: '#6B7280',
         icon:  '📌',
       })),

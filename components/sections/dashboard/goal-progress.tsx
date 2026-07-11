@@ -1,5 +1,6 @@
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import { Analytics } from '@/lib/finance';
 import { Goal } from '@/types';
 
 interface GoalProgressProps {
@@ -12,7 +13,7 @@ export function GoalProgress({ goals, fmt }: GoalProgressProps) {
   const format = fmt ?? ((n: number) => `$${n.toFixed(2)}`);
 
   const getGoalPercentage = (goal: Goal) => {
-    return (goal.savedAmount / goal.targetAmount) * 100;
+    return Analytics.calculateGoalProgressPct(goal.savedAmount, goal.targetAmount);
   };
 
   const getPriorityColor = (priority: string) => {

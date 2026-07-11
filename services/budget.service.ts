@@ -4,6 +4,7 @@ import type {
   BudgetSummaryDTO,
   BudgetCategoryDTO,
 } from '@/types/api';
+import { Analytics } from '../lib/finance';
 
 // budgets table columns: id, user_id, category_id, limit_amount, month, year,
 //                        amount, created_at, updated_at, deleted_at
@@ -25,7 +26,7 @@ interface BudgetRow {
 function toDTO(row: BudgetRow): BudgetCategoryDTO {
   const allocated = parseFloat(row.limit_amount || '0');
   const spent     = parseFloat(row.total_spent  || '0');
-  const usedPct   = allocated > 0 ? Math.round((spent / allocated) * 100 * 100) / 100 : null;
+  const usedPct   = allocated > 0 ? Math.round(Analytics.calculateBudgetUsedPct(spent, allocated) * 100) / 100 : null;
 
   return {
     id:           row.id,
@@ -37,7 +38,7 @@ function toDTO(row: BudgetRow): BudgetCategoryDTO {
     spent,
     usedPct,
     isOverBudget: spent > allocated && allocated > 0,
-    remaining:    allocated - spent,
+    remaining:    Analytics.calculateBudgetRemaining(allocated, spent), // Keeping original behaviour for negative values
     month:        row.month,
     year:         row.year,
   };
@@ -160,7 +161,7 @@ export async function getCategoryBudgetStatus(
 
   const limit = parseFloat(row.limit_amount);
   const spent = parseFloat(row.total_spent);
-  const percent = limit > 0 ? (spent / limit) * 100 : 0;
+  const percent = Analytics.calculateBudgetUsedPct(spent, limit);
   
   let status: 'under' | 'near' | 'over' = 'under';
   if (percent >= 100) status = 'over';

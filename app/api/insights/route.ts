@@ -29,6 +29,7 @@ import { monthlyExpenseSummary, categoryWiseTotals } from '@/services/expense.se
 import { listBudgets } from '@/services/budget.service';
 import { listGoals } from '@/services/goal.service';
 import { query } from '@/lib/db';
+import { Analytics } from '@/lib/finance';
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -63,7 +64,7 @@ export async function GET(req: NextRequest) {
 
       // 1. Top spending category
       if (topCat && totalSpent > 0) {
-        const pct = Math.round((topCat.total / totalSpent) * 100);
+        const pct = Math.round(Analytics.calculateCategoryPct(topCat.total, totalSpent));
         newInsights.push({
           type:    'monthly_summary',
           content: `Your top spending category this month is ${topCat.name} at ${topCat.total.toFixed(2)} (${pct}% of total spend).`,
@@ -88,7 +89,7 @@ export async function GET(req: NextRequest) {
 
       // 4. Goal progress
       for (const g of goals.slice(0, 1)) {
-        const pct = g.targetAmount > 0 ? Math.round((g.savedAmount / g.targetAmount) * 100) : 0;
+        const pct = Math.round(Analytics.calculateGoalProgressPct(g.savedAmount, g.targetAmount));
         newInsights.push({
           type:    pct >= 75 ? 'savings_opportunity' : 'goal_at_risk',
           content: `Your "${g.title}" goal is ${pct}% complete (${g.savedAmount.toFixed(2)} of ${g.targetAmount.toFixed(2)} saved).`,

@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { Analytics } from '@/lib/finance';
 
 // ─── Input Types ─────────────────────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ function generateFallbackInsights(data: UserFinancialData): GeneratedInsight[] {
   if (catEntries.length > 0) {
     const [topCat, topAmount] = catEntries.sort((a, b) => b[1] - a[1])[0];
     const pct = data.monthlySpending > 0
-      ? Math.round((topAmount / data.monthlySpending) * 100)
+      ? Math.round(Analytics.calculateCategoryPct(topAmount, data.monthlySpending))
       : 0;
     insights.push({
       type: 'trend',
@@ -75,10 +76,10 @@ function generateFallbackInsights(data: UserFinancialData): GeneratedInsight[] {
 
   // 4. Near-limit categories (80-100%)
   const nearLimit = data.budgetUsage.filter(
-    b => b.limit > 0 && b.spent <= b.limit && b.spent / b.limit >= 0.8
+    b => b.limit > 0 && b.spent <= b.limit && Analytics.calculateBudgetUsedPct(b.spent, b.limit) >= 80
   );
   for (const b of nearLimit.slice(0, 1)) {
-    const pct = Math.round((b.spent / b.limit) * 100);
+    const pct = Math.round(Analytics.calculateBudgetUsedPct(b.spent, b.limit));
     insights.push({
       type: 'warning',
       content: `You're at ${pct}% of your ${b.category} budget (${sym}${b.spent.toFixed(0)} / ${sym}${b.limit.toFixed(0)}). Watch your spending to stay on track.`,
@@ -88,7 +89,7 @@ function generateFallbackInsights(data: UserFinancialData): GeneratedInsight[] {
   // 5. Goal progress
   for (const g of data.goalProgress.slice(0, 1)) {
     if (g.target > 0 && g.current >= 0) {
-      const pct = Math.round((g.current / g.target) * 100);
+      const pct = Math.round(Analytics.calculateGoalProgressPct(g.current, g.target));
       insights.push({
         type: pct >= 75 ? 'opportunity' : 'trend',
         content: `Your "${g.title}" goal is ${pct}% complete (${sym}${g.current.toFixed(0)} of ${sym}${g.target.toFixed(0)} saved). ${pct >= 75 ? "Great work — you're almost there!" : 'Keep saving consistently to reach your target.'}`,

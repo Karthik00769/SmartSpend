@@ -5,6 +5,7 @@ import type {
   InsightsSummaryDTO,
   InsightType,
 } from '@/types/api';
+import { Analytics } from '@/lib/finance';
 
 interface InsightRow {
   id:                   number;
@@ -117,13 +118,13 @@ export async function generateMonthlyInsights(
 
   // 1. Month-over-month comparison
   if (prevSpent > 0 && totalSpent > prevSpent * 1.1) {
-    const pct = Math.round(((totalSpent - prevSpent) / prevSpent) * 100);
+    const pct = Math.round(Analytics.calculateGrowthPct(totalSpent, prevSpent));
     insights.push({
       type:    'overspending_alert',
       content: `Your spending increased by ${pct}% compared to last month (${totalSpent.toFixed(2)} vs ${prevSpent.toFixed(2)}).`,
     });
   } else if (prevSpent > 0 && totalSpent < prevSpent * 0.9) {
-    const pct = Math.round(((prevSpent - totalSpent) / prevSpent) * 100);
+    const pct = Math.abs(Math.round(Analytics.calculateGrowthPct(totalSpent, prevSpent)));
     insights.push({
       type:    'savings_opportunity',
       content: `Great progress — your spending dropped by ${pct}% compared to last month.`,
@@ -132,7 +133,7 @@ export async function generateMonthlyInsights(
 
   // 2. Top category
   if (topCat && totalSpent > 0) {
-    const pct = Math.round((topCatAmt / totalSpent) * 100);
+    const pct = Math.round(Analytics.calculateCategoryPct(topCatAmt, totalSpent));
     insights.push({
       type:    'monthly_summary',
       content: `Your top spending category this month is ${topCat} at ${topCatAmt.toFixed(2)} (${pct}% of total spend).`,
@@ -141,16 +142,17 @@ export async function generateMonthlyInsights(
 
   // 3. Savings rate
   if (income > 0 && totalSpent > 0) {
-    const savingsRate = Math.round(((income - totalSpent) / income) * 100);
+    const savingsRate = Math.round(Analytics.calculateSavingsRate(income, totalSpent));
     if (savingsRate >= 20) {
       insights.push({
         type:    'savings_opportunity',
         content: `You saved ${savingsRate}% of your income this month. Keep it up!`,
       });
-    } else if (savingsRate < 0) {
+    } else if (totalSpent > income) {
+      const overspendRate = Math.round(Analytics.calculateGrowthPct(totalSpent, income));
       insights.push({
         type:    'overspending_alert',
-        content: `You spent ${Math.abs(savingsRate)}% more than your monthly income this month. Review your expenses.`,
+        content: `You spent ${overspendRate}% more than your monthly income this month. Review your expenses.`,
       });
     }
   }

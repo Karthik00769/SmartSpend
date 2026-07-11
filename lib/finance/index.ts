@@ -14,3 +14,4 @@ export * as Parsing from './parsing/string';
 export * as Confidence from './confidence/scoring';
 export * as Rules from './rules/business';
 export * as Validation from './validation/schemas';
+export * as Analytics from './calculations/analytics';

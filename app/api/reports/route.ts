@@ -13,6 +13,7 @@ import { calculateHealthScore } from '@/lib/analytics/healthScore';
 import { listBudgets } from '@/services/budget.service';
 import { listGoals } from '@/services/goal.service';
 import { ok, fail } from '@/lib/api-response';
+import { Analytics } from '@/lib/finance';
 
 interface MonthlyRow {
   yr:           number;
@@ -89,7 +90,7 @@ export async function GET(req: NextRequest) {
         month:    r.month_label,
         income,
         expenses: parseFloat(r.total_spent),
-        savings:  Math.max(0, income - parseFloat(r.total_spent)),
+        savings:  Math.max(0, Analytics.calculateSavings(income, parseFloat(r.total_spent))),
       })),
       health: {
         score: healthData.score,

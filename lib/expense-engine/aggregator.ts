@@ -18,6 +18,7 @@ import type {
 import { getISOWeek, getWeekStart } from './validator';
 import { getCategoryMeta } from './categorizer';
 import type { ExpenseDTO } from '@/types/api';
+import { Analytics } from '../finance';
 
 // ─── Month labels ─────────────────────────────────────────────────────────────
 
@@ -60,11 +61,9 @@ export function buildMonthlySummary(
 
   // Days in the month for daily average calculation
   const daysInMonth = new Date(year, month, 0).getDate();
-  const dailyAvg    = totalSpent / daysInMonth;
-  const savings     = Math.max(0, monthlyIncome - totalSpent);
-  const savingsRate = monthlyIncome > 0
-    ? Math.round((savings / monthlyIncome) * 100 * 10) / 10
-    : 0;
+  const dailyAvg    = Analytics.calculateDailyAvgSpend(totalSpent, daysInMonth);
+  const savings     = Analytics.calculateSavings(monthlyIncome, totalSpent);
+  const savingsRate = Analytics.calculateSavingsRate(monthlyIncome, totalSpent);
 
   // Find top spending category
   const catTotals = new Map<string, number>();
@@ -84,7 +83,7 @@ export function buildMonthlySummary(
     dailyAvg:         Math.round(dailyAvg * 100) / 100,
     income:           monthlyIncome,
     savings:          Math.round(savings * 100) / 100,
-    savingsRate,
+    savingsRate:      Math.round(savingsRate * 10) / 10,
     topCategory,
     topCategorySpend: Math.round(topCategorySpend * 100) / 100,
   };
@@ -149,7 +148,7 @@ export function buildWeeklySummaries(expenses: ExpenseDTO[]): WeeklySummary[] {
       endDate:    weekEnd.toISOString().slice(0, 10),
       totalSpent: Math.round(totalSpent * 100) / 100,
       txCount,
-      dailyAvg:   Math.round((totalSpent / 7) * 100) / 100,
+      dailyAvg:   Math.round(Analytics.calculateDailyAvgSpend(totalSpent, 7) * 100) / 100,
       byDay:      dailyBreakdown,
     });
   }
@@ -183,10 +182,10 @@ export function buildCategorySummaries(
   for (const [categoryId, catExpenses] of byCategory.entries()) {
     const catTotal  = catExpenses.reduce((s, e) => s + e.amount, 0);
     const txCount   = catExpenses.length;
-    const avgAmount = catTotal / txCount;
-    const pctOfTotal = totalSpent > 0 ? (catTotal / totalSpent) * 100 : 0;
+    const avgAmount = Analytics.calculateAverageSpend(catTotal, txCount);
+    const pctOfTotal = Analytics.calculateCategoryPct(catTotal, totalSpent);
     const budgetLimit = budgetMap.get(categoryId) ?? 0;
-    const budgetUsed  = budgetLimit > 0 ? (catTotal / budgetLimit) * 100 : 0;
+    const budgetUsed  = Analytics.calculateBudgetUsedPct(catTotal, budgetLimit);
     const meta        = getCategoryMeta(categoryId);
 
     summaries.push({
@@ -225,7 +224,7 @@ export function buildMonthlyTrend(
       label:    `${MONTH_NAMES[month].slice(0, 3)} ${year}`,
       income:   monthlyIncome,
       expenses: Math.round(totalSpent * 100) / 100,
-      savings:  Math.round(Math.max(0, monthlyIncome - totalSpent) * 100) / 100,
+      savings:  Math.round(Analytics.calculateSavings(monthlyIncome, totalSpent) * 100) / 100,
     };
   });
 }
@@ -258,7 +257,7 @@ export function buildDayOfWeekStats(
       day,
       total: Math.round(total * 100) / 100,
       count,
-      avg:   count > 0 ? Math.round((total / count) * 100) / 100 : 0,
+      avg:   Math.round(Analytics.calculateAverageSpend(total, count) * 100) / 100,
     };
   });
 }

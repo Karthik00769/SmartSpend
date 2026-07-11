@@ -5,6 +5,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer,
 } from 'recharts';
+import { Analytics } from '@/lib/finance';
 
 interface ExpenseSummaryProps {
   data: Array<{ month: string; income: number; expenses: number; savings: number }>;
@@ -13,7 +14,7 @@ interface ExpenseSummaryProps {
 
 export function ExpenseSummary({ data, fmt }: ExpenseSummaryProps) {
   const totalExpenses   = data.reduce((sum, item) => sum + item.expenses, 0);
-  const averageExpenses = data.length > 0 ? totalExpenses / data.length : 0;
+  const averageExpenses = Analytics.calculateAverageSpend(totalExpenses, data.length);
   const totalSavings    = data.reduce((sum, item) => sum + item.savings, 0);
 
   return (

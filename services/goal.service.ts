@@ -1,5 +1,6 @@
 import { query } from '@/lib/db';
 import type { GoalDTO } from '@/types/api';
+import { Analytics } from '../lib/finance';
 import { ResultSetHeader } from 'mysql2';
 
 // ─── Row shape from DB ────────────────────────────────────────────────────────
@@ -15,28 +16,34 @@ interface GoalRow {
   priority:               'low' | 'medium' | 'high';
   status:                 'active' | 'paused' | 'completed' | 'cancelled';
   goal_type:              'short_term' | 'long_term';
-  completion_pct:         string;
+  completion_pct:         string | null;
   days_remaining:         number;
   required_daily_savings: string | null;
   created_at:             string;
 }
 
 function toDTO(row: GoalRow): GoalDTO {
+  const target = parseFloat(row.target_amount);
+  const saved  = parseFloat(row.saved_amount);
+  
+  const completionPct = Analytics.calculateGoalProgressPct(saved, target);
+  const requiredDailySavings = Analytics.calculateSpendingVelocity(target, saved, row.days_remaining);
+
   return {
     id:                   row.id,
     userId:               row.user_id,
     title:                row.title,
     description:          row.description || '',
-    targetAmount:         parseFloat(row.target_amount),
-    savedAmount:        parseFloat(row.saved_amount),   // expose as savedAmount in DTO
+    targetAmount:         target,
+    savedAmount:          saved,   // expose as savedAmount in DTO
     deadline:             row.target_date ? new Date(row.target_date).toISOString().slice(0, 10) : '',
     priority:             row.priority || 'medium',
     status:               row.status   || 'active',
     goalType:             row.goal_type || 'short_term',
-    completionPct:        parseFloat(row.completion_pct || '0'),
+    completionPct:        Math.round(completionPct * 10) / 10,
     daysRemaining:        row.days_remaining,
-    requiredDailySavings: row.required_daily_savings
-      ? parseFloat(row.required_daily_savings)
+    requiredDailySavings: requiredDailySavings > 0
+      ? Math.round(requiredDailySavings * 100) / 100
       : null,
     createdAt:            row.created_at,
   };
@@ -48,15 +55,9 @@ const BASE_SELECT = `
   SELECT
     id, user_id, title, description, target_amount, saved_amount,
     target_date, priority, status, goal_type, created_at,
-    ROUND((saved_amount / NULLIF(target_amount, 0)) * 100, 1) AS completion_pct,
+    NULL as completion_pct,
     DATEDIFF(target_date, CURDATE()) AS days_remaining,
-    CASE
-      WHEN DATEDIFF(target_date, CURDATE()) <= 0 THEN NULL
-      ELSE ROUND(
-        (target_amount - saved_amount) / DATEDIFF(target_date, CURDATE()),
-        2
-      )
-    END AS required_daily_savings
+    NULL AS required_daily_savings
   FROM goals
   WHERE deleted_at IS NULL
 `;
@@ -203,13 +204,18 @@ export async function checkGoalUnlockStatus(userId: string): Promise<{ monthsOfD
 }
 
 export async function getActiveGoalsProgress(userId: string): Promise<{ progress: number } | null> {
-  const [row] = await query<any[]>(
-    `SELECT AVG(saved_amount / target_amount * 100) as avg_progress
+  const rows = await query<any[]>(
+    `SELECT target_amount, saved_amount
      FROM goals
      WHERE user_id = ? AND status = 'active' AND deleted_at IS NULL`,
     [userId]
   );
   
-  if (!row || row.avg_progress === null) return null;
-  return { progress: Math.round(row.avg_progress) };
+  if (!rows || rows.length === 0) return null;
+  
+  const totalProgress = rows.reduce((acc, row) => {
+    return acc + Analytics.calculateGoalProgressPct(parseFloat(row.saved_amount), parseFloat(row.target_amount));
+  }, 0);
+  
+  return { progress: Math.round(Analytics.calculateAverageSpend(totalProgress, rows.length)) };
 }

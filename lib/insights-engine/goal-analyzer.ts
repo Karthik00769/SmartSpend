@@ -16,6 +16,7 @@
 
 import type { GoalProbabilityResult, GoalMilestone, GoalRisk } from './types';
 import type { GoalDTO } from '@/types/api';
+import { Analytics } from '@/lib/finance';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -68,7 +69,7 @@ export function analyzeGoal(
   const today        = new Date();
   const targetDate   = new Date(goal.deadline + 'T00:00:00Z');
   const daysRemaining = Math.max(0, Math.ceil((targetDate.getTime() - today.getTime()) / 86_400_000));
-  const remaining    = Math.max(0, goal.targetAmount - goal.savedAmount);
+  const remaining    = Math.max(0, Analytics.calculateBudgetRemaining(goal.targetAmount, goal.savedAmount));
 
   // Daily required savings to hit target
   const requiredDailyAmount = daysRemaining > 0 ? remaining / daysRemaining : Infinity;
@@ -80,7 +81,7 @@ export function analyzeGoal(
     goal.savedAmount + projectedExtra,
   );
   const achievementPct   = goal.targetAmount > 0
-    ? Math.min(100, (projectedAmount / goal.targetAmount) * 100)
+    ? Math.min(100, Analytics.calculateGoalProgressPct(projectedAmount, goal.targetAmount))
     : 100;
 
   // Probability score
@@ -190,7 +191,7 @@ function buildMilestones(
   return MILESTONE_PCTS.map(pct => {
     const targetForMilestone = goal.targetAmount * (pct / 100);
     const alreadyReached     = goal.savedAmount >= targetForMilestone;
-    const amountStillNeeded  = Math.max(0, targetForMilestone - goal.savedAmount);
+    const amountStillNeeded  = Math.max(0, Analytics.calculateBudgetRemaining(targetForMilestone, goal.savedAmount));
     const daysToMilestone    = avgDailySavings > 0
       ? Math.ceil(amountStillNeeded / avgDailySavings)
       : Infinity;

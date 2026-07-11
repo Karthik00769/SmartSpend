@@ -27,6 +27,7 @@ import {
 import { calculateHealthScore } from '@/lib/analytics/healthScore';
 import { generateInsights, type UserFinancialData } from '@/lib/ai/insightGenerator';
 import { generateBehavioralAdvice } from '@/lib/ai/behavioralCoach';
+import { Analytics } from '@/lib/finance';
 
 export async function GET(_req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -55,9 +56,7 @@ export async function GET(_req: NextRequest) {
     ]);
 
     const totalSpent  = summary.totalSpent;
-    const savingsRate = monthlyIncome > 0
-      ? Math.max(0, Math.round(((monthlyIncome - totalSpent) / monthlyIncome) * 100))
-      : 0;
+    const savingsRate = Math.max(0, Math.round(Analytics.calculateSavingsRate(monthlyIncome, totalSpent)));
 
     const healthData = calculateHealthScore({ monthlyIncome, totalSpent, budgets, goals });
 
@@ -81,9 +80,7 @@ export async function GET(_req: NextRequest) {
 
         // Get last month's spend for comparison
         const lastMonthSpend = trendValues.length >= 2 ? trendValues[trendValues.length - 2] : 0;
-        const changePercent = lastMonthSpend > 0
-          ? Math.round(((totalSpent - lastMonthSpend) / lastMonthSpend) * 100)
-          : 0;
+        const changePercent = Math.round(Analytics.calculateGrowthPct(totalSpent, lastMonthSpend));
 
         const aiData: UserFinancialData = {
           monthlySpending:      totalSpent,
@@ -91,7 +88,7 @@ export async function GET(_req: NextRequest) {
           budgetUsage:   budgets.categories.map(b => ({ category: b.category, limit: b.allocated, spent: b.spent })),
           goalProgress:  goals.map(g => ({ title: g.title, target: g.targetAmount, current: g.savedAmount })),
           monthlyIncome,
-          savings: Math.max(0, monthlyIncome - totalSpent),
+          savings: Math.max(0, Analytics.calculateSavings(monthlyIncome, totalSpent)),
           savingsRate,
           comparison: {
             lastMonthSpend,

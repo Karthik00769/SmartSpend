@@ -7,6 +7,7 @@
  * All functions here are purely presentational — they never hit the DB
  * or fetch from an API. See lib/expense-engine for processing logic.
  */
+import { Analytics } from '@/lib/finance';
 
 // ─── Currency ─────────────────────────────────────────────────────────────────
 
@@ -85,7 +86,7 @@ export interface ValueChange {
  */
 export function computeChange(current: number, previous: number): ValueChange {
   const delta     = current - previous;
-  const pct       = safePct(delta, previous);
+  const pct       = Analytics.calculateGrowthPct(current, previous);
   const direction: ChangeDirection =
     Math.abs(pct) < 1 ? 'stable' : delta > 0 ? 'up' : 'down';
 
@@ -102,8 +103,8 @@ export function deriveSavings(
   income: number,
   spent: number,
 ): { savings: number; savingsRate: number } {
-  const savings     = Math.max(0, income - spent);
-  const savingsRate = safePct(savings, income);
+  const savings     = Math.max(0, Analytics.calculateSavings(income, spent));
+  const savingsRate = Analytics.calculateSavingsRate(income, spent);
   return { savings, savingsRate };
 }
 

@@ -8,6 +8,7 @@ import { Card }             from '@/components/ui/card';
 import { Input }            from '@/components/ui/input';
 import { Button }           from '@/components/ui/button';
 import { getCurrencySymbol } from '@/lib/currency';
+import { Analytics }        from '@/lib/finance';
 import type { GoalDTO }     from '@/types/api';
 import type { GoalProbabilityResult } from '@/lib/insights-engine/types';
 
@@ -69,7 +70,7 @@ function GoalCard({
   const [depositing,    setDepositing]    = useState(false);
   const [deleting,      setDeleting]      = useState(false);
 
-  const pct       = Math.min(100, Math.round((goal.savedAmount / goal.targetAmount) * 100));
+  const pct       = Math.min(100, Math.round(Analytics.calculateGoalProgressPct(goal.savedAmount, goal.targetAmount)));
   const remaining = Math.max(0, goal.targetAmount - goal.savedAmount);
   const daysLeft  = goal.daysRemaining ?? 0;
   const isTerminal = goal.status === 'completed' || goal.status === 'failed' || goal.status === 'cancelled';

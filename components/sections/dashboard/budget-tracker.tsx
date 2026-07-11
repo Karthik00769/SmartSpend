@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Card }     from '@/components/ui/card';
 import { apiDelete, ApiRequestError } from '@/lib/api-client';
+import { Analytics } from '@/lib/finance';
 import type { BudgetSummaryDTO, BudgetCategoryDTO } from '@/types/api';
 
 interface BudgetTrackerProps {
@@ -114,9 +115,7 @@ function BudgetRow({ cat, onDeleted, fmt = (n: number) => n.toLocaleString('en-I
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function BudgetTracker({ budget, onDeleted, fmt = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }: BudgetTrackerProps) {
-  const overallPct = budget.totalBudget > 0
-    ? Math.round((budget.totalSpent / budget.totalBudget) * 100)
-    : 0;
+  const overallPct = Math.round(Analytics.calculateBudgetUsedPct(budget.totalSpent, budget.totalBudget));
 
   if (budget.categories.length === 0) {
     return (

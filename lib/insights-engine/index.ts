@@ -50,6 +50,7 @@ import {
   generateForecastAlerts,
 } from './text-generator';
 import { calculateBudgetForecasts } from './forecaster';
+import { Analytics } from '@/lib/finance';
 
 import type { InsightsEngineOutput, WeekPeriod, Period, TopCategory, CategoryTrendSummary, SpendingAnomaly, SavingsAnalysis, MonthlyBreakdown } from './types';
 import type { ExpenseDTO } from '@/types/api';
@@ -182,7 +183,7 @@ export async function runInsightsEngine(
     color:             c.color,
     total:             c.totalSpent,
     percentageOfTotal: totalCurrentSpend > 0
-      ? Math.round((c.totalSpent / totalCurrentSpend) * 1000) / 10
+      ? Math.round(Analytics.calculateCategoryPct(c.totalSpent, totalCurrentSpend) * 10) / 10
       : 0,
   }));
 
@@ -190,7 +191,7 @@ export async function runInsightsEngine(
   const prevCatMap2 = new Map(prevCats.map(c => [c.categoryId, c.totalSpent]));
   const categoryTrends: CategoryTrendSummary[] = currentCats.map(c => {
     const prev = prevCatMap2.get(c.categoryId) ?? 0;
-    const pct  = prev > 0 ? ((c.totalSpent - prev) / prev) * 100 : 100;
+    const pct  = prev > 0 ? Analytics.calculateGrowthPct(c.totalSpent, prev) : 100;
     let trend: CategoryTrendSummary['trend'] = 'stable';
     if (prev === 0)     trend = 'new';
     else if (pct > 10)  trend = 'increasing';

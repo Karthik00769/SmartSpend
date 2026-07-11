@@ -1,4 +1,5 @@
 import { BudgetSummaryDTO, GoalDTO } from '@/types/api';
+import { Analytics } from '../finance';
 
 export interface HealthScoreInput {
   monthlyIncome: number;
@@ -52,10 +53,7 @@ export function calculateHealthScore(data: HealthScoreInput): HealthScoreResult 
 
   // 1. Savings Rate (40 Points)
   // Target: Saving at least 20% of income yields full points.
-  let savingsRatePct = 0;
-  if (monthlyIncome > 0) {
-    savingsRatePct = ((monthlyIncome - totalSpent) / monthlyIncome) * 100;
-  }
+  const savingsRatePct = Analytics.calculateSavingsRate(monthlyIncome, totalSpent);
   
   let savingsRateScore = 0;
   if (savingsRatePct >= 20) {
@@ -72,7 +70,7 @@ export function calculateHealthScore(data: HealthScoreInput): HealthScoreResult 
   let budgetComplianceScore = 0;
   if (budgets.categories.length > 0) {
     const compliantCount = budgets.categories.filter((c) => !c.isOverBudget).length;
-    budgetCompliancePct = (compliantCount / budgets.categories.length) * 100;
+    budgetCompliancePct = Analytics.calculateCategoryPct(compliantCount, budgets.categories.length);
     budgetComplianceScore = Math.round((budgetCompliancePct / 100) * 30);
   }
 
@@ -80,7 +78,7 @@ export function calculateHealthScore(data: HealthScoreInput): HealthScoreResult 
   // Target: Ratio of overall spent to overall total budget cap across all categories.
   let spendingStabilityScore = 0; 
   if (budgets.totalBudget > 0) {
-    const spendRatio = totalSpent / budgets.totalBudget;
+    const spendRatio = Analytics.calculateBudgetUsedPct(totalSpent, budgets.totalBudget) / 100;
     if (spendRatio > 1.2) {
       spendingStabilityScore = 0; // highly unstable/overboard
     } else if (spendRatio > 1) {
@@ -103,7 +101,7 @@ export function calculateHealthScore(data: HealthScoreInput): HealthScoreResult 
   if (activeGoals.length > 0) {
     // Calculate average completion rate of active goals, mapping to points
     const totalProgress = activeGoals.reduce((acc, g) => acc + (g.completionPct || 0), 0);
-    const avgProgress = totalProgress / activeGoals.length;
+    const avgProgress = Analytics.calculateAverageSpend(totalProgress, activeGoals.length);
     
     if (avgProgress >= 50) goalProgressScore = 10;
     else if (avgProgress >= 20) goalProgressScore = 7;
