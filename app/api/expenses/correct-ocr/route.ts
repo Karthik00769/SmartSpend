@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession }          from 'next-auth/next';
 import { authOptions }               from '@/lib/auth/authOptions';
-import { saveCorrection }            from '@/lib/ocr/correction-store';
+import { saveCorrection }            from '@/lib/expense-engine/learning/correction-store';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';

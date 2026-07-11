@@ -20,7 +20,7 @@ import { processExpense } from '@/lib/expense-engine';
 import { getCategoryBudgetStatus } from '@/services/budget.service';
 import { getActiveGoalsProgress } from '@/services/goal.service';
 
-import { FinanceCore } from '@/lib/finance';
+import * as FinanceCore from '@/lib/finance';
 
 const IntakeAdapterSchema = z.object({
   userId:       z.union([z.string(), z.number()]).transform(String).optional(),
