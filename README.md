@@ -1,1 +1,3 @@
 # SmartSpend
+
+# SmartSpend is a goal-driven personal finance application that goes beyond simple expense tracking. Unlike regular finance apps that act only as digital diaries, SmartSpend connects daily spending with user-defined financial goals. It uses hybrid transaction categorization by combining rule-based methods with machine learning for better accuracy. The app also includes a goal module to track savings targets and spending habits. Built on a cloud-based SaaS architecture with scalable stateless APIs, SmartSpend provides trend analysis, behavior recognition, and smart financial recommendations. This makes financial management more intelligent, effective, and user-focused.
