@@ -108,14 +108,7 @@ const Year = z
 
 // ─── Expense schemas ─────────────────────────────────────────────────────────
 
-export const CreateExpenseSchema = z.object({
-  userId:      UserIdField.optional(),
-  category:    z.string().trim().min(1).default('Other'),
-  amount:      PositiveDecimal,
-  date:        ISODate,
-  description: z.string().trim().max(500).default(''),
-});
-export type CreateExpenseInput = z.infer<typeof CreateExpenseSchema>;
+// CreateExpenseSchema has been removed. Use FinanceCore.Validation.CreateExpenseInputSchema instead.
 
 export const GetExpensesQuerySchema = z.object({
   userId:     UserIdField.optional(),

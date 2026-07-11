@@ -2,14 +2,13 @@
  * lib/expense-engine/validator.ts
  * ─────────────────────────────────────────────────────────────────────
  * Pure validation layer for expense inputs.
- *
- * Why separate from Zod schemas in lib/validate.ts?
- * Zod handles HTTP boundary parsing. This module handles deeper business
- * rules: date cannot be in the future, amount cannot exceed a sanity cap,
- * weekend vs weekday flags, duplicate detection, etc.
- *
- * All functions are pure (no side effects, no DB calls).
+ * Uses Zod and the Financial Core for standard boundary checks.
  */
+
+import { z } from 'zod';
+import { MIN_AMOUNT_INR, MAX_AMOUNT_INR, MAX_DESCRIPTION_LENGTH } from '../finance/constants/limits';
+import { isFutureDateIST } from '../finance/dates/timezone';
+import { inrToPaise } from '../finance/calculations/math';
 
 import type {
   RawExpenseInput,
@@ -18,75 +17,41 @@ import type {
   ProcessedExpense,
 } from './types';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Zod Schema for Raw Input ───────────────────────────────────────────────────
 
-const MAX_EXPENSE_AMOUNT = 1_000_000;   // sanity cap — $1M
-const MIN_EXPENSE_AMOUNT = 0.01;
-const MIN_DATE            = new Date('2000-01-01');
-
-// ─── Field validators ─────────────────────────────────────────────────────────
-
-function validateAmount(raw: string | number): ValidationError[] {
-  const errors: ValidationError[] = [];
-  const val = parseFloat(String(raw));
-
-  if (isNaN(val)) {
-    errors.push({ field: 'amount', message: 'Amount must be a valid number.', value: raw });
-    return errors;
-  }
-  if (val < MIN_EXPENSE_AMOUNT) {
-    errors.push({ field: 'amount', message: `Amount must be at least $${MIN_EXPENSE_AMOUNT}.`, value: val });
-  }
-  if (val > MAX_EXPENSE_AMOUNT) {
-    errors.push({ field: 'amount', message: `Amount cannot exceed $${MAX_EXPENSE_AMOUNT.toLocaleString()}.`, value: val });
-  }
-  if (!isFinite(val)) {
-    errors.push({ field: 'amount', message: 'Amount must be a finite number.', value: val });
-  }
-  return errors;
-}
-
-function validateDate(raw: string): ValidationError[] {
-  const errors: ValidationError[] = [];
-
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-    errors.push({ field: 'date', message: 'Date must be in YYYY-MM-DD format.', value: raw });
-    return errors;
-  }
-
-  const parsed = new Date(raw + 'T00:00:00Z');
-  if (isNaN(parsed.getTime())) {
-    errors.push({ field: 'date', message: 'Date is not a valid calendar date.', value: raw });
-    return errors;
-  }
-
-  const today = new Date();
-  today.setHours(23, 59, 59, 999);
-  
-  if (parsed > today) {
-    errors.push({ field: 'date', message: 'Future dates are not allowed.', value: raw });
-  }
-  if (parsed < MIN_DATE) {
-    errors.push({ field: 'date', message: 'Expense date cannot be before year 2000.', value: raw });
-  }
-
-  return errors;
-}
-
-function validateDescription(raw: string | undefined): ValidationError[] {
-  const errors: ValidationError[] = [];
-  if (!raw) return errors; // optional field
-  if (raw.length > 500) {
-    errors.push({ field: 'description', message: 'Description must be 500 characters or fewer.', value: raw.length });
-  }
-  // Guard against XSS-y patterns
-  if (/<script|javascript:/i.test(raw)) {
-    errors.push({ field: 'description', message: 'Description contains invalid characters.', value: raw });
-  }
-  return errors;
-}
-
-
+const RawExpenseSchema = z.object({
+  amount: z.union([z.string(), z.number()]).transform((val, ctx) => {
+    const num = typeof val === 'string' ? parseFloat(val.replace(/,/g, '')) : val;
+    if (isNaN(num)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Amount must be a valid number.' });
+      return z.NEVER;
+    }
+    if (num < MIN_AMOUNT_INR) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Amount must be at least $${MIN_AMOUNT_INR}.` });
+      return z.NEVER;
+    }
+    if (num > MAX_AMOUNT_INR) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Amount cannot exceed $${MAX_AMOUNT_INR.toLocaleString()}.` });
+      return z.NEVER;
+    }
+    if (!isFinite(num)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Amount must be a finite number.' });
+      return z.NEVER;
+    }
+    return num;
+  }),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format.').refine(d => {
+    const parsed = new Date(d + 'T00:00:00Z');
+    return !isNaN(parsed.getTime());
+  }, 'Date is not a valid calendar date.').refine(d => {
+    const parsed = new Date(d + 'T00:00:00Z');
+    return parsed >= new Date('2000-01-01');
+  }, 'Expense date cannot be before year 2000.').refine(d => !isFutureDateIST(d), 'Future dates are not allowed.'),
+  description: z.string().max(MAX_DESCRIPTION_LENGTH, `Description must be ${MAX_DESCRIPTION_LENGTH} characters or fewer.`).optional().refine(val => {
+    if (!val) return true;
+    return !/<script|javascript:/i.test(val);
+  }, 'Description contains invalid characters.'),
+});
 
 // ─── Date utility helpers ─────────────────────────────────────────────────────
 
@@ -114,23 +79,30 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 
 /**
  * validateExpense
- * Runs all field-level and business rule validators.
+ * Runs Zod schema validation using Financial Core rules.
  * Returns { valid, errors } — never throws.
  */
 export function validateExpense(input: RawExpenseInput): ValidationResult {
-  const errors: ValidationError[] = [
-    ...validateAmount(input.amount),
-    ...validateDate(input.date),
-    ...validateDescription(input.description),
-  ];
+  const parsed = RawExpenseSchema.safeParse(input);
+  
+  if (parsed.success) {
+    return { valid: true, errors: [] };
+  }
 
-  return { valid: errors.length === 0, errors };
+  const errors: ValidationError[] = parsed.error.issues.map(issue => ({
+    field: issue.path[0]?.toString() || 'unknown',
+    message: issue.message,
+    value: (input as any)[issue.path[0] || ''],
+  }));
+
+  return { valid: false, errors };
 }
 
 /**
  * enrichExpense
  * Given a validated raw input + resolved categoryId, enrich it with computed
  * temporal fields (week number, day of week, etc.).
+ * Converts amount to Paise using Financial Core.
  * Call AFTER validateExpense returns { valid: true }.
  */
 export function enrichExpense(
@@ -144,10 +116,14 @@ export function enrichExpense(
   const weekEnd   = new Date(weekStart);
   weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
 
+  // Convert float string/number to paise using core library
+  const floatAmount = typeof input.amount === 'string' ? parseFloat(input.amount.replace(/,/g, '')) : input.amount;
+  const amountPaise = inrToPaise(floatAmount);
+
   return {
     userId,
     categoryId,
-    amount:        parseFloat(String(input.amount).replace(',', '')),
+    amount:        amountPaise,
     date:          input.date,
     description:   input.description?.trim() ?? '',
     week,
@@ -156,5 +132,7 @@ export function enrichExpense(
     year:          date.getUTCFullYear(),
     dayOfWeek:     DAY_NAMES[date.getUTCDay()],
     autoCategized: false, // will be flipped by categorizer if needed
+    needsReview:   false, // populated during orchestration
+    confidenceScore: 0,   // populated during orchestration
   };
 }

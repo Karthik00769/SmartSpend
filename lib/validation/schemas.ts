@@ -5,6 +5,8 @@
  * Used by React Hook Form clientside & optionally for API validation serverside.
  */
 import { z } from 'zod';
+import { MAX_AMOUNT_INR } from '../finance/constants/limits';
+import { isFutureDateIST } from '../finance/dates/timezone';
 
 // ─── Expense ───────────────────────────────────────────────────────────────────
 
@@ -12,7 +14,7 @@ export const expenseSchema = z.object({
   amount: z.coerce
     .number({ required_error: 'Amount is required' })
     .positive('Amount must be greater than 0')
-    .max(1_000_000, 'Amount cannot exceed 1,000,000')
+    .max(MAX_AMOUNT_INR, `Amount cannot exceed ${MAX_AMOUNT_INR}`)
     .refine(v => Math.round(v * 100) / 100 === v || String(v).split('.')[1]?.length <= 2,
       'Amount can have at most 2 decimal places'),
 
@@ -24,14 +26,8 @@ export const expenseSchema = z.object({
       return !isNaN(parsed.getTime());
     }, 'Invalid date')
     .refine(d => {
-      // Expense date must be today or in the past — not future
-      const parsed = new Date(d + 'T00:00:00Z');
-      const today  = new Date();
-      today.setUTCHours(23, 59, 59, 999); // Allow until end of today (UTC)
-      
-      // Local date comparison is safer for simple YYYY-MM-DD strings
-      const todayStr = new Date().toISOString().slice(0, 10);
-      return d <= todayStr;
+      // Expense date must be today or in the past (IST)
+      return !isFutureDateIST(d);
     }, 'Future dates are not allowed'),
 
   description: z.string().max(255, 'Description too long').optional(),

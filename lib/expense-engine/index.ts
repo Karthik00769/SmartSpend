@@ -30,6 +30,9 @@ import { buildChartBundle } from './chart-formatter';
 import { createExpense, listExpenses } from '@/services/expense.service';
 import { listBudgets } from '@/services/budget.service';
 
+import { paiseToInr } from '../finance/calculations/math';
+import { calculateOverallConfidence, requiresManualReview } from '../finance/confidence/scoring';
+
 import type { RawExpenseInput, ExpenseEngineResult, SummaryBundle } from './types';
 import type { ExpenseDTO } from '@/types/api';
 
@@ -67,6 +70,14 @@ export async function processExpense(
   }
 
   // ── Step 2: Categorize ────────────────────────────────────────────────────
+  if (raw.source === 'manual' && !raw.categoryId) {
+    return {
+      processed:      {} as never,
+      validation:     { valid: false, errors: [{ field: 'categoryId', message: 'Category is required for manual entries' }] },
+      categorization: { categoryId: 0, categoryName: '', confidence: 'fallback' },
+    };
+  }
+
   let cat = categorize(
     raw.categoryId ? Number(raw.categoryId) : undefined,
     raw.description || ''
@@ -86,11 +97,22 @@ export async function processExpense(
   const processed = enrichExpense(raw, cat.categoryId, userId);
   processed.autoCategized = cat.confidence !== 'exact';
 
+  // Compute confidence using Financial Core
+  if (raw.source === 'manual') {
+    processed.confidenceScore = 100;
+    processed.needsReview = false;
+    cat.confidence = 'exact'; // Force exact match for DB categorySource tracking
+  } else {
+    const merchantConf = cat.confidence === 'exact' ? 100 : (cat.confidence === 'keyword' ? 80 : 50);
+    processed.confidenceScore = calculateOverallConfidence(100, 100, merchantConf);
+    processed.needsReview = requiresManualReview({ amount: 100, date: 100, merchant: merchantConf });
+  }
+
   // ── Step 4: Persist to MySQL ──────────────────────────────────────────────
   const savedExpense = await createExpense({
     userId:      processed.userId,
     categoryId:  cat.categoryId,
-    amount:      processed.amount,
+    amount:      paiseToInr(processed.amount), // Convert Paise to Float for backward compatibility with DB
     date:        processed.date,
     description: processed.description,
     categorySource: cat.confidence === 'exact' ? 'manual' : 'auto',

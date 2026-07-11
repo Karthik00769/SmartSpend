@@ -26,7 +26,8 @@ import { useSmartSpend }  from '@/context/smartspend-context';
 import { apiGet }         from '@/lib/api-client';
 import { expenseSchema, type ExpenseFormValues } from '@/lib/validation/schemas';
 import { autoCategorizeName } from '@/lib/expense-engine/auto-categorize';
-import { useTimezone }    from '@/hooks/use-timezone';
+import { todayIST, formatDateCalendar } from '@/lib/finance/dates/timezone';
+import { getCurrencySymbol } from '@/lib/currency';
 import { toast }          from 'sonner';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -52,8 +53,9 @@ const AUTO_DETECT_VALUE = '__auto__';
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: ManualEntryFormProps) {
-  const { addExpense, submitting, submitError } = useSmartSpend();
-  const { today } = useTimezone();
+  const { addExpense, submitting, submitError, currency } = useSmartSpend();
+  const today = todayIST;
+  const currencySymbol = getCurrencySymbol(currency);
 
   const [categories,   setCategories]   = useState<Category[]>([]);
   const [autoTagMsg,   setAutoTagMsg]   = useState<string | null>(null);
@@ -235,8 +237,7 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
           toast.info('Date adjusted to today', { duration: 4000 });
         }
 
-        const dateObj = new Date(values.date + 'T00:00:00Z');
-        const formattedDate = dateObj.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+        const formattedDate = formatDateCalendar(values.date);
         
         let successMsg = `Expense added for ${formattedDate}`;
         const descriptions: string[] = [];
@@ -331,15 +332,20 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
               name="amount"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-xs font-medium text-muted-foreground">Amount</FormLabel>
+                  <FormLabel className="text-xs font-medium text-muted-foreground">Amount ({currencySymbol})</FormLabel>
                   <FormControl>
-                    <Input
-                      type="number" step="0.01" min="0.01" placeholder="0.00"
-                      className="h-10 font-semibold"
-                      {...field}
-                      onChange={e => field.onChange(e.target.value ? Number(e.target.value) : '')}
-                      value={field.value ?? ''}
-                    />
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm select-none">
+                        {currencySymbol}
+                      </span>
+                      <Input
+                        type="number" step="0.01" min="0.01" placeholder="0.00"
+                        className="h-10 font-semibold pl-7"
+                        {...field}
+                        onChange={e => field.onChange(e.target.value ? Number(e.target.value) : '')}
+                        value={field.value ?? ''}
+                      />
+                    </div>
                   </FormControl>
                   <FormMessage />
                 </FormItem>

@@ -24,7 +24,7 @@ export interface RawExpenseInput {
 export interface ProcessedExpense {
   userId:        string;
   categoryId:    number;       // resolved (auto-assigned or user-provided)
-  amount:        number;       // always a positive float
+  amount:        number;       // amount in paise
   date:          string;       // YYYY-MM-DD
   description:   string;
   week:          number;       // ISO week number (1-53)
@@ -33,6 +33,8 @@ export interface ProcessedExpense {
   year:          number;
   dayOfWeek:     string;       // "Monday"
   autoCategized: boolean;      // was categoryId assigned by the engine?
+  needsReview:   boolean;      // based on confidence engine
+  confidenceScore: number;     // 0-100 overall confidence
 }
 
 // ─── Validation ───────────────────────────────────────────────────────────────

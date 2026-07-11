@@ -20,14 +20,15 @@ import { processExpense } from '@/lib/expense-engine';
 import { getCategoryBudgetStatus } from '@/services/budget.service';
 import { getActiveGoalsProgress } from '@/services/goal.service';
 
-// ── Loose intake schema — engine does the deep validation ─────────────────────
-const ExpenseIntakeSchema = z.object({
+import { FinanceCore } from '@/lib/finance';
+
+const IntakeAdapterSchema = z.object({
   userId:       z.union([z.string(), z.number()]).transform(String).optional(),
   categoryId:   z.preprocess((val) => val != null && val !== '' ? Number(val) : undefined, z.number().optional()),
   categoryName: z.string().trim().max(100).optional(),
-  amount:       z.coerce.number().min(1, 'Amount must be at least 1').max(100000, 'Amount must be 100,000 or less'),
+  amount:       z.coerce.number(),
   date:         z.string(),
-  description:  z.string().trim().min(3, 'Description must be at least 3 characters long').max(500),
+  description:  z.string().default(''),
   source:       z.enum(['manual', 'receipt_scan', 'bank_import']).default('manual'),
 });
 
@@ -56,7 +57,7 @@ export async function POST(req: NextRequest) {
   if (!session?.user) return fail('Unauthorized', 401);
 
   // ── 1. Boundary parse (Zod) ───────────────────────────────────────────────
-  const parsed = await parseBody(req, ExpenseIntakeSchema);
+  const parsed = await parseBody(req, IntakeAdapterSchema);
   if (!parsed.success) return fail(parsed.message, 400, parsed.fieldErrors);
 
   const userId = (session.user as any).id as string;
@@ -71,28 +72,38 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── VALIDATE DATE ────────────────────────────────────────────────────────
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
-    const dateParsed = new Date(parsed.data.date);
-    const todayDateStr = new Date().toISOString().slice(0, 10);
-    let dateAdjusted = false;
+    // ── FINANCIAL CORE BOUNDARY ──────────────────────────────────────────────
+    const amountPaise = FinanceCore.Math.inrToPaise(parsed.data.amount);
+    const sanitizedMerchant = FinanceCore.Parsing.sanitizeMerchantName(parsed.data.description);
 
-    if (isNaN(dateParsed.getTime())) {
-      return fail('Invalid date format.', 400);
+    const validationResult = FinanceCore.Validation.CreateExpenseInputSchema.safeParse({
+      userId,
+      categoryId: resolvedCategoryId,
+      amountPaise,
+      date: parsed.data.date,
+      merchantName: sanitizedMerchant,
+      description: parsed.data.description,
+    });
+
+    if (!validationResult.success) {
+      const details: Record<string, string[]> = {};
+      for (const issue of validationResult.error.issues) {
+        const key = issue.path.join('.') || '_root';
+        details[key] = [...(details[key] ?? []), issue.message];
+      }
+      return fail('Expense validation failed.', 422, details);
     }
 
-    if (dateParsed > today) {
-      return fail('Future dates are not allowed.', 422, { date: ['Future dates are not allowed'] });
-    }
+    const coreData = validationResult.data;
+    const dateAdjusted = false;
 
     const result = await processExpense(
       {
-        userId:      userId as string,
-        categoryId:  resolvedCategoryId,
-        amount:      parsed.data.amount as any,
-        date:        parsed.data.date,
-        description: parsed.data.description,
+        userId:      coreData.userId as string,
+        categoryId:  coreData.categoryId,
+        amount:      parsed.data.amount as any, // Legacy field, Engine converts float to Paise. Wait!
+        date:        coreData.date,
+        description: coreData.merchantName,
         source:      parsed.data.source,
       },
       userId as string,
