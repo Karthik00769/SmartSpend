@@ -15,6 +15,7 @@ import { NextRequest } from 'next/server';
 import { ok, fail } from '@/lib/api-response';
 import { parseBody, parseQuery, UpsertBudgetSchema, GetBudgetsQuerySchema } from '@/lib/validate';
 import { listBudgets, upsertBudget } from '@/services/budget.service';
+import * as FinanceCore from '@/lib/finance';
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/authOptions";
 
@@ -44,7 +45,8 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return fail(parsed.message, 400, parsed.fieldErrors);
 
   try {
-    const bodyData = parsed.data as any;
+    const { amount, ...rest } = parsed.data as any;
+    const bodyData = { ...rest, amountPaise: FinanceCore.Math.inrToPaise(amount) };
     bodyData.userId = (session.user as any).id;
 
     // ── ENFORCE ONLY CURRENT OR FUTURE MONTHS ────

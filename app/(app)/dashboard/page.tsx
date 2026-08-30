@@ -7,22 +7,8 @@ import { Card }          from '@/components/ui/card';
 import { Skeleton }      from '@/components/ui/skeleton';
 import { Progress }      from '@/components/ui/progress';
 import { SpendingChart } from '@/components/sections/dashboard/spending-chart';
-import { Analytics }     from '@/lib/finance';
-import type { BudgetCategoryDTO, GoalDTO, ExpenseDTO } from '@/types/api';
-
-// ─── Alert types ──────────────────────────────────────────────────────────────
-
-type AlertLevel = 'critical' | 'warning' | 'info' | 'success';
-
-interface SmartAlert {
-  id:         string;
-  level:      AlertLevel;
-  emoji:      string;
-  title:      string;
-  detail:     string;
-  href?:      string;
-  hrefLabel?: string;
-}
+import * as FinanceCore  from '@/lib/finance';
+import type { BudgetCategoryDTO, GoalDTO, ExpenseDTO, SmartAlert, AlertLevel } from '@/types/api';
 
 const LEVEL_STYLE: Record<AlertLevel, { card: string; badge: string }> = {
   critical: {
@@ -42,108 +28,6 @@ const LEVEL_STYLE: Record<AlertLevel, { card: string; badge: string }> = {
     badge: 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-400',
   },
 };
-
-// ─── Alert computation — pure, uses only context data already fetched ─────────
-
-function computeAlerts(
-  budgetCategories: BudgetCategoryDTO[],
-  goals:            GoalDTO[],
-  expenses:         ExpenseDTO[],
-  fmt:              (n: number) => string,
-): SmartAlert[] {
-  const alerts: SmartAlert[] = [];
-
-  // 1. Budget exceeded
-  for (const b of budgetCategories) {
-    if (b.isOverBudget) {
-      alerts.push({
-        id:        `budget-exceeded-${b.categoryId}`,
-        level:     'critical',
-        emoji:     '🚨',
-        title:     `${b.icon} ${b.category} budget exceeded`,
-        detail:    `${fmt(Math.abs(b.remaining))} over your ${fmt(b.allocated)} limit.`,
-        href:      '/budgets',
-        hrefLabel: 'Review budget',
-      });
-    }
-  }
-
-  // 2. Budget nearing limit (80–99%)
-  for (const b of budgetCategories) {
-    if (!b.isOverBudget && b.usedPct !== null && b.usedPct >= 80) {
-      alerts.push({
-        id:        `budget-warning-${b.categoryId}`,
-        level:     'warning',
-        emoji:     '⚠️',
-        title:     `${b.icon} ${b.category} at ${b.usedPct.toFixed(0)}%`,
-        detail:    `${fmt(b.remaining)} remaining of your ${fmt(b.allocated)} limit.`,
-        href:      '/budgets',
-        hrefLabel: 'View budget',
-      });
-    }
-  }
-
-  // 3. Unusual spending spike — this week vs last week (from context expenses)
-  if (expenses.length > 0) {
-    const now        = new Date();
-    const todayStr   = now.toISOString().slice(0, 10);
-    const dayOfWeek  = (now.getDay() + 6) % 7; // 0=Mon
-    const thisMonStart = new Date(now);
-    thisMonStart.setDate(now.getDate() - dayOfWeek);
-    const thisWeekStart  = thisMonStart.toISOString().slice(0, 10);
-    const lastMonStart   = new Date(thisMonStart);
-    lastMonStart.setDate(thisMonStart.getDate() - 7);
-    const lastWeekStart  = lastMonStart.toISOString().slice(0, 10);
-    const lastWeekEnd    = new Date(thisMonStart);
-    lastWeekEnd.setDate(thisMonStart.getDate() - 1);
-    const lastWeekEndStr = lastWeekEnd.toISOString().slice(0, 10);
-
-    const thisWeekTotal = expenses
-      .filter(e => e.date >= thisWeekStart && e.date <= todayStr)
-      .reduce((s, e) => s + e.amount, 0);
-    const lastWeekTotal = expenses
-      .filter(e => e.date >= lastWeekStart && e.date <= lastWeekEndStr)
-      .reduce((s, e) => s + e.amount, 0);
-
-    if (lastWeekTotal > 10 && thisWeekTotal > lastWeekTotal * 1.5) {
-      const spikePct = Math.round(Analytics.calculateGrowthPct(thisWeekTotal, lastWeekTotal));
-      alerts.push({
-        id:        'spending-spike',
-        level:     'warning',
-        emoji:     '📈',
-        title:     `Spending spike this week (+${spikePct}%)`,
-        detail:    `${fmt(thisWeekTotal)} this week vs ${fmt(lastWeekTotal)} last week.`,
-        href:      '/expenses-history',
-        hrefLabel: 'Review transactions',
-      });
-    }
-  }
-
-  // 4. Goal milestones — show highest reached milestone per active goal
-  const MILESTONES = [100, 75, 50, 25];
-  for (const g of goals.filter(g => g.status === 'active')) {
-    const pct = Math.round(Analytics.calculateGoalProgressPct(g.savedAmount, g.targetAmount));
-    for (const milestone of MILESTONES) {
-      if (pct >= milestone) {
-        alerts.push({
-          id:        `goal-milestone-${g.id}-${milestone}`,
-          level:     milestone === 100 ? 'success' : 'info',
-          emoji:     milestone === 100 ? '🏆' : milestone >= 75 ? '🎯' : milestone >= 50 ? '💪' : '🌱',
-          title:     milestone === 100
-            ? `Goal "${g.title}" completed!`
-            : `${milestone}% milestone — "${g.title}"`,
-          detail:    `${fmt(g.savedAmount)} of ${fmt(g.targetAmount)} saved.`,
-          href:      '/goals',
-          hrefLabel: 'View goals',
-        });
-        break;
-      }
-    }
-  }
-
-  const order: Record<AlertLevel, number> = { critical: 0, warning: 1, info: 2, success: 3 };
-  return alerts.sort((a, b) => order[a.level] - order[b.level]);
-}
 
 // ─── Alert banner ─────────────────────────────────────────────────────────────
 
@@ -214,10 +98,9 @@ function DashboardSkeleton() {
 
 // ─── Budget bar color ─────────────────────────────────────────────────────────
 
-function budgetBarCls(pct: number | null): string {
-  if (!pct) return '';
-  if (pct >= 100) return '[&>div]:bg-red-500';
-  if (pct >= 80)  return '[&>div]:bg-yellow-500';
+function budgetBarCls(status?: 'safe' | 'warning' | 'exceeded'): string {
+  if (status === 'exceeded') return '[&>div]:bg-red-500';
+  if (status === 'warning')  return '[&>div]:bg-yellow-500';
   return '[&>div]:bg-green-500';
 }
 
@@ -243,10 +126,7 @@ export default function DashboardPage() {
     fmt,
   } = useSmartSpend();
 
-  const alerts = useMemo(
-    () => computeAlerts(budget?.categories ?? [], goals, expenses, fmt),
-    [budget, goals, expenses, fmt],
-  );
+  const alerts = data?.alerts ?? [];
 
   if (loading) return <DashboardSkeleton />;
 
@@ -266,16 +146,13 @@ export default function DashboardPage() {
 
   // ── Derived values ──────────────────────────────────────────────────────────
 
-  // Top category — from budget data (sorted by spent desc) or expenses
-  const topCategory = budget?.categories.length
-    ? budget.categories.slice().sort((a, b) => b.spent - a.spent)[0]
-    : null;
+  // Top category — from dashboard data
+  const topCategory = data.topCategories?.[0] ?? null;
 
   // Recent 5 transactions from context (already fetched, no extra call)
-  const recentTx = expenses.slice(0, 5);
+  const recentTx = data.recentExpenses ?? [];
 
-  // Active goals only
-  const activeGoals = goals.filter(g => g.status === 'active').slice(0, 4);
+  const activeGoals = data.goals.slice(0, 4);
 
   const healthColors: Record<string, string> = {
     excellent: 'text-green-500',
@@ -283,9 +160,9 @@ export default function DashboardPage() {
     warning:   'text-yellow-500',
     critical:  'text-red-500',
   };
-  const statusColor = healthColors[data.financialHealthScore.status] ?? 'text-muted-foreground';
+  const statusColor = healthColors[data.healthStatus] ?? 'text-muted-foreground';
 
-  const isEmpty = data.totalSpending === 0 && data.budgetProgress.length === 0;
+  const isEmpty = data.totalSpentPaise === 0 && (!data.topCategories || data.topCategories.length === 0);
 
   return (
     <div className="space-y-6">
@@ -326,7 +203,7 @@ export default function DashboardPage() {
         {/* Total spent */}
         <Card className="p-4">
           <p className="text-xs text-muted-foreground font-medium mb-1.5">Total Spent</p>
-          <p className="text-xl font-semibold text-foreground tabular-nums">{fmt(data.totalSpending)}</p>
+          <p className="text-xl font-semibold text-foreground tabular-nums">{fmt(FinanceCore.Math.paiseToInr(data.totalSpentPaise))}</p>
           <p className="text-xs text-muted-foreground mt-1">This month</p>
         </Card>
 
@@ -349,7 +226,7 @@ export default function DashboardPage() {
                 <p className="text-sm font-semibold text-foreground truncate">{topCategory.category}</p>
               </div>
               <p className="text-xs text-muted-foreground mt-1 tabular-nums">
-                {fmt(topCategory.spent)} spent
+                {fmt(FinanceCore.Math.paiseToInr(topCategory.spentPaise))} spent
               </p>
             </>
           ) : (
@@ -361,11 +238,11 @@ export default function DashboardPage() {
         <Card className="p-4">
           <p className="text-xs text-muted-foreground font-medium mb-1.5">Health Score</p>
           <p className={`text-xl font-semibold tabular-nums ${statusColor}`}>
-            {data.financialHealthScore.score}
+            {data.healthScore}
             <span className="text-xs font-normal text-muted-foreground ml-1">/ 100</span>
           </p>
           <p className={`text-xs font-medium mt-1 capitalize ${statusColor}`}>
-            {data.financialHealthScore.status}
+            {data.healthStatus}
           </p>
         </Card>
       </div>
@@ -376,7 +253,7 @@ export default function DashboardPage() {
         {/* Spending trend */}
         {data.monthlyTrend && data.monthlyTrend.length > 0 && (
           <div className="lg:col-span-2">
-            <SpendingChart data={data.monthlyTrend} title="Monthly Spending Trend" variant="bar" fmt={fmt} />
+            <SpendingChart data={data.monthlyTrend.map(t => ({ label: t.label, spent: FinanceCore.Math.paiseToInr(t.spentPaise) }))} title="Monthly Spending Trend" variant="bar" fmt={fmt} />
           </div>
         )}
 
@@ -386,14 +263,14 @@ export default function DashboardPage() {
             <h3 className="text-sm font-semibold text-foreground">Budget Usage</h3>
             <Link href="/budgets" className="text-xs text-primary hover:underline">Manage →</Link>
           </div>
-          {data.budgetProgress.length === 0 ? (
+          {data.topCategories.length === 0 ? (
             <div className="text-center py-4">
               <p className="text-xs text-muted-foreground mb-1.5">No budgets set.</p>
               <Link href="/budgets" className="text-xs text-primary hover:underline">Set one up →</Link>
             </div>
           ) : (
             <div className="space-y-3">
-              {data.budgetProgress.slice(0, 5).map((b, i) => (
+              {data.topCategories.slice(0, 5).map((b, i) => (
                 <div key={i}>
                   <div className="flex justify-between text-xs mb-1">
                     <span className="font-medium text-foreground truncate max-w-[120px]">{b.category}</span>
@@ -401,7 +278,7 @@ export default function DashboardPage() {
                       {b.usedPct != null ? `${b.usedPct.toFixed(0)}%` : '—'}
                     </span>
                   </div>
-                  <Progress value={Math.min(b.usedPct ?? 0, 100)} className={`h-1 ${budgetBarCls(b.usedPct)}`} />
+                  <Progress value={Math.min(b.usedPct ?? 0, 100)} className={`h-1 ${budgetBarCls(b.status as any)}`} />
                 </div>
               ))}
             </div>
@@ -436,7 +313,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <span className="text-sm font-semibold text-foreground tabular-nums shrink-0">
-                    {fmt(tx.amount)}
+                    {fmt(FinanceCore.Math.paiseToInr(tx.amountPaise))}
                   </span>
                 </div>
               ))}
@@ -458,8 +335,8 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-3">
               {activeGoals.map(g => {
-                const pct = Math.min(100, Math.round(Analytics.calculateGoalProgressPct(g.savedAmount, g.targetAmount)));
-                const remaining = Math.max(0, g.targetAmount - g.savedAmount);
+                const pct = g.progressPct;
+                const remaining = FinanceCore.Math.paiseToInr(g.remainingPaise);
                 return (
                   <div key={g.id}>
                     <div className="flex justify-between text-xs mb-1">

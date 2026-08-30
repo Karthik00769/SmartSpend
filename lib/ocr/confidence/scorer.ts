@@ -8,9 +8,9 @@ import { RawReceipt, OCRConfidence } from '../types';
 export function calculateConfidence(parsed: RawReceipt): OCRConfidence {
   let amountScore = 0;
   if (parsed.amountRaw) {
-    if (/^\\d+\\.\\d{2}$/.test(parsed.amountRaw)) {
+    if (/^\d+\.\d{2}$/.test(parsed.amountRaw)) {
       amountScore = 95; // perfect standard format
-    } else if (/^\\d+$/.test(parsed.amountRaw)) {
+    } else if (/^\d+$/.test(parsed.amountRaw)) {
       amountScore = 70; // likely a whole number amount
     } else if (/[A-Za-z]/.test(parsed.amountRaw)) {
       amountScore = 20; // Contains letters, low confidence
@@ -27,7 +27,7 @@ export function calculateConfidence(parsed: RawReceipt): OCRConfidence {
 
   let merchantScore = 0;
   if (parsed.merchantRaw) {
-    if (parsed.merchantRaw.length > 5 && !/\\d/.test(parsed.merchantRaw)) {
+    if (parsed.merchantRaw.length > 5 && !/\d/.test(parsed.merchantRaw)) {
       merchantScore = 90;
     } else if (parsed.merchantRaw.length > 2) {
       merchantScore = 60;

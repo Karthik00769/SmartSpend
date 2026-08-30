@@ -3,13 +3,11 @@ import { query } from '@/lib/db';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth/authOptions';
 import { ok, fail } from '@/lib/api-response';
-import { Analytics } from '@/lib/finance';
+import { Analytics, Budget, Math as FinanceMath } from '@/lib/finance';
 
 interface MonthlyStats {
   total_transactions: string;
   total_spent: string;
-  daily_avg_spend: string;
-  income_spent_pct: string;
 }
 
 interface UserRow {
@@ -20,9 +18,6 @@ interface CategoryRow {
   category: string;
   total_spent: string;
   limit_amount: string;
-  budget_used_pct: string;
-  is_over_budget: number;
-  remaining_budget: string;
 }
 
 export async function GET(req: NextRequest) {
@@ -43,11 +38,8 @@ export async function GET(req: NextRequest) {
     const [statsRow] = await query<MonthlyStats[]>(`
       SELECT
         COUNT(e.id)                                                         AS total_transactions,
-        COALESCE(SUM(e.amount), 0)                                          AS total_spent,
-        ROUND(COALESCE(SUM(e.amount), 0) / NULLIF(DAY(LAST_DAY(STR_TO_DATE(CONCAT(?, '-', LPAD(?, 2, '0'), '-01'), '%Y-%m-%d'))), 0), 2) AS daily_avg_spend,
-        ROUND(
-          (COALESCE(SUM(e.amount), 0) / NULLIF(u.monthly_income, 0)) * 100, 2
-        )                                                                   AS income_spent_pct
+        COALESCE(SUM(e.amount), 0)                                          AS total_spent
+
       FROM users u
       LEFT JOIN expenses e
         ON e.user_id = u.id
@@ -55,7 +47,7 @@ export async function GET(req: NextRequest) {
        AND MONTH(e.expense_date) = ?
       WHERE u.id = ?
       GROUP BY u.id, u.monthly_income
-    `, [year, month, year, month, userId]);
+    `, [year, month, userId]);
 
     const [userRow] = await query<UserRow[]>(
       `SELECT monthly_income FROM users WHERE id = ?`,
@@ -70,17 +62,7 @@ export async function GET(req: NextRequest) {
       SELECT
         COALESCE(e.category, b.category)                 AS category,
         COALESCE(SUM(e.amount), 0)                       AS total_spent,
-        COALESCE(b.amount, 0)                            AS limit_amount,
-        CASE
-          WHEN COALESCE(b.amount, 0) = 0 THEN NULL
-          ELSE ROUND((COALESCE(SUM(e.amount), 0) / b.amount) * 100, 2)
-        END                                              AS budget_used_pct,
-        CASE
-          WHEN COALESCE(SUM(e.amount), 0) > COALESCE(b.amount, 0)
-           AND COALESCE(b.amount, 0) > 0
-          THEN 1 ELSE 0
-        END                                              AS is_over_budget,
-        COALESCE(b.amount, 0) - COALESCE(SUM(e.amount), 0) AS remaining_budget
+        COALESCE(b.amount, 0)                            AS limit_amount
       FROM (
         SELECT DISTINCT category FROM expenses WHERE user_id = ? AND YEAR(expense_date) = ? AND MONTH(expense_date) = ?
         UNION
@@ -92,9 +74,10 @@ export async function GET(req: NextRequest) {
       ORDER BY total_spent DESC
     `, [userId, year, month, userId, year, month, userId, year, month, userId, year, month]);
 
-    const totalBudget = categories.reduce(
-      (sum, c) => sum + parseFloat(c.limit_amount), 0
-    );
+    let totalBudget = 0;
+    for (const c of categories) {
+      totalBudget += parseFloat(c.limit_amount);
+    }
 
     return ok({
       stats: {
@@ -104,8 +87,8 @@ export async function GET(req: NextRequest) {
         budgetRemaining: totalBudget - totalSpent,
         currentMonth:    new Date(year, month - 1).toLocaleString('default', { month: 'long', year: 'numeric' }),
         totalTransactions: Number(statsRow?.total_transactions ?? 0),
-        dailyAvgSpend:   parseFloat(statsRow?.daily_avg_spend ?? '0'),
-        incomeSpentPct:  parseFloat(statsRow?.income_spent_pct ?? '0'),
+        dailyAvgSpend:   Analytics.calculateDailyAvgSpend(totalSpent, new Date(year, month, 0).getDate()),
+        incomeSpentPct:  Analytics.calculateCategoryPct(totalSpent, totalIncome),
       },
       chartData: categories.map(c => ({
         name:       c.category,
@@ -114,15 +97,29 @@ export async function GET(req: NextRequest) {
         color: '#6B7280',
         icon:  '📌',
       })),
-      budgetCategories: categories.map(c => ({
-        category:    c.category,
-        icon:        '📌',
-        allocated:   parseFloat(c.limit_amount),
-        spent:       parseFloat(c.total_spent),
-        usedPct:     c.budget_used_pct ? parseFloat(c.budget_used_pct) : null,
-        isOverBudget: c.is_over_budget === 1,
-        remaining:   parseFloat(c.remaining_budget),
-      })),
+      budgetCategories: categories.map(c => {
+        const allocated = parseFloat(c.limit_amount);
+        const spent     = parseFloat(c.total_spent);
+        
+        const allocatedPaise = FinanceMath.inrToPaise(allocated);
+        const spentPaise     = FinanceMath.inrToPaise(spent);
+        
+        const usedPct = allocated > 0 ? Budget.calculateBudgetProgress(spentPaise, allocatedPaise) : null;
+        
+        return {
+          category:    c.category,
+          icon:        '📌',
+          allocated,
+          spent,
+          usedPct:     usedPct ? Math.round(usedPct * 100) / 100 : null,
+          isOverBudget: Budget.isBudgetExceeded(spentPaise, allocatedPaise),
+          status:      Budget.calculateBudgetStatus(spentPaise, allocatedPaise),
+          needsAlert:  Budget.needsBudgetAlert(spentPaise, allocatedPaise),
+          remaining:   Budget.calculateRemainingBudget(spentPaise, allocatedPaise) / 100,
+          month,
+          year,
+        };
+      }),
     });
   } catch (err) {
     console.error('[GET /api/dashboard]', err);

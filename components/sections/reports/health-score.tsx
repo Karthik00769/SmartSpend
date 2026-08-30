@@ -3,19 +3,19 @@ import { Card } from '@/components/ui/card';
 interface HealthScoreProps {
   score: number;
   details?: {
-    savingsRateScore: number;
-    budgetComplianceScore: number;
-    spendingStabilityScore: number;
-    goalProgressScore: number;
+    savingsRateScorePct: number;
+    budgetComplianceScorePct: number;
+    spendingStabilityScorePct: number;
+    goalProgressScorePct: number;
   };
 }
 
 export function HealthScore({ score, details }: HealthScoreProps) {
   const metrics = [
-    { label: 'Budget Compliance', value: details ? Math.round((details.budgetComplianceScore / 30) * 100) : 0 },
-    { label: 'Savings Rate', value: details ? Math.round((details.savingsRateScore / 40) * 100) : 0 },
-    { label: 'Spending Stability', value: details ? Math.round((details.spendingStabilityScore / 20) * 100) : 0 },
-    { label: 'Goal Progress', value: details ? Math.round((details.goalProgressScore / 10) * 100) : 0 },
+    { label: 'Budget Compliance', value: details?.budgetComplianceScorePct ?? 0 },
+    { label: 'Savings Rate', value: details?.savingsRateScorePct ?? 0 },
+    { label: 'Spending Stability', value: details?.spendingStabilityScorePct ?? 0 },
+    { label: 'Goal Progress', value: details?.goalProgressScorePct ?? 0 },
   ];
 
   const getScoreColor = (value: number) => {

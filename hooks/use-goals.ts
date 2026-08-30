@@ -36,7 +36,7 @@ export interface UseGoalsReturn {
   submitError:   string | null;
   createGoal:    (payload: CreateGoalPayload) => Promise<GoalDTO | null>;
   depositToGoal: (goalId: number, amount: number) => Promise<boolean>;
-  updateGoal:    (goalId: number, patch: Partial<Pick<GoalDTO, 'title' | 'description' | 'targetAmount' | 'deadline' | 'priority' | 'status'>>) => Promise<boolean>;
+  updateGoal:    (goalId: number, patch: { title?: string; description?: string; targetAmount?: number; deadline?: string; priority?: 'low' | 'medium' | 'high'; status?: 'active' | 'paused' | 'completed' | 'cancelled' }) => Promise<boolean>;
   deleteGoal:    (goalId: number) => Promise<boolean>;
   refresh:       () => void;
 }

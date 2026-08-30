@@ -32,7 +32,7 @@ const ALLOWED_EXTS  = ['.pdf', '.csv'];
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function UploadArea({ onDataExtracted, onBatchConfirm }: UploadAreaProps) {
-  const { isOnline } = useSmartSpend();
+  const { isOnline, refreshAll } = useSmartSpend();
   const [isDragging,    setIsDragging]    = useState(false);
   const [isProcessing,  setIsProcessing]  = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<{ name: string; status: 'processing' | 'done' | 'error' }[]>([]);
@@ -80,9 +80,25 @@ export function UploadArea({ onDataExtracted, onBatchConfirm }: UploadAreaProps)
         prev.map(f => f.name === file.name ? { ...f, status: 'done' } : f)
       );
 
-      const { transactions: txns, extracted, amountWarning } = json.data ?? {};
+      const { transactions: txns, extracted, amountWarning, source, importedCount, skippedCount, skippedRows } = json.data ?? {};
 
       // ── Multi-transaction CSV/PDF path ──────────────────────────────────
+      if (source === 'bank') {
+        if (importedCount > 0) {
+          toast.success(`Successfully imported ${importedCount} transactions.`);
+          refreshAll();
+        }
+        if (skippedCount > 0) {
+          toast.warning(`Skipped ${skippedCount} rows due to invalid data.`);
+          console.warn('Skipped rows:', skippedRows);
+        }
+        if (importedCount === 0 && skippedCount === 0) {
+          toast.info('No transactions found in this file.');
+        }
+        return;
+      }
+
+      // Legacy path just in case we need it
       if (txns && txns.length > 0) {
         let anyDateAdjusted = false;
         const enriched: ParsedTransaction[] = txns.map((t: any) => {
@@ -101,7 +117,6 @@ export function UploadArea({ onDataExtracted, onBatchConfirm }: UploadAreaProps)
           toast.info('Date adjusted to today');
         }
 
-        // Surface any backend warning (e.g. positional mode used)
         const backendWarning = json.data?.warning;
         if (backendWarning) toast.warning(backendWarning);
 

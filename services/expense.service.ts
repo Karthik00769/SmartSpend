@@ -14,7 +14,7 @@ interface ExpenseRow {
   category_icon:   string;
   category_source: 'manual' | 'auto';
   source:          string;
-  amount:          string;
+  amount_paise:    string;
   expense_date:    string;
   description:     string;
   created_at:      string;
@@ -29,7 +29,7 @@ function toDTO(row: ExpenseRow): ExpenseDTO {
     categorySource: row.category_source,
     categoryIcon:   row.category_icon   || '📌',
     source:         row.source          || 'manual',
-    amount:         parseFloat(row.amount),
+    amountPaise:    Number(row.amount_paise),
     date:           row.expense_date ? new Date(row.expense_date).toISOString().slice(0, 10) : '',
     description:    row.description,
     createdAt:      row.created_at,
@@ -47,7 +47,7 @@ export async function listExpenses(params: GetExpensesQuery): Promise<ExpenseDTO
 
   let sql = `
     SELECT
-      e.id, e.user_id, e.amount, e.category_id, e.category_source,
+      e.id, e.user_id, e.amount_paise, e.category_id, e.category_source,
       e.source, e.description, e.expense_date, e.created_at,
       c.name AS category_name, c.icon AS category_icon
     FROM expenses e
@@ -61,8 +61,8 @@ export async function listExpenses(params: GetExpensesQuery): Promise<ExpenseDTO
   if (month)            { sql += ' AND MONTH(e.expense_date) = ?';  args.push(Number(month));  }
   if (startDate)        { sql += ' AND e.expense_date >= ?';        args.push(String(startDate)); }
   if (endDate)          { sql += ' AND e.expense_date <= ?';        args.push(String(endDate));   }
-  if (minAmount)        { sql += ' AND e.amount >= ?';              args.push(Number(minAmount)); }
-  if (maxAmount)        { sql += ' AND e.amount <= ?';              args.push(Number(maxAmount)); }
+  if (minAmount)        { sql += ' AND e.amount_paise >= ?';              args.push(Number(minAmount)); }
+  if (maxAmount)        { sql += ' AND e.amount_paise <= ?';              args.push(Number(maxAmount)); }
   if (filterCategoryId) { sql += ' AND e.category_id = ?';         args.push(Number(filterCategoryId)); }
   if (source)           { sql += ' AND e.source = ?';              args.push(String(source));   }
   if (search) {
@@ -95,8 +95,8 @@ export async function countExpenses(params: any): Promise<number> {
   if (month)            { sql += ' AND MONTH(e.expense_date) = ?';  args.push(Number(month));  }
   if (startDate)        { sql += ' AND e.expense_date >= ?';        args.push(String(startDate)); }
   if (endDate)          { sql += ' AND e.expense_date <= ?';        args.push(String(endDate));   }
-  if (minAmount)        { sql += ' AND e.amount >= ?';              args.push(Number(minAmount)); }
-  if (maxAmount)        { sql += ' AND e.amount <= ?';              args.push(Number(maxAmount)); }
+  if (minAmount)        { sql += ' AND e.amount_paise >= ?';              args.push(Number(minAmount)); }
+  if (maxAmount)        { sql += ' AND e.amount_paise <= ?';              args.push(Number(maxAmount)); }
   if (filterCategoryId) { sql += ' AND e.category_id = ?';         args.push(Number(filterCategoryId)); }
   if (source)           { sql += ' AND e.source = ?';              args.push(String(source));   }
   if (search) {
@@ -112,12 +112,12 @@ export async function countExpenses(params: any): Promise<number> {
 export async function updateExpense(
   id:     string,
   userId: string,
-  patch:  { amount?: number; description?: string; categoryId?: number; date?: string },
+  patch:  { amountPaise?: number; description?: string; categoryId?: number; date?: string },
 ): Promise<ExpenseDTO> {
   const sets: string[] = [];
   const args: (string | number)[] = [];
 
-  if (patch.amount      != null) { sets.push('amount = ?');       args.push(patch.amount); }
+  if (patch.amountPaise != null) { sets.push('amount_paise = ?');       args.push(patch.amountPaise); }
   if (patch.description != null) { sets.push('description = ?');  args.push(patch.description); }
   if (patch.categoryId  != null) { sets.push('category_id = ?');  args.push(patch.categoryId); }
   if (patch.date        != null) { sets.push('expense_date = ?'); args.push(patch.date); }
@@ -198,7 +198,7 @@ export async function findOrCreateCategory(
 }
 
 export async function createExpense(input: any): Promise<ExpenseDTO> {
-  const { userId, categoryId, amount, date, description, categorySource = 'manual' } = input;
+  const { userId, categoryId, amountPaise, date, description, categorySource = 'manual' } = input;
   // Normalise source — guard against any value not in the DB ENUM
   const VALID_SOURCES = new Set(['manual', 'receipt_scan', 'bank_import']);
   const source: string = VALID_SOURCES.has(input.source) ? input.source : 'manual';
@@ -217,22 +217,22 @@ export async function createExpense(input: any): Promise<ExpenseDTO> {
   const [duplicate] = await query<any[]>(
     `SELECT id FROM expenses
      WHERE user_id = ?
-       AND amount = ?
+       AND amount_paise = ?
        AND expense_date = ?
        AND description = ?
        AND deleted_at IS NULL
        AND created_at >= DATE_SUB(NOW(), INTERVAL 60 SECOND)
      LIMIT 1`,
-    [userId, amount, date, description ?? ''],
+    [userId, amountPaise, date, description ?? ''],
   );
   if (duplicate) {
     throw new Error('Duplicate expense: an identical entry was just saved. Please wait a moment before retrying.');
   }
 
   const result = await query<ResultSetHeader>(
-    `INSERT INTO expenses (user_id, amount, category_id, category_source, source, description, expense_date, created_at)
+    `INSERT INTO expenses (user_id, amount_paise, category_id, category_source, source, description, expense_date, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
-    [userId, amount, categoryId, categorySource, source, description, date],
+    [userId, amountPaise, categoryId, categorySource, source, description, date],
   );
 
   const [row] = await query<ExpenseRow[]>(
@@ -243,7 +243,7 @@ export async function createExpense(input: any): Promise<ExpenseDTO> {
     [result.insertId],
   );
 
-  await logAuditEvent(userId, 'EXPENSE_ADDED', 'EXPENSE', result.insertId, { amount, categoryId, date, description });
+  await logAuditEvent(userId, 'EXPENSE_ADDED', 'EXPENSE', result.insertId, { amountPaise, categoryId, date, description });
 
   return toDTO(row);
 }
@@ -261,9 +261,9 @@ export async function monthlyExpenseSummary(
 
   const [row] = await query<SummaryRow[]>(
     `SELECT
-       COALESCE(SUM(amount), 0)                                            AS total_spent,
+       COALESCE(SUM(amount_paise), 0)                                            AS total_spent,
        COUNT(id)                                                            AS transaction_count,
-       ROUND(COALESCE(SUM(amount), 0) / NULLIF(DAY(LAST_DAY(STR_TO_DATE(CONCAT(?, '-', LPAD(?, 2, '0'), '-01'), '%Y-%m-%d'))), 0), 2) AS daily_avg
+       ROUND(COALESCE(SUM(amount_paise), 0) / NULLIF(DAY(LAST_DAY(STR_TO_DATE(CONCAT(?, '-', LPAD(?, 2, '0'), '-01'), '%Y-%m-%d'))), 0), 2) AS daily_avg
      FROM expenses
      WHERE user_id    = ?
        AND deleted_at IS NULL
@@ -296,7 +296,7 @@ export async function categoryWiseTotals(
        e.category_id,
        c.name,
        c.icon,
-       SUM(e.amount) AS total
+       SUM(e.amount_paise) AS total
      FROM expenses e
      JOIN categories c ON e.category_id = c.id
      WHERE e.user_id    = ?
@@ -322,7 +322,7 @@ export async function getMonthlyTrends(userId: string, months: number = 6): Prom
   const sql = `
     SELECT
       DATE_FORMAT(expense_date, '%b %Y') AS month_label,
-      COALESCE(SUM(amount), 0)           AS total_spent
+      COALESCE(SUM(amount_paise), 0)           AS total_spent
     FROM expenses
     WHERE user_id    = ?
       AND deleted_at IS NULL

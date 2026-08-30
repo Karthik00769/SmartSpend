@@ -1,16 +1,16 @@
 'use client';
 
 import { useState } from 'react';
+import * as FinanceCore from '@/lib/finance';
 import { useSmartSpend }    from '@/context/smartspend-context';
 import { useInsights }      from '@/hooks/use-insights';
 import { GoalForm }         from '@/components/sections/goals/goal-form';
 import { Card }             from '@/components/ui/card';
 import { Input }            from '@/components/ui/input';
 import { Button }           from '@/components/ui/button';
-import { getCurrencySymbol } from '@/lib/currency';
-import { Analytics }        from '@/lib/finance';
+import { Format, Analytics } from '@/lib/finance';
 import type { GoalDTO }     from '@/types/api';
-import type { GoalProbabilityResult } from '@/lib/insights-engine/types';
+import type { GoalProbabilityResult } from '@/types/api';
 
 const STATUS_STYLE: Record<string, { cls: string; label: string }> = {
   active:    { cls: 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400',     label: '🎯 Active' },
@@ -64,16 +64,16 @@ function GoalCard({
   goal:        GoalDTO;
   probability: GoalProbabilityResult | undefined;
 }) {
-  const { depositToGoal, updateGoal, deleteGoal, fmt, currency } = useSmartSpend();
-  const symbol = getCurrencySymbol(currency);
+  const { depositToGoal, updateGoal, deleteGoal, fmt } = useSmartSpend();
+  const symbol = Format.CURRENCY_SYMBOL;
   const [depositAmount, setDepositAmount] = useState('');
   const [depositing,    setDepositing]    = useState(false);
   const [deleting,      setDeleting]      = useState(false);
 
-  const pct       = Math.min(100, Math.round(Analytics.calculateGoalProgressPct(goal.savedAmount, goal.targetAmount)));
-  const remaining = Math.max(0, goal.targetAmount - goal.savedAmount);
+  const pct       = goal.progressPct;
+  const remaining = FinanceCore.Math.paiseToInr(goal.remainingPaise);
   const daysLeft  = goal.daysRemaining ?? 0;
-  const isTerminal = goal.status === 'completed' || goal.status === 'failed' || goal.status === 'cancelled';
+  const isTerminal = goal.lifecycleStatus === 'completed' || goal.lifecycleStatus === 'failed' || goal.lifecycleStatus === 'cancelled';
 
   const handleDeposit = async () => {
     const val = parseFloat(depositAmount);
@@ -85,7 +85,7 @@ function GoalCard({
   };
 
   const handleTogglePause = async () => {
-    const newStatus = goal.status === 'paused' ? 'active' : 'paused';
+    const newStatus = goal.lifecycleStatus === 'paused' ? 'active' : 'paused';
     await updateGoal(goal.id, { status: newStatus });
   };
 
@@ -98,8 +98,8 @@ function GoalCard({
 
   return (
     <Card className={`p-5 border transition-colors ${
-      goal.status === 'completed' ? 'border-green-300 dark:border-green-800 bg-green-50/30 dark:bg-green-950/10' :
-      goal.status === 'failed'    ? 'border-red-300 dark:border-red-800 bg-red-50/30 dark:bg-red-950/10' :
+      goal.lifecycleStatus === 'completed' ? 'border-green-300 dark:border-green-800 bg-green-50/30 dark:bg-green-950/10' :
+      goal.lifecycleStatus === 'failed'    ? 'border-red-300 dark:border-red-800 bg-red-50/30 dark:bg-red-950/10' :
       'border-border/50 hover:border-primary/40'
     }`}>
 
@@ -112,16 +112,16 @@ function GoalCard({
           )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <StatusBadge status={goal.status} />
-          {probability && goal.status === 'active' && <RiskBadge risk={probability.risk} />}
+          <StatusBadge status={goal.lifecycleStatus} />
+          {probability && goal.lifecycleStatus === 'active' && <RiskBadge risk={probability.risk} />}
         </div>
       </div>
 
       {/* Amounts */}
       <div className="flex items-end justify-between mb-2">
         <div>
-          <span className="text-xl font-bold text-foreground tabular-nums">{fmt(goal.savedAmount)}</span>
-          <span className="text-sm text-muted-foreground ml-1">/ {fmt(goal.targetAmount)}</span>
+          <span className="text-xl font-bold text-foreground tabular-nums">{fmt(FinanceCore.Math.paiseToInr(goal.savedAmountPaise))}</span>
+          <span className="text-sm text-muted-foreground ml-1">/ {fmt(FinanceCore.Math.paiseToInr(goal.targetAmountPaise))}</span>
         </div>
         <span className="text-sm font-bold text-primary">{pct}%</span>
       </div>
@@ -129,7 +129,7 @@ function GoalCard({
       {/* Progress bar */}
       <div className="h-2.5 rounded-full bg-muted overflow-hidden mb-2">
         <div
-          className={`h-full rounded-full transition-all duration-500 ${barColor(pct, goal.status)}`}
+          className={`h-full rounded-full transition-all duration-500 ${barColor(pct, goal.lifecycleStatus)}`}
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -137,8 +137,8 @@ function GoalCard({
       {/* Sub-line */}
       <div className="flex justify-between text-xs text-muted-foreground mb-4">
         <span>
-          {goal.status === 'completed' ? '🎉 Goal reached!'
-            : goal.status === 'failed' ? '⏰ Deadline passed'
+          {goal.lifecycleStatus === 'completed' ? '🎉 Goal reached!'
+            : goal.lifecycleStatus === 'failed' ? '⏰ Deadline passed'
             : `${fmt(remaining)} remaining`}
         </span>
         <span>
@@ -160,12 +160,12 @@ function GoalCard({
               value={depositAmount}
               onChange={e => setDepositAmount(e.target.value)}
               className="h-9 pl-7 text-sm bg-muted/30"
-              disabled={depositing || goal.status === 'paused'}
+              disabled={depositing || goal.lifecycleStatus === 'paused'}
             />
           </div>
           <Button
             size="sm" onClick={handleDeposit}
-            disabled={depositing || !depositAmount || goal.status === 'paused'}
+            disabled={depositing || !depositAmount || goal.lifecycleStatus === 'paused'}
             className="h-9 px-4 shrink-0 font-bold"
           >
             {depositing ? '…' : 'Add Savings'}
@@ -174,7 +174,7 @@ function GoalCard({
       )}
 
       {/* AI recommendation */}
-      {probability?.recommendation && goal.status === 'active' && (
+      {probability?.recommendation && goal.lifecycleStatus === 'active' && (
         <p className="text-xs text-muted-foreground italic bg-muted/20 p-2.5 rounded-lg border border-border/30 mb-3">
           "{probability.recommendation}"
         </p>
@@ -192,7 +192,7 @@ function GoalCard({
               {goal.priority}
             </span>
           )}
-          {probability && goal.status === 'active' && (
+          {probability && goal.lifecycleStatus === 'active' && (
             <span>📊 {probability.probability}% prob.</span>
           )}
         </div>
@@ -202,7 +202,7 @@ function GoalCard({
               onClick={handleTogglePause}
               className="text-xs px-2 py-1 rounded bg-muted hover:bg-muted/80 text-muted-foreground transition-colors"
             >
-              {goal.status === 'paused' ? '▶ Resume' : '⏸ Pause'}
+              {goal.lifecycleStatus === 'paused' ? '▶ Resume' : '⏸ Pause'}
             </button>
           )}
           <button
@@ -237,10 +237,10 @@ export default function GoalsPage() {
     insightsData?.goalProbabilities.map(g => [g.goalId, g]) ?? [],
   );
 
-  const active    = goals.filter(g => g.status === 'active');
-  const paused    = goals.filter(g => g.status === 'paused');
-  const completed = goals.filter(g => g.status === 'completed');
-  const failed    = goals.filter(g => g.status === 'failed');
+  const active    = goals.filter(g => g.lifecycleStatus === 'active');
+  const paused    = goals.filter(g => g.lifecycleStatus === 'paused');
+  const completed = goals.filter(g => g.lifecycleStatus === 'completed');
+  const failed    = goals.filter(g => g.lifecycleStatus === 'failed');
 
   if (goalsLoading) return <GoalsSkeleton />;
 

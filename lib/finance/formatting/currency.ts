@@ -6,6 +6,8 @@
 
 import { paiseToInr } from '../calculations/math';
 
+export const CURRENCY_SYMBOL = '₹';
+
 /**
  * Formats a raw Paise amount into the Indian Numbering System string.
  * Example: 1500000 -> "₹15,000.00"

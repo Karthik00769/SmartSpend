@@ -9,7 +9,7 @@ import { ResultSetHeader } from 'mysql2';
 export async function processRecurringExpenses(userId: string): Promise<number> {
   const sql = `
     SELECT 
-      id, user_id, amount, category, description, recur_frequency, next_recur_date 
+      id, user_id, amount_paise, category, description, recur_frequency, next_recur_date 
     FROM expenses 
     WHERE user_id = ? 
       AND is_recurring = 1 
@@ -23,9 +23,9 @@ export async function processRecurringExpenses(userId: string): Promise<number> 
     
     // 1. Insert NEW expense entry corresponding to Today
     await query(
-      `INSERT INTO expenses (user_id, amount, category, description, expense_date, is_recurring, created_at)
+      `INSERT INTO expenses (user_id, amount_paise, category, description, expense_date, is_recurring, created_at)
        VALUES (?, ?, ?, ?, CURDATE(), 0, NOW())`,
-      [exp.user_id, exp.amount, exp.category, `${exp.description} (Recurring)`]
+      [exp.user_id, exp.amount_paise, exp.category, `${exp.description} (Recurring)`]
     );
 
     // 2. Compute future updated date adding Month/Year interval offsets

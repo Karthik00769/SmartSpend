@@ -30,7 +30,6 @@ import { buildChartBundle } from './chart-formatter';
 import { createExpense, listExpenses } from '@/services/expense.service';
 import { listBudgets } from '@/services/budget.service';
 
-import { paiseToInr } from '../finance/calculations/math';
 import { calculateOverallConfidence, requiresManualReview } from '../finance/confidence/scoring';
 
 import type { RawExpenseInput, ExpenseEngineResult, SummaryBundle } from './types';
@@ -112,7 +111,7 @@ export async function processExpense(
   const savedExpense = await createExpense({
     userId:      processed.userId,
     categoryId:  cat.categoryId,
-    amount:      paiseToInr(processed.amount), // Convert Paise to Float for backward compatibility with DB
+    amountPaise: processed.amount,
     date:        processed.date,
     description: processed.description,
     categorySource: cat.confidence === 'exact' ? 'manual' : 'auto',
@@ -163,7 +162,7 @@ export async function generateSummaries(
 
   // ── Build budget map (categoryId → limitAmount) ───────────────────────────
   const budgetMap = new Map<number, number>(
-    budgetSummary.categories.map(c => [c.categoryId, c.allocated]),
+    budgetSummary.categories.map(c => [c.categoryId, c.allocatedPaise]),
   );
 
   // ── Aggregate ─────────────────────────────────────────────────────────────
@@ -178,7 +177,7 @@ export async function generateSummaries(
     categories,
     monthlyTrend:   trend,
     weeks,
-    dailyExpenses:  currentExpenses.map(e => ({ date: e.date, amount: e.amount })),
+    dailyExpenses:  currentExpenses.map(e => ({ date: e.date, amount: e.amountPaise })),
     dayOfWeekStats: dowStats,
     year,
     month,

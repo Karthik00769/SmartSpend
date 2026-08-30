@@ -53,10 +53,10 @@ describe('Expense Engine - processExpense', () => {
     expect(result.processed.week).toBeGreaterThan(0);
     expect(result.processed.confidenceScore).toBeDefined();
 
-    // DB Call (Boundary adapter converts back to Float for DB)
+    // DB Call — engine passes Paise directly to createExpense
     expect(createExpense).toHaveBeenCalledWith(expect.objectContaining({
       userId,
-      amount: 150.50, // Float back
+      amountPaise: 15050,   // 150.50 INR → 15050 paise
       date: validDate,
       categoryId: 4,
     }));

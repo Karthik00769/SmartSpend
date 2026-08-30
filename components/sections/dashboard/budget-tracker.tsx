@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Card }     from '@/components/ui/card';
 import { apiDelete, ApiRequestError } from '@/lib/api-client';
 import { Analytics } from '@/lib/finance';
+import * as FinanceCore from '@/lib/finance';
 import type { BudgetSummaryDTO, BudgetCategoryDTO } from '@/types/api';
 
 interface BudgetTrackerProps {
@@ -75,8 +76,8 @@ function BudgetRow({ cat, onDeleted, fmt = (n: number) => n.toLocaleString('en-I
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <span className={`text-sm font-semibold tabular-nums ${getTextColor(pct)}`}>
-            {fmt(cat.spent)}
-            <span className="text-muted-foreground font-normal"> / {fmt(cat.allocated)}</span>
+            {fmt(FinanceCore.Math.paiseToInr(cat.spentPaise))}
+            <span className="text-muted-foreground font-normal"> / {fmt(FinanceCore.Math.paiseToInr(cat.allocatedPaise))}</span>
           </span>
           <button
             onClick={handleDelete}
@@ -102,10 +103,10 @@ function BudgetRow({ cat, onDeleted, fmt = (n: number) => n.toLocaleString('en-I
         <span className="text-[11px] text-muted-foreground">
           {pct !== null ? `${pct.toFixed(0)}% used` : 'No spend yet'}
         </span>
-        <span className={`text-[11px] font-medium ${cat.remaining < 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
-          {cat.remaining >= 0
-            ? `${fmt(cat.remaining)} left`
-            : `${fmt(Math.abs(cat.remaining))} over`}
+        <span className={`text-[11px] font-medium ${cat.remainingPaise < 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+          {cat.remainingPaise >= 0
+            ? `${fmt(FinanceCore.Math.paiseToInr(cat.remainingPaise))} left`
+            : `${fmt(FinanceCore.Math.paiseToInr(Math.abs(cat.remainingPaise)))} over`}
         </span>
       </div>
     </div>
@@ -115,7 +116,7 @@ function BudgetRow({ cat, onDeleted, fmt = (n: number) => n.toLocaleString('en-I
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function BudgetTracker({ budget, onDeleted, fmt = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }: BudgetTrackerProps) {
-  const overallPct = Math.round(Analytics.calculateBudgetUsedPct(budget.totalSpent, budget.totalBudget));
+  const overallPct = Math.round(Analytics.calculateBudgetUsedPct(budget.totalSpentPaise, budget.totalBudgetPaise));
 
   if (budget.categories.length === 0) {
     return (
@@ -133,7 +134,7 @@ export function BudgetTracker({ budget, onDeleted, fmt = (n: number) => n.toLoca
         <div>
           <h3 className="text-lg font-semibold text-foreground">Budget Overview</h3>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {fmt(budget.totalSpent)} spent of {fmt(budget.totalBudget)} total
+            {fmt(FinanceCore.Math.paiseToInr(budget.totalSpentPaise))} spent of {fmt(FinanceCore.Math.paiseToInr(budget.totalBudgetPaise))} total
           </p>
         </div>
         <div className="text-right">
@@ -166,14 +167,14 @@ export function BudgetTracker({ budget, onDeleted, fmt = (n: number) => n.toLoca
             .filter(c => (c.usedPct ?? 0) >= 100)
             .map(c => (
               <p key={c.id} className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1.5">
-                🚨 <strong>{c.category}</strong> exceeded by {fmt(Math.abs(c.remaining))}
+                🚨 <strong>{c.category}</strong> exceeded by {fmt(FinanceCore.Math.paiseToInr(Math.abs(c.remainingPaise)))}
               </p>
             ))}
           {budget.categories
             .filter(c => (c.usedPct ?? 0) >= 80 && (c.usedPct ?? 0) < 100)
             .map(c => (
               <p key={c.id} className="text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1.5">
-                ⚠️ <strong>{c.category}</strong> at {c.usedPct?.toFixed(0)}% — {fmt(c.remaining)} remaining
+                ⚠️ <strong>{c.category}</strong> at {c.usedPct?.toFixed(0)}% — {fmt(FinanceCore.Math.paiseToInr(c.remainingPaise))} remaining
               </p>
             ))}
         </div>

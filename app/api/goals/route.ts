@@ -21,6 +21,7 @@ import { NextRequest } from 'next/server';
 import { ok, fail } from '@/lib/api-response';
 import { parseBody, parseQuery, CreateGoalSchema, GetGoalsQuerySchema } from '@/lib/validate';
 import { listGoals, createGoal, checkGoalUnlockStatus } from '@/services/goal.service';
+import * as FinanceCore from '@/lib/finance';
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/authOptions";
 
@@ -50,7 +51,8 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return fail(parsed.message, 400, parsed.fieldErrors);
 
   try {
-    const bodyData = parsed.data as any;
+    const { targetAmount, ...rest } = parsed.data as any;
+    const bodyData = { ...rest, targetPaise: FinanceCore.Math.inrToPaise(targetAmount) };
     bodyData.userId = (session.user as any).id;
 
     // ── ENFORCE: deadline must be today or future ─────────────────────────────

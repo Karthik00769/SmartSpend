@@ -13,6 +13,7 @@ import {
 import { apiGet, apiPatch, apiDelete, buildQuery, ApiRequestError } from '@/lib/api-client';
 import { format } from 'date-fns';
 import type { ExpenseDTO } from '@/types/api';
+import * as FinanceCore from '@/lib/finance';
 
 const SOURCE_META: Record<string, { label: string; emoji: string; cls: string }> = {
   manual:       { label: 'Manual', emoji: '✏️', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' },
@@ -48,7 +49,7 @@ function EditRow({ expense, categories, onSave, onCancel, saving }: {
   saving:     boolean;
 }) {
   const [form, setForm] = useState<EditState>({
-    amount:       String(expense.amount),
+    amount:       String(FinanceCore.Math.paiseToInr(expense.amountPaise)),
     description:  expense.description,
     categoryName: expense.categoryName,
     categoryId:   String(expense.categoryId ?? ''),
@@ -345,7 +346,7 @@ export default function ExpensesHistoryPage() {
                     <TableCell className="text-xs text-muted-foreground">{exp.date}</TableCell>
                     <TableCell><SourceBadge source={exp.source} /></TableCell>
                     <TableCell className="text-right font-bold tabular-nums">
-                      ${exp.amount.toFixed(2)}
+                      ${FinanceCore.Math.paiseToInr(exp.amountPaise).toFixed(2)}
                     </TableCell>
                     <TableCell className="no-print">
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">

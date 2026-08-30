@@ -1,6 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { processBankStatement } from '../index';
 import { UnsupportedBankFormatError } from '../types/errors';
+
+vi.mock('@/services/expense.service', () => ({}));
+vi.mock('@/services/budget.service', () => ({}));
 
 describe('Bank Statement Pipeline', () => {
   it('should process CSV end-to-end and calculate confidence', async () => {

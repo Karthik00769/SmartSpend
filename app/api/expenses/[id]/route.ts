@@ -5,30 +5,31 @@
  */
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { getServerSession }       from 'next-auth/next';
-import { authOptions }            from '@/lib/auth/authOptions';
-import { ok, fail }               from '@/lib/api-response';
-import { parseBody }              from '@/lib/validate';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth/authOptions';
+import { ok, fail } from '@/lib/api-response';
+import { parseBody } from '@/lib/validate';
 import { updateExpense, softDeleteExpense, findOrCreateCategory } from '@/services/expense.service';
+import * as FinanceCore from '@/lib/finance';
 
 const PatchExpenseSchema = z.object({
-  amount:       z.coerce.number().positive().optional(),
-  description:  z.string().trim().max(500).optional(),
+  amount: z.coerce.number().positive().optional(),
+  description: z.string().trim().max(500).optional(),
   // NOTE: 'date' is intentionally excluded — expense date is set at creation
   // time (always today) and cannot be changed after the fact.
-  categoryId:   z.coerce.number().min(1).optional(),
+  categoryId: z.coerce.number().min(1).optional(),
   categoryName: z.string().trim().max(100).optional(),
 });
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return fail('Unauthorized', 401);
 
   const userId = (session.user as any).id as string;
-  const id     = params.id;
+  const { id } = await params;
 
   const parsed = await parseBody(req, PatchExpenseSchema);
   if (!parsed.success) return fail(parsed.message, 400, parsed.fieldErrors);
@@ -42,9 +43,15 @@ export async function PATCH(
     }
 
     // Expense date is immutable after creation — never allow editing it.
-    const { date: _discardedDate, ...safeRest } = rest as any;
+    const { date: _discardedDate, amount, ...safeRest } = rest as any;
 
-    const updated = await updateExpense(id, userId, { ...safeRest, categoryId });
+    const patchPayload: Parameters<typeof updateExpense>[2] = { ...safeRest, categoryId };
+    
+    if (amount !== undefined) {
+      patchPayload.amountPaise = FinanceCore.Math.inrToPaise(amount);
+    }
+
+    const updated = await updateExpense(id, userId, patchPayload);
     return ok({ expense: updated });
   } catch (err: any) {
     console.error('[PATCH /api/expenses/:id]', err);
@@ -54,15 +61,16 @@ export async function PATCH(
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return fail('Unauthorized', 401);
 
   const userId = (session.user as any).id as string;
+  const { id } = await params;
 
   try {
-    await softDeleteExpense(params.id, userId);
+    await softDeleteExpense(id, userId);
     return ok({ deleted: true });
   } catch (err: any) {
     console.error('[DELETE /api/expenses/:id]', err);

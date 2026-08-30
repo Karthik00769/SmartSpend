@@ -9,6 +9,7 @@
 import { NextRequest } from 'next/server';
 import { ok, fail } from '@/lib/api-response';
 import { updateGoalProgress } from '@/services/goal.service';
+import * as FinanceCore from '@/lib/finance';
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/authOptions";
 
@@ -29,7 +30,8 @@ export async function POST(
       return fail('Invalid deposit amount.', 400);
     }
 
-    const updated = await updateGoalProgress(goalId, userId, amount);
+    const amountPaise = FinanceCore.Math.inrToPaise(amount);
+    const updated = await updateGoalProgress(goalId, userId, amountPaise);
     if (!updated) {
       return fail('Goal not found or unauthorized.', 404);
     }

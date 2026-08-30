@@ -4,7 +4,7 @@ import type {
   BudgetSummaryDTO,
   BudgetCategoryDTO,
 } from '@/types/api';
-import { Analytics } from '../lib/finance';
+import { Analytics, Budget, Math as FinanceMath } from '../lib/finance';
 
 // budgets table columns: id, user_id, category_id, limit_amount, month, year,
 //                        amount, created_at, updated_at, deleted_at
@@ -17,16 +17,17 @@ interface BudgetRow {
   category:     string;
   icon:         string;
   color_hex:    string;
-  limit_amount: string;
+  limit_paise:  string;
   month:        number;
   year:         number;
   total_spent:  string;
 }
 
 function toDTO(row: BudgetRow): BudgetCategoryDTO {
-  const allocated = parseFloat(row.limit_amount || '0');
-  const spent     = parseFloat(row.total_spent  || '0');
-  const usedPct   = allocated > 0 ? Math.round(Analytics.calculateBudgetUsedPct(spent, allocated) * 100) / 100 : null;
+  const allocatedPaise = Number(row.limit_paise || 0);
+  const spentPaise     = Number(row.total_spent || 0);
+  
+  const usedPct = allocatedPaise > 0 ? Budget.calculateBudgetProgress(spentPaise, allocatedPaise) : null;
 
   return {
     id:           row.id,
@@ -34,11 +35,13 @@ function toDTO(row: BudgetRow): BudgetCategoryDTO {
     category:     row.category,
     icon:         row.icon || '📌',
     color:        row.color_hex || '#6B7280',
-    allocated,
-    spent,
-    usedPct,
-    isOverBudget: spent > allocated && allocated > 0,
-    remaining:    Analytics.calculateBudgetRemaining(allocated, spent), // Keeping original behaviour for negative values
+    allocatedPaise,
+    spentPaise,
+    usedPct:      usedPct ? Math.round(usedPct * 100) / 100 : null,
+    isOverBudget: Budget.isBudgetExceeded(spentPaise, allocatedPaise),
+    status:       Budget.calculateBudgetStatus(spentPaise, allocatedPaise),
+    needsAlert:   Budget.needsBudgetAlert(spentPaise, allocatedPaise),
+    remainingPaise: Budget.calculateRemainingBudget(spentPaise, allocatedPaise),
     month:        row.month,
     year:         row.year,
   };
@@ -62,10 +65,10 @@ export async function listBudgets(params: GetBudgetsQuery): Promise<BudgetSummar
 
   const rows = await query<BudgetRow[]>(
     `SELECT
-       b.id, b.user_id, b.category_id, b.limit_amount,
+       b.id, b.user_id, b.category_id, b.limit_paise,
        b.month, b.year,
        c.name AS category, c.icon, c.color_hex,
-       COALESCE(SUM(e.amount), 0) AS total_spent
+       COALESCE(SUM(e.amount_paise), 0) AS total_spent
      FROM budgets b
      JOIN categories c ON b.category_id = c.id
      LEFT JOIN expenses e
@@ -79,29 +82,29 @@ export async function listBudgets(params: GetBudgetsQuery): Promise<BudgetSummar
        AND b.month      = ?
        AND b.deleted_at IS NULL
      GROUP BY
-       b.id, b.user_id, b.category_id, b.limit_amount, b.month, b.year,
+       b.id, b.user_id, b.category_id, b.limit_paise, b.month, b.year,
        c.name, c.icon, c.color_hex
      ORDER BY total_spent DESC`,
     [userId, year, month],
   );
 
   const categories  = rows.map(toDTO);
-  const totalBudget = categories.reduce((s, c) => s + c.allocated, 0);
-  const totalSpent  = categories.reduce((s, c) => s + c.spent,     0);
+  const totalBudgetPaise = categories.reduce((s, c) => s + c.allocatedPaise, 0);
+  const totalSpentPaise  = categories.reduce((s, c) => s + c.spentPaise,     0);
 
-  return { totalBudget, totalSpent, categories };
+  return { totalBudgetPaise, totalSpentPaise, categories };
 }
 
 export async function upsertBudget(input: any): Promise<BudgetSummaryDTO> {
-  const { userId, categoryId, amount, month, year } = input;
+  const { userId, categoryId, amountPaise, month, year } = input;
 
   // Ensure types are consistent (INT in DB)
   const catId   = parseInt(String(categoryId), 10);
   const userId_ = String(userId);
 
-  if (isNaN(catId) || !amount === undefined || !month || !year) {
+  if (isNaN(catId) || !amountPaise === undefined || !month || !year) {
     console.error(`[BUDGET] Validation failed: catId=${catId}, userId=${userId_}, month=${month}, year=${year}`);
-    throw new Error(`Missing or invalid required fields: categoryId=${categoryId}, amount=${amount}`);
+    throw new Error(`Missing or invalid required fields: categoryId=${categoryId}, amountPaise=${amountPaise}`);
   }
 
   // 2. Validate: allow if user owns the category OR it is a system category
@@ -118,15 +121,15 @@ export async function upsertBudget(input: any): Promise<BudgetSummaryDTO> {
 
   // 3. Upsert: UNIQUE KEY (user_id, category_id, month, year)
   const result = await query(
-    `INSERT INTO budgets (user_id, category_id, limit_amount, month, year, updated_at)
+    `INSERT INTO budgets (user_id, category_id, limit_paise, month, year, updated_at)
      VALUES (?, ?, ?, ?, ?, NOW())
      ON DUPLICATE KEY UPDATE 
-       limit_amount = VALUES(limit_amount),
+       limit_paise = VALUES(limit_paise),
        updated_at   = NOW()`,
-    [userId_, catId, parseFloat(String(amount)), Number(month), Number(year)],
+    [userId_, catId, Number(amountPaise), Number(month), Number(year)],
   );
 
-  await logAuditEvent(userId_, 'BUDGET_UPDATED', 'BUDGET', catId, { amount, month, year });
+  await logAuditEvent(userId_, 'BUDGET_UPDATED', 'BUDGET', catId, { amountPaise, month, year });
 
   return listBudgets({ userId: userId_, month: Number(month), year: Number(year) });
 }
@@ -136,11 +139,11 @@ export async function getCategoryBudgetStatus(
   categoryId: number,
   month: number,
   year: number
-): Promise<{ limit: number; spent: number; percent: number; status: 'under' | 'near' | 'over' } | null> {
+): Promise<{ limitPaise: number; spentPaise: number; percent: number; status: 'under' | 'near' | 'over' } | null> {
   const [row] = await query<any[]>(
     `SELECT 
-       b.limit_amount,
-       COALESCE(SUM(e.amount), 0) AS total_spent
+       b.limit_paise,
+       COALESCE(SUM(e.amount_paise), 0) AS total_spent
      FROM budgets b
      LEFT JOIN expenses e 
        ON e.category_id = b.category_id 
@@ -159,13 +162,15 @@ export async function getCategoryBudgetStatus(
 
   if (!row) return null;
 
-  const limit = parseFloat(row.limit_amount);
-  const spent = parseFloat(row.total_spent);
-  const percent = Analytics.calculateBudgetUsedPct(spent, limit);
+  const limitPaise = Number(row.limit_paise);
+  const spentPaise = Number(row.total_spent);
+  
+  const percent = Budget.calculateBudgetProgress(spentPaise, limitPaise);
+  const coreStatus = Budget.calculateBudgetStatus(spentPaise, limitPaise);
   
   let status: 'under' | 'near' | 'over' = 'under';
-  if (percent >= 100) status = 'over';
-  else if (percent >= 85) status = 'near';
+  if (coreStatus === 'exceeded') status = 'over';
+  else if (coreStatus === 'warning') status = 'near';
 
-  return { limit, spent, percent, status };
+  return { limitPaise, spentPaise, percent, status };
 }

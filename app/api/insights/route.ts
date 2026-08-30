@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
       for (const b of budgets.categories.filter(b => b.isOverBudget).slice(0, 2)) {
         newInsights.push({
           type:    'budget_exceeded',
-          content: `You've exceeded your ${b.category} budget by ${Math.abs(b.remaining).toFixed(2)} (${b.spent.toFixed(2)} spent vs ${b.allocated.toFixed(2)} limit).`,
+          content: `You've exceeded your ${b.category} budget by ${Math.abs(b.remainingPaise / 100).toFixed(2)} (${(b.spentPaise / 100).toFixed(2)} spent vs ${(b.allocatedPaise / 100).toFixed(2)} limit).`,
         });
       }
 
@@ -83,16 +83,16 @@ export async function GET(req: NextRequest) {
       for (const b of budgets.categories.filter(b => !b.isOverBudget && (b.usedPct ?? 0) >= 80).slice(0, 1)) {
         newInsights.push({
           type:    'overspending_alert',
-          content: `You're at ${b.usedPct?.toFixed(0)}% of your ${b.category} budget — ${b.remaining.toFixed(2)} remaining.`,
+          content: `You're at ${b.usedPct?.toFixed(0)}% of your ${b.category} budget — ${(b.remainingPaise / 100).toFixed(2)} remaining.`,
         });
       }
 
       // 4. Goal progress
       for (const g of goals.slice(0, 1)) {
-        const pct = Math.round(Analytics.calculateGoalProgressPct(g.savedAmount, g.targetAmount));
+        const pct = g.progressPct;
         newInsights.push({
           type:    pct >= 75 ? 'savings_opportunity' : 'goal_at_risk',
-          content: `Your "${g.title}" goal is ${pct}% complete (${g.savedAmount.toFixed(2)} of ${g.targetAmount.toFixed(2)} saved).`,
+          content: `Your "${g.title}" goal is ${pct}% complete (${(g.savedAmountPaise / 100).toFixed(2)} of ${(g.targetAmountPaise / 100).toFixed(2)} saved).`,
         });
       }
 

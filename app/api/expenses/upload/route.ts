@@ -48,10 +48,10 @@ export async function POST(req: NextRequest) {
     if (isImage) {
       const ocrResult = await processReceiptImage(buffer);
       
-      const parsedAmount = ocrResult.parsed.amountRaw ? parseFloat(ocrResult.parsed.amountRaw.replace(/[^0-9.]/g, '')) : 0;
-      const amount = isNaN(parsedAmount) ? 0 : parsedAmount;
-      const merchant = FinanceCore.Parsing.sanitizeMerchantName(ocrResult.parsed.merchantRaw || '');
-      const date = ocrResult.parsed.dateRaw || new Date().toISOString().slice(0, 10);
+      // Delegate amount and date parsing entirely to FinanceCore
+      const amount      = FinanceCore.Parsing.extractAmount(ocrResult.parsed.amountRaw ?? '');
+      const merchant    = FinanceCore.Parsing.sanitizeMerchantName(ocrResult.parsed.merchantRaw || '');
+      const date        = FinanceCore.Parsing.extractDate(ocrResult.parsed.dateRaw ?? '') ?? new Date().toISOString().slice(0, 10);
       
       const amountWarning = amount === 0 
           ? 'Could not detect a valid amount — please enter it manually.' 
@@ -81,10 +81,15 @@ export async function POST(req: NextRequest) {
         fileName: file.name
       });
       
+      const { importBankTransactions } = await import('@/lib/bank');
+      const importResult = await importBankTransactions(bankResult.metadata.transactions, (session.user as any).id as string);
+      
       return NextResponse.json({
         ok: true,
         data: {
-          transactions: bankResult.metadata.transactions,
+          importedCount: importResult.importedCount,
+          skippedCount: importResult.skippedCount,
+          skippedRows: importResult.skippedRows,
           source: 'bank',
           parseMode: isPDF ? 'pdf-lines' : 'csv',
         },

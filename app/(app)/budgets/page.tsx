@@ -5,6 +5,7 @@ import { useSmartSpend } from '@/context/smartspend-context';
 import { BudgetForm }    from '@/components/sections/budget/budget-form';
 import { BudgetTracker } from '@/components/sections/dashboard/budget-tracker';
 import { Card }          from '@/components/ui/card';
+import * as FinanceCore from '@/lib/finance';
 import { Button }        from '@/components/ui/button';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -90,23 +91,23 @@ export default function BudgetPage() {
           {[
             {
               label: 'Total Budget',
-              value: `${fmt(budget.totalBudget)}`,
+              value: `${fmt(FinanceCore.Math.paiseToInr(budget.totalBudgetPaise))}`,
               icon: '📋',
               cls: 'text-foreground',
             },
             {
               label: 'Total Spent',
-              value: `${fmt(budget.totalSpent)}`,
+              value: `${fmt(FinanceCore.Math.paiseToInr(budget.totalSpentPaise))}`,
               icon: '💸',
-              cls: budget.totalSpent > budget.totalBudget
+              cls: budget.totalSpentPaise > budget.totalBudgetPaise
                 ? 'text-red-600 dark:text-red-400'
                 : 'text-foreground',
             },
             {
               label: 'Remaining',
-              value: `${fmt(budget.totalBudget - budget.totalSpent)}`,
+              value: `${fmt(FinanceCore.Math.paiseToInr(FinanceCore.Math.subtract(budget.totalBudgetPaise, budget.totalSpentPaise)))}`,
               icon: '💰',
-              cls: budget.totalBudget - budget.totalSpent < 0
+              cls: FinanceCore.Budget.isBudgetExceeded(budget.totalSpentPaise, budget.totalBudgetPaise)
                 ? 'text-red-600 dark:text-red-400'
                 : 'text-green-600 dark:text-green-400',
             },

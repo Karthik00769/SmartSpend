@@ -18,7 +18,7 @@ import { get, post, buildQuery } from './apiClient';
 import type {
   GoalDTO,
   CreateGoalInput,
-  GoalStatus,
+  GoalLifecycleStatus,
   Priority,
 } from '@/types/api';
 
@@ -36,7 +36,7 @@ export interface CreateGoalResponse {
 // ─── Input helpers ────────────────────────────────────────────────────────────
 
 export interface GetGoalsOptions {
-  status?: GoalStatus;
+  status?: GoalLifecycleStatus;
 }
 
 /** userId is auto-resolved if omitted */

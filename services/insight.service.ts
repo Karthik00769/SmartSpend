@@ -84,14 +84,14 @@ export async function generateMonthlyInsights(
   // Derive insights from real DB data — no hardcoded strings
   interface SpendRow { total_spent: string; prev_spent: string; }
   interface CatRow   { name: string; total: string; }
-  interface IncRow   { monthly_income: string; }
+  interface IncRow   { monthly_income_paise: string; }
 
   const [spendRows, catRows, incRows] = await Promise.all([
     // Current vs previous month spend
     query<SpendRow[]>(`
       SELECT
-        COALESCE(SUM(CASE WHEN MONTH(expense_date)=? AND YEAR(expense_date)=? THEN amount END), 0) AS total_spent,
-        COALESCE(SUM(CASE WHEN MONTH(expense_date)=? AND YEAR(expense_date)=? THEN amount END), 0) AS prev_spent
+        COALESCE(SUM(CASE WHEN MONTH(expense_date)=? AND YEAR(expense_date)=? THEN amount_paise END), 0) AS total_spent,
+        COALESCE(SUM(CASE WHEN MONTH(expense_date)=? AND YEAR(expense_date)=? THEN amount_paise END), 0) AS prev_spent
       FROM expenses
       WHERE user_id = ? AND deleted_at IS NULL
     `, [month, year,
@@ -99,32 +99,32 @@ export async function generateMonthlyInsights(
         userId]),
     // Top category this month
     query<CatRow[]>(`
-      SELECT c.name, SUM(e.amount) AS total
+      SELECT c.name, SUM(e.amount_paise) AS total
       FROM expenses e
       LEFT JOIN categories c ON e.category_id = c.id
       WHERE e.user_id = ? AND MONTH(e.expense_date) = ? AND YEAR(e.expense_date) = ? AND e.deleted_at IS NULL
       GROUP BY c.name ORDER BY total DESC LIMIT 1
     `, [userId, month, year]),
-    query<IncRow[]>(`SELECT monthly_income FROM users WHERE id = ? LIMIT 1`, [userId]),
+    query<IncRow[]>(`SELECT monthly_income_paise FROM users WHERE id = ? LIMIT 1`, [userId]),
   ]);
 
-  const totalSpent  = parseFloat(spendRows[0]?.total_spent ?? '0');
-  const prevSpent   = parseFloat(spendRows[0]?.prev_spent  ?? '0');
-  const income      = parseFloat(incRows[0]?.monthly_income ?? '0');
-  const topCat      = catRows[0]?.name ?? null;
-  const topCatAmt   = parseFloat(catRows[0]?.total ?? '0');
+  const totalSpentPaise = Number(spendRows[0]?.total_spent ?? 0);
+  const prevSpentPaise  = Number(spendRows[0]?.prev_spent  ?? 0);
+  const incomePaise     = Number(incRows[0]?.monthly_income_paise ?? 0);
+  const topCat          = catRows[0]?.name ?? null;
+  const topCatAmtPaise  = Number(catRows[0]?.total ?? 0);
 
   const insights: { type: string; content: string }[] = [];
 
   // 1. Month-over-month comparison
-  if (prevSpent > 0 && totalSpent > prevSpent * 1.1) {
-    const pct = Math.round(Analytics.calculateGrowthPct(totalSpent, prevSpent));
+  if (prevSpentPaise > 0 && totalSpentPaise > prevSpentPaise * 1.1) {
+    const pct = Math.round(Analytics.calculateGrowthPct(totalSpentPaise, prevSpentPaise));
     insights.push({
       type:    'overspending_alert',
-      content: `Your spending increased by ${pct}% compared to last month (${totalSpent.toFixed(2)} vs ${prevSpent.toFixed(2)}).`,
+      content: `Your spending increased by ${pct}% compared to last month (${(totalSpentPaise/100).toFixed(2)} vs ${(prevSpentPaise/100).toFixed(2)}).`,
     });
-  } else if (prevSpent > 0 && totalSpent < prevSpent * 0.9) {
-    const pct = Math.abs(Math.round(Analytics.calculateGrowthPct(totalSpent, prevSpent)));
+  } else if (prevSpentPaise > 0 && totalSpentPaise < prevSpentPaise * 0.9) {
+    const pct = Math.abs(Math.round(Analytics.calculateGrowthPct(totalSpentPaise, prevSpentPaise)));
     insights.push({
       type:    'savings_opportunity',
       content: `Great progress — your spending dropped by ${pct}% compared to last month.`,
@@ -132,24 +132,24 @@ export async function generateMonthlyInsights(
   }
 
   // 2. Top category
-  if (topCat && totalSpent > 0) {
-    const pct = Math.round(Analytics.calculateCategoryPct(topCatAmt, totalSpent));
+  if (topCat && totalSpentPaise > 0) {
+    const pct = Math.round(Analytics.calculateCategoryPct(topCatAmtPaise, totalSpentPaise));
     insights.push({
       type:    'monthly_summary',
-      content: `Your top spending category this month is ${topCat} at ${topCatAmt.toFixed(2)} (${pct}% of total spend).`,
+      content: `Your top spending category this month is ${topCat} at ${(topCatAmtPaise/100).toFixed(2)} (${pct}% of total spend).`,
     });
   }
 
   // 3. Savings rate
-  if (income > 0 && totalSpent > 0) {
-    const savingsRate = Math.round(Analytics.calculateSavingsRate(income, totalSpent));
+  if (incomePaise > 0 && totalSpentPaise > 0) {
+    const savingsRate = Math.round(Analytics.calculateSavingsRate(incomePaise, totalSpentPaise));
     if (savingsRate >= 20) {
       insights.push({
         type:    'savings_opportunity',
         content: `You saved ${savingsRate}% of your income this month. Keep it up!`,
       });
-    } else if (totalSpent > income) {
-      const overspendRate = Math.round(Analytics.calculateGrowthPct(totalSpent, income));
+    } else if (totalSpentPaise > incomePaise) {
+      const overspendRate = Math.round(Analytics.calculateGrowthPct(totalSpentPaise, incomePaise));
       insights.push({
         type:    'overspending_alert',
         content: `You spent ${overspendRate}% more than your monthly income this month. Review your expenses.`,

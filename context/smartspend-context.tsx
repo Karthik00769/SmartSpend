@@ -19,7 +19,7 @@ import React, {
 } from 'react';
 
 import { useDashboard,        type DashboardData }       from '@/hooks/use-dashboard';
-import { useDashboardSummary, type DashboardSummaryData } from '@/hooks/use-dashboard-summary';
+import { useDashboardSummary } from '@/hooks/use-dashboard-summary';
 import { useExpenses,   type AddExpensePayload }          from '@/hooks/use-expenses';
 import { useBudgets,    type UpsertBudgetPayload }        from '@/hooks/use-budgets';
 import { useGoals,      type CreateGoalPayload }          from '@/hooks/use-goals';
@@ -38,7 +38,7 @@ export function subscribeInsightsRefresh(fn: () => void) {
   return () => _insightsListeners.delete(fn);
 }
 
-import type { ExpenseDTO, BudgetSummaryDTO, GoalDTO } from '@/types/api';
+import type { ExpenseDTO, BudgetSummaryDTO, GoalDTO, DashboardSummaryDTO } from '@/types/api';
 
 // ─── Context shape ────────────────────────────────────────────────────────────
 
@@ -52,7 +52,7 @@ interface SmartSpendContextValue {
   dashboardError:   string | null;
 
   // KPI dashboard (calls /api/dashboard-summary — used by dashboard page)
-  dashboardSummary:        DashboardSummaryData | null;
+  dashboardSummary:        DashboardSummaryDTO | null;
   dashboardSummaryLoading: boolean;
   dashboardSummaryError:   string | null;
   refreshDashboardSummary: () => void;

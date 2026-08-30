@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import * as FinanceCore from '@/lib/finance';
 import {
   Form,
   FormControl,
@@ -75,7 +76,7 @@ export function BudgetForm() {
 
     const existing = budget?.categories.find((c) => c.categoryId === catNum);
     if (existing) {
-      form.setValue('limitAmount', existing.allocated);
+      form.setValue('limitAmount', FinanceCore.Math.paiseToInr(existing.allocatedPaise));
     } else {
       form.setValue('limitAmount', undefined as any);
     }
@@ -194,10 +195,10 @@ export function BudgetForm() {
                   </span>
                   <div className="text-right">
                     <span className="text-sm font-semibold text-foreground">
-                      ${cat.spent.toFixed(0)}
+                      ${FinanceCore.Math.paiseToInr(cat.spentPaise).toFixed(0)}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {' '}/ ${cat.allocated.toFixed(0)}
+                      {' '}/ ${FinanceCore.Math.paiseToInr(cat.allocatedPaise).toFixed(0)}
                     </span>
                   </div>
                 </div>

@@ -44,4 +44,4 @@ export type {
   Period        as EnginePeriod,
   WeekPeriod,
   CategoryTrend,
-} from '@/lib/insights-engine/types';
+} from '@/types/api';

@@ -16,13 +16,13 @@ import { useSmartSpend } from '@/context/smartspend-context';
 import { apiGet }        from '@/lib/api-client';
 import { goalSchema, type GoalFormValues } from '@/lib/validation/schemas';
 import { GOAL_TEMPLATES } from '@/lib/constants';
-import { getCurrencySymbol } from '@/lib/currency';
+import { Format } from '@/lib/finance';
 import { useCurrency }   from '@/hooks/use-currency';
 
 export function GoalForm() {
   const { createGoal, goalSubmitting, goalSubmitError } = useSmartSpend();
-  const { currency, fmt } = useCurrency();
-  const symbol = getCurrencySymbol(currency);
+  const { fmt } = useCurrency();
+  const symbol = Format.CURRENCY_SYMBOL;
 
   const [success,    setSuccess]    = useState(false);
   const [goalStatus, setGoalStatus] = useState<{ longTermUnlocked: boolean; monthsOfData: number } | null>(null);

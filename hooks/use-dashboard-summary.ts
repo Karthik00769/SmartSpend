@@ -9,37 +9,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiGet, ApiRequestError } from '@/lib/api-client';
 
-export interface DashboardSummaryData {
-  totalSpending: number;
-  savingsRate: number;
-  budgetProgress: Array<{
-    category: string;
-    allocated: number;
-    spent: number;
-    remaining: number;
-    isOverBudget: boolean;
-    usedPct: number | null;
-  }>;
-  recentInsights: Array<{
-    id: number;
-    type: string;
-    content: string;
-    isRead: boolean;
-    createdAt: string;
-    minutesAgo: number;
-  }>;
-  monthlyTrend: Array<{
-    label: string;
-    spent: number;
-  }>;
-  financialHealthScore: {
-    score: number;
-    status: 'excellent' | 'good' | 'warning' | 'critical';
-  };
-}
+import type { DashboardSummaryDTO } from '@/types/api';
 
 export function useDashboardSummary() {
-  const [data, setData] = useState<DashboardSummaryData | null>(null);
+  const [data, setData] = useState<DashboardSummaryDTO | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -55,7 +28,7 @@ export function useDashboardSummary() {
 
       try {
         // apiGet auto-unwraps the { ok: true, data: {...} } envelope
-        const result = await apiGet<DashboardSummaryData>('/api/dashboard-summary');
+        const result = await apiGet<DashboardSummaryDTO>('/api/dashboard-summary');
 
         if (!cancelled) {
           setData(result);

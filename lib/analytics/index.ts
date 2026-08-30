@@ -7,7 +7,7 @@
  * All functions here are purely presentational — they never hit the DB
  * or fetch from an API. See lib/expense-engine for processing logic.
  */
-import { Analytics } from '@/lib/finance';
+import { Analytics, Reports } from '@/lib/finance';
 
 // ─── Currency ─────────────────────────────────────────────────────────────────
 
@@ -37,7 +37,7 @@ export function formatCurrency(
  */
 export function safePct(numerator: number, denominator: number, decimals = 1): number {
   if (!denominator) return 0;
-  return parseFloat(((numerator / denominator) * 100).toFixed(decimals));
+  return Reports.roundPct((numerator / denominator) * 100);
 }
 
 /**
@@ -85,10 +85,10 @@ export interface ValueChange {
  * direction = 'up' | 'down' | 'stable' (within 1% tolerance).
  */
 export function computeChange(current: number, previous: number): ValueChange {
-  const delta     = current - previous;
+  const delta     = Reports.roundPaise(current - previous);
   const pct       = Analytics.calculateGrowthPct(current, previous);
   const direction: ChangeDirection =
-    Math.abs(pct) < 1 ? 'stable' : delta > 0 ? 'up' : 'down';
+    Reports.roundPct(Math.abs(pct)) < 1 ? 'stable' : delta > 0 ? 'up' : 'down';
 
   return { current, previous, delta, pct, direction };
 }
@@ -103,7 +103,7 @@ export function deriveSavings(
   income: number,
   spent: number,
 ): { savings: number; savingsRate: number } {
-  const savings     = Math.max(0, Analytics.calculateSavings(income, spent));
+  const savings     = Reports.clamp(Analytics.calculateSavings(income, spent), 0, Infinity);
   const savingsRate = Analytics.calculateSavingsRate(income, spent);
   return { savings, savingsRate };
 }

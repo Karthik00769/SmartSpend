@@ -27,7 +27,7 @@ export function calculateTransactionConfidence(txn: RawBankTransaction): BankCon
 
   // Amount confidence: does it look like a number/currency string?
   const amtClean = txn.amountRaw.replace(/[$,+ -]/g, '');
-  if (/^\\d+(\\.\\d{1,2})?$/.test(amtClean)) score.amount = 100;
+  if (/^\d+(\.\d{1,2})?$/.test(amtClean)) score.amount = 100;
   else if (txn.amountRaw.length > 0) score.amount = 50;
 
   // Merchant confidence: is it decently long?

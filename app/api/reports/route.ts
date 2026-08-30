@@ -13,17 +13,17 @@ import { calculateHealthScore } from '@/lib/analytics/healthScore';
 import { listBudgets } from '@/services/budget.service';
 import { listGoals } from '@/services/goal.service';
 import { ok, fail } from '@/lib/api-response';
-import { Analytics } from '@/lib/finance';
+import { Math as FinanceMath, Reports } from '@/lib/finance';
 
 interface MonthlyRow {
-  yr:           number;
-  mo:           number;
-  month_label:  string;
-  total_spent:  string;
+  yr:                 number;
+  mo:                 number;
+  month_label:        string;
+  total_spent_paise:  string;
 }
 
 interface UserRow {
-  monthly_income: string;
+  monthly_income_paise: string;
 }
 
 export async function GET(req: NextRequest) {
@@ -34,14 +34,14 @@ export async function GET(req: NextRequest) {
 
   try {
     const { searchParams } = new URL(req.url);
-    const months = Math.min(Math.max(1, Number(searchParams.get('months') ?? 6)), 24);
+    const months = Reports.clamp(Number(searchParams.get('months') ?? 6), 1, 24);
 
-    // Get user income for savings calculation
+    // Get user income (Paise)
     const userRows = await query<UserRow[]>(
-      `SELECT monthly_income FROM users WHERE id = ?`,
+      `SELECT monthly_income_paise FROM users WHERE id = ?`,
       [userId]
     );
-    const income = parseFloat(userRows[0]?.monthly_income ?? '0');
+    const monthlyIncomePaise = parseInt(userRows[0]?.monthly_income_paise ?? '0', 10);
 
     // Monthly totals for the past N months (including current)
     const rows = await query<MonthlyRow[]>(`
@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
         YEAR(e.expense_date)                                AS yr,
         MONTH(e.expense_date)                               AS mo,
         DATE_FORMAT(e.expense_date, '%b %Y')                AS month_label,
-        COALESCE(SUM(e.amount), 0)                          AS total_spent
+        COALESCE(SUM(e.amount_paise), 0)                    AS total_spent_paise
       FROM expenses e
       WHERE
         e.user_id = ?
@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
     const currentYear = now.getFullYear();
 
     const latestMonth = rows.find(r => r.mo === currentMonth && r.yr === currentYear);
-    const totalSpent = latestMonth ? parseFloat(latestMonth.total_spent) : 0;
+    const totalSpentPaise = latestMonth ? parseInt(latestMonth.total_spent_paise, 10) : 0;
 
     const [budgets, goals] = await Promise.all([
       listBudgets({ userId, month: currentMonth, year: currentYear }),
@@ -79,22 +79,30 @@ export async function GET(req: NextRequest) {
     ]);
 
     const healthData = calculateHealthScore({
-      monthlyIncome: income,
-      totalSpent,
+      monthlyIncomePaise,
+      totalSpentPaise,
       budgets,
       goals
     });
 
     return ok({
-      monthlyData: rows.map(r => ({
-        month:    r.month_label,
-        income,
-        expenses: parseFloat(r.total_spent),
-        savings:  Math.max(0, Analytics.calculateSavings(income, parseFloat(r.total_spent))),
-      })),
+      monthlyData: rows.map(r => {
+        const spentPaise   = parseInt(r.total_spent_paise, 10);
+        const savingsPaise = Reports.calculateSavingsPaise(monthlyIncomePaise, spentPaise);
+        return {
+          month:         r.month_label,
+          incomePaise:   monthlyIncomePaise,
+          expensesPaise: spentPaise,
+          savingsPaise,
+          // Backwards-compat INR floats for the existing chart component
+          income:   FinanceMath.paiseToInr(monthlyIncomePaise),
+          expenses: FinanceMath.paiseToInr(spentPaise),
+          savings:  FinanceMath.paiseToInr(savingsPaise),
+        };
+      }),
       health: {
-        score: healthData.score,
-        status: healthData.status,
+        score:   healthData.score,
+        status:  healthData.status,
         details: healthData.details
       }
     });

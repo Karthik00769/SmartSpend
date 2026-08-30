@@ -17,7 +17,7 @@ export interface UserProfile {
   id: string;
   name: string | null;
   email: string;
-  monthly_income: number;
+  monthlyIncomePaise: number;
   currency: string;
   timezone: string;
   twoFactorEnabled: boolean;
@@ -36,7 +36,7 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
         id, 
         full_name AS name, 
         email, 
-        monthly_income, 
+        monthly_income_paise, 
         COALESCE(currency_code, 'USD') AS currency,
         two_factor_pin,
         preferences,
@@ -76,7 +76,7 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
     id: row.id.toString(),
     name: row.name,
     email: row.email,
-    monthly_income: parseFloat(row.monthly_income ?? '0'),
+    monthlyIncomePaise: Number(row.monthly_income_paise ?? 0),
     currency: row.currency ?? 'USD',
     timezone,
     twoFactorEnabled: !!row.two_factor_pin,
@@ -101,9 +101,9 @@ export async function updateUserProfile(userId: string, data: Partial<UserProfil
     updates.push('email = ?');
     values.push(data.email);
   }
-  if (data.monthly_income !== undefined) {
-    updates.push('monthly_income = ?');
-    values.push(data.monthly_income);
+  if (data.monthlyIncomePaise !== undefined) {
+    updates.push('monthly_income_paise = ?');
+    values.push(data.monthlyIncomePaise);
   }
   if (data.currency !== undefined) {
     updates.push('currency_code = ?');

@@ -8,7 +8,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { apiGet, apiPatch, buildQuery, ApiRequestError } from '@/lib/api-client';
-import type { InsightsEngineOutput } from '@/lib/insights-engine/types';
+import type { InsightsEngineOutput } from '@/types/api';
 import { subscribeInsightsRefresh } from '@/context/smartspend-context';
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────

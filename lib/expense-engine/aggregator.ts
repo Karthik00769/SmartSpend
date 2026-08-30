@@ -18,7 +18,7 @@ import type {
 import { getISOWeek, getWeekStart } from './validator';
 import { getCategoryMeta } from './categorizer';
 import type { ExpenseDTO } from '@/types/api';
-import { Analytics } from '../finance';
+import { Analytics, Reports } from '../finance';
 
 // ─── Month labels ─────────────────────────────────────────────────────────────
 
@@ -57,7 +57,7 @@ export function buildMonthlySummary(
     };
   }
 
-  const totalSpent = expenses.reduce((s, e) => s + e.amount, 0);
+  const totalSpent = expenses.reduce((s, e) => s + e.amountPaise, 0);
 
   // Days in the month for daily average calculation
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -68,7 +68,7 @@ export function buildMonthlySummary(
   // Find top spending category
   const catTotals = new Map<string, number>();
   for (const e of expenses) {
-    catTotals.set(e.categoryName, (catTotals.get(e.categoryName) ?? 0) + e.amount);
+    catTotals.set(e.categoryName, (catTotals.get(e.categoryName) ?? 0) + e.amountPaise);
   }
   const [topCategory, topCategorySpend] = [...catTotals.entries()].reduce(
     (best, cur) => (cur[1] > best[1] ? cur : best),
@@ -78,14 +78,14 @@ export function buildMonthlySummary(
   return {
     year, month,
     label:            `${MONTH_NAMES[month]} ${year}`,
-    totalSpent:       Math.round(totalSpent * 100) / 100,
+    totalSpent:       Reports.roundPaise(totalSpent),
     transactionCount: expenses.length,
-    dailyAvg:         Math.round(dailyAvg * 100) / 100,
+    dailyAvg:         Reports.roundPaise(dailyAvg),
     income:           monthlyIncome,
-    savings:          Math.round(savings * 100) / 100,
-    savingsRate:      Math.round(savingsRate * 10) / 10,
+    savings:          Reports.roundPaise(savings),
+    savingsRate:      Reports.roundPct(savingsRate),
     topCategory,
-    topCategorySpend: Math.round(topCategorySpend * 100) / 100,
+    topCategorySpend: Reports.roundPaise(topCategorySpend),
   };
 }
 
@@ -119,7 +119,7 @@ export function buildWeeklySummaries(expenses: ExpenseDTO[]): WeeklySummary[] {
     const weekEnd   = new Date(weekStart);
     weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
 
-    const totalSpent = weekExpenses.reduce((s, e) => s + e.amount, 0);
+    const totalSpent = weekExpenses.reduce((s, e) => s + e.amountPaise, 0);
     const txCount    = weekExpenses.length;
 
     // Build daily breakdown for the 7 days of this week
@@ -136,7 +136,7 @@ export function buildWeeklySummaries(expenses: ExpenseDTO[]): WeeklySummary[] {
         return {
           date,
           dayLabel:   SHORT_DAY[d.getUTCDay()],
-          totalSpent: Math.round(dayExpenses.reduce((s, e) => s + e.amount, 0) * 100) / 100,
+          totalSpent: Reports.roundPaise(dayExpenses.reduce((s, e) => s + e.amountPaise, 0)),
           txCount:    dayExpenses.length,
         };
       });
@@ -146,9 +146,9 @@ export function buildWeeklySummaries(expenses: ExpenseDTO[]): WeeklySummary[] {
       weekLabel:  `Week ${wk}, ${yr}`,
       startDate:  weekStart.toISOString().slice(0, 10),
       endDate:    weekEnd.toISOString().slice(0, 10),
-      totalSpent: Math.round(totalSpent * 100) / 100,
+      totalSpent: Reports.roundPaise(totalSpent),
       txCount,
-      dailyAvg:   Math.round(Analytics.calculateDailyAvgSpend(totalSpent, 7) * 100) / 100,
+      dailyAvg:   Reports.roundPaise(Analytics.calculateDailyAvgSpend(totalSpent, 7)),
       byDay:      dailyBreakdown,
     });
   }
@@ -168,7 +168,7 @@ export function buildCategorySummaries(
 ): CategorySummary[] {
   if (expenses.length === 0) return [];
 
-  const totalSpent = expenses.reduce((s, e) => s + e.amount, 0);
+  const totalSpent = expenses.reduce((s, e) => s + e.amountPaise, 0);
 
   // Group by categoryId
   const byCategory = new Map<number, ExpenseDTO[]>();
@@ -180,7 +180,7 @@ export function buildCategorySummaries(
   const summaries: CategorySummary[] = [];
 
   for (const [categoryId, catExpenses] of byCategory.entries()) {
-    const catTotal  = catExpenses.reduce((s, e) => s + e.amount, 0);
+    const catTotal  = catExpenses.reduce((s, e) => s + e.amountPaise, 0);
     const txCount   = catExpenses.length;
     const avgAmount = Analytics.calculateAverageSpend(catTotal, txCount);
     const pctOfTotal = Analytics.calculateCategoryPct(catTotal, totalSpent);
@@ -193,12 +193,12 @@ export function buildCategorySummaries(
       name:        meta.name,
       icon:        meta.icon,
       color:       meta.color,
-      totalSpent:  Math.round(catTotal * 100) / 100,
+      totalSpent:  Reports.roundPaise(catTotal),
       txCount,
-      avgAmount:   Math.round(avgAmount * 100) / 100,
-      pctOfTotal:  Math.round(pctOfTotal * 10) / 10,
+      avgAmount:   Reports.roundPaise(avgAmount),
+      pctOfTotal:  Reports.roundPct(pctOfTotal),
       budgetLimit,
-      budgetUsed:  Math.round(budgetUsed * 10) / 10,
+      budgetUsed:  Reports.roundPct(budgetUsed),
       isOverBudget: budgetLimit > 0 && catTotal > budgetLimit,
     });
   }
@@ -219,12 +219,12 @@ export function buildMonthlyTrend(
   monthlyIncome:   number,
 ): { label: string; income: number; expenses: number; savings: number }[] {
   return expensesByMonth.map(({ year, month, expenses }) => {
-    const totalSpent = expenses.reduce((s, e) => s + e.amount, 0);
+    const totalSpent = expenses.reduce((s, e) => s + e.amountPaise, 0);
     return {
       label:    `${MONTH_NAMES[month].slice(0, 3)} ${year}`,
       income:   monthlyIncome,
-      expenses: Math.round(totalSpent * 100) / 100,
-      savings:  Math.round(Analytics.calculateSavings(monthlyIncome, totalSpent) * 100) / 100,
+      expenses: Reports.roundPaise(totalSpent),
+      savings:  Reports.roundPaise(Analytics.calculateSavings(monthlyIncome, totalSpent)),
     };
   });
 }
@@ -247,7 +247,7 @@ export function buildDayOfWeekStats(
     const d   = new Date(e.date + 'T00:00:00Z');
     const key = SHORT_DAY[d.getUTCDay()] === 'Sun' ? 'Sun' : SHORT_DAY[d.getUTCDay()];
     const slot = map.get(key)!;
-    slot.total += e.amount;
+    slot.total += e.amountPaise;
     slot.count += 1;
   }
 
@@ -255,9 +255,9 @@ export function buildDayOfWeekStats(
     const { total, count } = map.get(day)!;
     return {
       day,
-      total: Math.round(total * 100) / 100,
+      total: Reports.roundPaise(total),
       count,
-      avg:   Math.round(Analytics.calculateAverageSpend(total, count) * 100) / 100,
+      avg:   Reports.roundPaise(Analytics.calculateAverageSpend(total, count)),
     };
   });
 }

@@ -27,7 +27,7 @@ import { apiGet }         from '@/lib/api-client';
 import { expenseSchema, type ExpenseFormValues } from '@/lib/validation/schemas';
 import { autoCategorizeName } from '@/lib/expense-engine/auto-categorize';
 import { todayIST, formatDateCalendar } from '@/lib/finance/dates/timezone';
-import { getCurrencySymbol } from '@/lib/currency';
+import { Format } from '@/lib/finance';
 import { toast }          from 'sonner';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -53,9 +53,9 @@ const AUTO_DETECT_VALUE = '__auto__';
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: ManualEntryFormProps) {
-  const { addExpense, submitting, submitError, currency } = useSmartSpend();
+  const { addExpense, submitting, submitError } = useSmartSpend();
   const today = todayIST;
-  const currencySymbol = getCurrencySymbol(currency);
+  const currencySymbol = Format.CURRENCY_SYMBOL;
 
   const [categories,   setCategories]   = useState<Category[]>([]);
   const [autoTagMsg,   setAutoTagMsg]   = useState<string | null>(null);

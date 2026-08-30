@@ -43,11 +43,10 @@ export async function POST(req: NextRequest) {
     // Module 4: Deterministic OCR Pipeline
     const ocrResult = await processReceiptImage(buffer);
     
-    const parsedAmount = ocrResult.parsed.amountRaw ? parseFloat(ocrResult.parsed.amountRaw.replace(/[^0-9.]/g, '')) : 0;
-    const amount = isNaN(parsedAmount) ? 0 : parsedAmount;
-    
+    // Delegate amount parsing entirely to FinanceCore
+    const amount  = FinanceCore.Parsing.extractAmount(ocrResult.parsed.amountRaw ?? '');
     const merchant = FinanceCore.Parsing.sanitizeMerchantName(ocrResult.parsed.merchantRaw || '');
-    const date = ocrResult.parsed.dateRaw || new Date().toISOString().slice(0, 10);
+    const date     = FinanceCore.Parsing.extractDate(ocrResult.parsed.dateRaw ?? '') ?? new Date().toISOString().slice(0, 10);
     const dateAdjusted = !ocrResult.parsed.dateRaw;
 
     const amountWarning = amount === 0 
@@ -69,7 +68,7 @@ export async function POST(req: NextRequest) {
         needsReview: ocrResult.needsReview,
         amountWarning,
         _debug: {
-          ocrConfidence: Math.round(ocrResult.confidence.overall),
+          ocrConfidenceOverall: ocrResult.confidence.overall,
           textLength: ocrResult.rawText.trim().length,
           extractedDate: date,
         },

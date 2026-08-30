@@ -10,17 +10,18 @@ import { deleteBudget }     from '@/services/budget.service';
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
+  const { id } = await params;
   const session = await getServerSession(authOptions);
   if (!session?.user) return fail('Unauthorized', 401);
 
   const userId = (session.user as any).id as string;
-  const id     = parseInt(params.id, 10);
-  if (isNaN(id)) return fail('Invalid budget id.', 400);
+  const budgetId = parseInt(id, 10);
+  if (isNaN(budgetId)) return fail('Invalid budget id.', 400);
 
   try {
-    await deleteBudget(id, userId);
+    await deleteBudget(budgetId, userId);
     return ok({ deleted: true });
   } catch (err: any) {
     console.error('[DELETE /api/budgets/:id]', err);

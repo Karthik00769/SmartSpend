@@ -45,8 +45,9 @@ describe('Expense Engine - Manual Entry Integration', () => {
     expect(result.processed.needsReview).toBe(false);
     expect(result.categorization.categoryId).toBe(3);
 
+    // DB Call — engine passes Paise directly to createExpense
     expect(createExpense).toHaveBeenCalledWith(expect.objectContaining({
-      amount: 150, // Float back for DB boundary
+      amountPaise: 15000,   // 150 INR → 15000 paise
       categorySource: 'manual',
     }));
   });

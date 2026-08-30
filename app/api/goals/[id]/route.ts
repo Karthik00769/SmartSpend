@@ -10,6 +10,7 @@ import { authOptions }      from '@/lib/auth/authOptions';
 import { ok, fail }         from '@/lib/api-response';
 import { parseBody }        from '@/lib/validate';
 import { updateGoal, softDeleteGoal } from '@/services/goal.service';
+import * as FinanceCore from '@/lib/finance';
 
 const PatchGoalSchema = z.object({
   title:        z.string().trim().min(1).max(150).optional(),
@@ -45,7 +46,13 @@ export async function PATCH(
   }
 
   try {
-    const updated = await updateGoal(goalId, userId, parsed.data);
+    const { targetAmount, ...rest } = parsed.data as any;
+    const patchPayload = { ...rest };
+    if (targetAmount !== undefined) {
+      patchPayload.targetPaise = FinanceCore.Math.inrToPaise(targetAmount);
+    }
+    
+    const updated = await updateGoal(goalId, userId, patchPayload);
     if (!updated) return fail('Goal not found.', 404);
     return ok({ goal: updated });
   } catch (err: any) {

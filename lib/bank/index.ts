@@ -6,6 +6,7 @@ import { extractBankName, extractAccountMask } from './utils';
 import { BankStatementExtraction } from './types';
 import { UnsupportedBankFormatError } from './types/errors';
 
+export * from './adapter';
 export interface ParseOptions {
   fileName?: string;
   password?: string;

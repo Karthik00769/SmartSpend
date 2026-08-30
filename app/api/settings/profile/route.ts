@@ -9,6 +9,7 @@ import { getUserProfile, updateUserProfile } from '@/services/user.service';
 import { z } from 'zod';
 import { parseBody } from '@/lib/validate';
 import { query } from '@/lib/db';
+import * as FinanceCore from '@/lib/finance';
 
 const ProfileUpdateSchema = z.object({
   name:           z.string().min(2).max(100).optional(),
@@ -48,7 +49,10 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    return ok(profile);
+    return ok({
+      ...profile,
+      monthly_income: FinanceCore.Math.paiseToInr(profile.monthlyIncomePaise)
+    });
   } catch (err: any) {
     console.error('[GET /api/settings/profile] ERROR:', err?.message ?? err, err?.stack);
     return fail(err?.message ?? 'Failed to fetch profile settings', 500);
@@ -77,7 +81,7 @@ export async function POST(req: NextRequest) {
     const success = await updateUserProfile(userId, {
       name:           parsed.data.name,
       email:          parsed.data.email,
-      monthly_income: parsed.data.monthly_income,
+      monthlyIncomePaise: FinanceCore.Math.inrToPaise(parsed.data.monthly_income),
       currency:       parsed.data.currency,
       timezone:       parsed.data.timezone,
       preferences:    parsed.data.preferences as any,

@@ -52,3 +52,17 @@ export function calculatePercentage(part: number, total: number): number {
 export function calculateRemaining(allocatedPaise: number, spentPaise: number): number {
   return Math.max(0, allocatedPaise - spentPaise);
 }
+
+/**
+ * Subtracts two values.
+ */
+export function subtract(a: number, b: number): number {
+  return a - b;
+}
+
+/**
+ * Absolute value.
+ */
+export function abs(val: number): number {
+  return Math.abs(val);
+}
