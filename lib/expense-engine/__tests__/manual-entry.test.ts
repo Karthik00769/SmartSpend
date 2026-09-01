@@ -32,7 +32,7 @@ describe('Expense Engine - Manual Entry Integration', () => {
     const raw = {
       userId: 'u1',
       categoryId: 3, // Food
-      amount: 150, // 150 INR (float)
+      amountPaise: 15000, // 150 INR (float)
       date: validDate,
       description: 'Zomato order',
       source: 'manual' as const,
@@ -55,7 +55,7 @@ describe('Expense Engine - Manual Entry Integration', () => {
   it('invalid category: should reject manual entry if no categoryId is present', async () => {
     const raw = {
       userId: 'u1',
-      amount: 150,
+      amountPaise: 15000,
       date: validDate,
       description: 'Unknown expense',
       source: 'manual' as const,
@@ -73,7 +73,7 @@ describe('Expense Engine - Manual Entry Integration', () => {
     const raw = {
       userId: 'u1',
       categoryId: 4,
-      amount: 100,
+      amountPaise: 10000,
       date: validDate,
       description: 'Netflix', // Usually keywords trigger confidence 80
       source: 'manual' as const,

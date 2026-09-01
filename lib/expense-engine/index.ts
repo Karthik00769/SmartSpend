@@ -32,7 +32,7 @@ import { listBudgets } from '@/services/budget.service';
 
 import { calculateOverallConfidence, requiresManualReview } from '../finance/confidence/scoring';
 
-import type { RawExpenseInput, ExpenseEngineResult, SummaryBundle } from './types';
+import type { EngineExpenseInput, ExpenseEngineResult, SummaryBundle } from './types';
 import type { ExpenseDTO } from '@/types/api';
 
 // ─── 1. processExpense ────────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ import type { ExpenseDTO } from '@/types/api';
  *     └─ createExpense()      → DB insert → saved ExpenseDTO
  */
 export async function processExpense(
-  raw:    RawExpenseInput,
+  raw:    EngineExpenseInput,
   userId: string,
 ): Promise<ExpenseEngineResult> {
 
@@ -111,7 +111,7 @@ export async function processExpense(
   const savedExpense = await createExpense({
     userId:      processed.userId,
     categoryId:  cat.categoryId,
-    amountPaise: processed.amount,
+    amountPaise: processed.amountPaise,
     date:        processed.date,
     description: processed.description,
     categorySource: cat.confidence === 'exact' ? 'manual' : 'auto',

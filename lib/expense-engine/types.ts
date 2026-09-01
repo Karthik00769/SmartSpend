@@ -8,11 +8,11 @@
 // ─── Raw input (before validation) ───────────────────────────────────────────
 
 /** The raw payload that arrives at the engine before any processing */
-export interface RawExpenseInput {
+export interface EngineExpenseInput {
   userId?:     string | number;
   categoryId?: number | string;
   category?:   string;
-  amount:      string | number;
+  amountPaise: number;
   date:        string;
   description?: string;
   source?:     'manual' | 'receipt_scan' | 'bank_import';
@@ -24,7 +24,7 @@ export interface RawExpenseInput {
 export interface ProcessedExpense {
   userId:        string;
   categoryId:    number;       // resolved (auto-assigned or user-provided)
-  amount:        number;       // amount in paise
+  amountPaise:   number;       // amount in paise
   date:          string;       // YYYY-MM-DD
   description:   string;
   week:          number;       // ISO week number (1-53)

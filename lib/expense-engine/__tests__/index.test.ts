@@ -34,7 +34,7 @@ describe('Expense Engine - processExpense', () => {
     vi.mocked(createExpense).mockResolvedValue({ id: 'exp_123', userId, amount: 150.50 } as any);
 
     const raw = {
-      amount: '150.50',
+      amountPaise: 15050,
       date: validDate,
       description: 'Netflix subscription',
     };
@@ -49,7 +49,7 @@ describe('Expense Engine - processExpense', () => {
     expect(result.categorization.confidence).toBe('keyword');
 
     // Enrichment & Core logic (Amounts in paise inside engine!)
-    expect(result.processed.amount).toBe(15050); 
+    expect(result.processed.amountPaise).toBe(15050); 
     expect(result.processed.week).toBeGreaterThan(0);
     expect(result.processed.confidenceScore).toBeDefined();
 
@@ -63,16 +63,16 @@ describe('Expense Engine - processExpense', () => {
   });
 
   it('invalid amount: should return early with validation errors', async () => {
-    const raw = { amount: -5, date: validDate, description: 'Test' };
+    const raw = { amountPaise: -500, date: validDate, description: 'Test' };
     const result = await processExpense(raw, userId);
 
     expect(result.validation.valid).toBe(false);
-    expect(result.validation.errors[0].field).toBe('amount');
+    expect(result.validation.errors[0].field).toBe('amountPaise');
     expect(createExpense).not.toHaveBeenCalled();
   });
 
   it('invalid date: should reject future dates', async () => {
-    const raw = { amount: 100, date: '2100-01-01', description: 'Future' };
+    const raw = { amountPaise: 10000, date: '2100-01-01', description: 'Future' };
     const result = await processExpense(raw, userId);
 
     expect(result.validation.valid).toBe(false);
@@ -81,7 +81,7 @@ describe('Expense Engine - processExpense', () => {
   });
 
   it('invalid description (merchant representation): should catch long descriptions', async () => {
-    const raw = { amount: 100, date: validDate, description: 'a'.repeat(600) };
+    const raw = { amountPaise: 10000, date: validDate, description: 'a'.repeat(600) };
     const result = await processExpense(raw, userId);
 
     expect(result.validation.valid).toBe(false);
@@ -91,7 +91,7 @@ describe('Expense Engine - processExpense', () => {
   it('category assignment: fallback triggers AI categorizer', async () => {
     vi.mocked(createExpense).mockResolvedValue({ id: 'exp_123', userId, amount: 50 } as any);
 
-    const raw = { amount: 50, date: validDate, description: 'Some mysterious charge' };
+    const raw = { amountPaise: 5000, date: validDate, description: 'Some mysterious charge' };
     const result = await processExpense(raw, userId);
 
     // Should use the mocked AI result
@@ -102,7 +102,7 @@ describe('Expense Engine - processExpense', () => {
   it('duplicate expense / DB failure: should bubble up correctly if DB throws', async () => {
     vi.mocked(createExpense).mockRejectedValue(new Error('DuplicateEntry'));
 
-    const raw = { amount: 100, date: validDate, description: 'Duplicate' };
+    const raw = { amountPaise: 10000, date: validDate, description: 'Duplicate' };
     await expect(processExpense(raw, userId)).rejects.toThrow('DuplicateEntry');
   });
 });

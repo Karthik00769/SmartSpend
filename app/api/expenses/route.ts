@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
       {
         userId:      coreData.userId as string,
         categoryId:  coreData.categoryId,
-        amount:      parsed.data.amount as any, // Legacy field, Engine converts float to Paise. Wait!
+        amountPaise: coreData.amountPaise,
         date:        coreData.date,
         description: coreData.merchantName,
         source:      parsed.data.source,

@@ -10,7 +10,7 @@
 // ─── Expense engine ───────────────────────────────────────────────────────────
 
 export type {
-  RawExpenseInput,
+  EngineExpenseInput,
   ProcessedExpense,
   ValidationResult,
   ValidationError,

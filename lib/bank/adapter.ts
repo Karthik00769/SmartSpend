@@ -72,7 +72,7 @@ export async function importBankTransactions(
       const engineResult = await processExpense({
         userId,
         categoryId: undefined,
-        amount: amountInr, // Engine validates and converts to paise in enrichExpense
+        amountPaise: amountPaise,
         date: dateStr,
         description: raw.referenceRaw || merchantStr,
         source: 'bank_import'

@@ -140,7 +140,7 @@ export async function importReceiptRows(
       // ── 6. Pass through ExpenseEngine (validate + persist) ────────────────
       await processExpense(
         {
-          amount:      amountInr,       // ExpenseEngine validator expects INR float input
+          amountPaise: amountPaise,       // ExpenseEngine validator expects amount in paise
           date:        dateISO,
           description: merchant,
           source:      'receipt_scan' as const,

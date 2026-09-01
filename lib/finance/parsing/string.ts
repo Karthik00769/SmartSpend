@@ -16,6 +16,9 @@ export function sanitizeMerchantName(raw: string): string {
   // Replace multiple spaces and trim
   let clean = raw.replace(/\s+/g, ' ').trim();
   
+  // Remove "MERCHANT:" or "MERCHANT" prefix if present
+  clean = clean.replace(/^MERCHANT:?\s*/i, '').trim();
+  
   // Remove trailing junk common in bank statements e.g. "Merchant Name -", "Merchant #"
   clean = clean.replace(/[-*#]+$/, '').trim();
   
@@ -52,7 +55,7 @@ export function extractGSTIN(text: string): string | undefined {
 export function extractDate(raw: string): string | undefined {
   if (!raw) return undefined;
   
-  const clean = raw.trim();
+  let clean = raw.trim().replace(/^DATE:?\s*/i, '').trim();
   
   // Try YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean;
@@ -67,7 +70,8 @@ export function extractDate(raw: string): string | undefined {
   }
   
   // Fallback to JS Date parsing
-  const parsed = new Date(clean);
+  // Append UTC to avoid timezone shift on local parsing of strings like "1 Sep 2026"
+  const parsed = new Date(clean + ' UTC');
   if (!isNaN(parsed.getTime())) {
     return parsed.toISOString().slice(0, 10);
   }
@@ -82,11 +86,17 @@ export function extractDate(raw: string): string | undefined {
  * Debits (expenses) are positive, Credits (income) are negative.
  */
 export function extractAmount(raw: string): number {
-  if (!raw) return 0;
+  if (!raw || !/\d/.test(raw)) return 0;
   
   let clean = raw.trim().toUpperCase();
   const isCredit = clean.includes('CR') || clean.startsWith('+');
   
+  // Remove common text prefixes/words BEFORE OCR substitution
+  clean = clean.replace(/RS\.?|INR|AMOUNT|TOTAL|NET|PAYMENT/g, '');
+  
+  // OCR common misreads for numbers
+  clean = clean.replace(/O/g, '0').replace(/I/g, '1').replace(/L/g, '1').replace(/S/g, '5').replace(/B/g, '8');
+
   clean = clean.replace(/[^\d.-]/g, '');
   if (!clean) return 0;
   

@@ -5,41 +5,14 @@
  * Uses Zod and the Financial Core for standard boundary checks.
  */
 
+import { EngineExpenseInput, ValidationResult, ValidationError, ProcessedExpense } from './types';
+import * as FinanceCore from '../finance';
 import { z } from 'zod';
 import { MIN_AMOUNT_INR, MAX_AMOUNT_INR, MAX_DESCRIPTION_LENGTH } from '../finance/constants/limits';
 import { isFutureDateIST } from '../finance/dates/timezone';
-import { inrToPaise } from '../finance/calculations/math';
 
-import type {
-  RawExpenseInput,
-  ValidationResult,
-  ValidationError,
-  ProcessedExpense,
-} from './types';
-
-// ─── Zod Schema for Raw Input ───────────────────────────────────────────────────
-
-const RawExpenseSchema = z.object({
-  amount: z.union([z.string(), z.number()]).transform((val, ctx) => {
-    const num = typeof val === 'string' ? parseFloat(val.replace(/,/g, '')) : val;
-    if (isNaN(num)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Amount must be a valid number.' });
-      return z.NEVER;
-    }
-    if (num < MIN_AMOUNT_INR) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Amount must be at least $${MIN_AMOUNT_INR}.` });
-      return z.NEVER;
-    }
-    if (num > MAX_AMOUNT_INR) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Amount cannot exceed $${MAX_AMOUNT_INR.toLocaleString()}.` });
-      return z.NEVER;
-    }
-    if (!isFinite(num)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Amount must be a finite number.' });
-      return z.NEVER;
-    }
-    return num;
-  }),
+const EngineInputSchema = z.object({
+  amountPaise: z.number().int().min(MIN_AMOUNT_INR * 100, `Amount must be at least ₹${MIN_AMOUNT_INR}`).max(MAX_AMOUNT_INR * 100, `Amount cannot exceed ₹${MAX_AMOUNT_INR}`),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format.').refine(d => {
     const parsed = new Date(d + 'T00:00:00Z');
     return !isNaN(parsed.getTime());
@@ -51,9 +24,9 @@ const RawExpenseSchema = z.object({
     if (!val) return true;
     return !/<script|javascript:/i.test(val);
   }, 'Description contains invalid characters.'),
+  categoryId: z.union([z.string(), z.number()]).optional(),
+  source: z.enum(['manual', 'receipt_scan', 'bank_import']).optional(),
 });
-
-// ─── Date utility helpers ─────────────────────────────────────────────────────
 
 /** Get ISO week number (1-53) from a Date — Monday-based */
 export function getISOWeek(date: Date): number {
@@ -75,22 +48,20 @@ export function getWeekStart(date: Date): Date {
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-// ─── Public API ───────────────────────────────────────────────────────────────
-
 /**
  * validateExpense
  * Runs Zod schema validation using Financial Core rules.
  * Returns { valid, errors } — never throws.
  */
-export function validateExpense(input: RawExpenseInput): ValidationResult {
-  const parsed = RawExpenseSchema.safeParse(input);
+export function validateExpense(input: EngineExpenseInput): ValidationResult {
+  const parsed = EngineInputSchema.safeParse(input);
   
   if (parsed.success) {
     return { valid: true, errors: [] };
   }
 
-  const errors: ValidationError[] = parsed.error.issues.map(issue => ({
-    field: issue.path[0]?.toString() || 'unknown',
+  const errors: ValidationError[] = parsed.error.issues.map((issue: any) => ({
+    field: issue.path.join('.'),
     message: issue.message,
     value: (input as any)[issue.path[0] || ''],
   }));
@@ -102,11 +73,10 @@ export function validateExpense(input: RawExpenseInput): ValidationResult {
  * enrichExpense
  * Given a validated raw input + resolved categoryId, enrich it with computed
  * temporal fields (week number, day of week, etc.).
- * Converts amount to Paise using Financial Core.
  * Call AFTER validateExpense returns { valid: true }.
  */
 export function enrichExpense(
-  input:      RawExpenseInput,
+  input:      EngineExpenseInput,
   categoryId: number,
   userId:     string,
 ): ProcessedExpense {
@@ -116,14 +86,10 @@ export function enrichExpense(
   const weekEnd   = new Date(weekStart);
   weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
 
-  // Convert float string/number to paise using core library
-  const floatAmount = typeof input.amount === 'string' ? parseFloat(input.amount.replace(/,/g, '')) : input.amount;
-  const amountPaise = inrToPaise(floatAmount);
-
   return {
     userId,
     categoryId,
-    amount:        amountPaise,
+    amountPaise:   input.amountPaise,
     date:          input.date,
     description:   input.description?.trim() ?? '',
     week,
