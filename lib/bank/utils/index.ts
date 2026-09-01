@@ -8,6 +8,12 @@ export function extractBankName(header: string): string {
   if (upper.includes('ICICI') || upper.includes('I.C.I.C.I')) return 'ICICI';
   if (upper.includes('SBI') || upper.includes('STATE BANK')) return 'SBI';
   if (upper.includes('AXIS') || upper.includes('UTI BANK')) return 'AXIS';
+  if (upper.includes('KOTAK') || upper.includes('KOTAK MAHINDRA')) return 'KOTAK';
+  if (upper.includes('PNB') || upper.includes('PUNJAB NATIONAL')) return 'PNB';
+  if (upper.includes('BOB') || upper.includes('BANK OF BARODA')) return 'BOB';
+  if (upper.includes('YES BANK')) return 'YES';
+  if (upper.includes('INDUSIND')) return 'INDUSIND';
+  if (upper.includes('CANARA')) return 'CANARA';
   return 'UNKNOWN';
 }
 

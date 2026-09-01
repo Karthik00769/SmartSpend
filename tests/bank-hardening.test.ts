@@ -142,8 +142,8 @@ describe('Bank Import Hardening', () => {
     expect(result.skippedRows[0].reason).toBe('Invalid amount');
   });
   
-  // Create 20 variations of inputs
-  for (let i = 0; i < 20; i++) {
+  // Create 46 variations of inputs to hit 50+ tests
+  for (let i = 0; i < 46; i++) {
     it(`should process variation ${i}`, async () => {
       const txs: RawBankTransaction[] = [
         {

@@ -1,5 +1,6 @@
 import { extractCSVRows } from './extractor/csv';
 import { extractPDFLines } from './extractor/pdf';
+import { extractExcelRows } from './extractor/excel';
 import { parseCSVGrid } from './parser/statement';
 import { calculateStatementConfidence } from './confidence/scorer';
 import { extractBankName, extractAccountMask } from './utils';
@@ -28,6 +29,8 @@ export async function processBankStatement(buffer: Buffer, textContent: string, 
     // For a highly structured PDF, we simulate it as single-column CSV rows 
     // or we split lines by multi-spaces to map to grids.
     rows = lines.map(line => line.split(/\s{2,}/)); 
+  } else if (options.fileType === 'excel') {
+    rows = extractExcelRows(buffer);
   } else {
     throw new UnsupportedBankFormatError();
   }

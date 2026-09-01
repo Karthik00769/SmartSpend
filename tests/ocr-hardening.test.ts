@@ -15,6 +15,22 @@ describe('OCR Hardening - extractAmount (Canonical Paise)', () => {
     { input: 'Total: 1,234.5O', expected: 123450 }, // O -> 0
     { input: 'Total: B,234.50', expected: 823450 }, // B -> 8
     { input: 'Total: 8,234.SO', expected: 823450 },
+    { input: 'Total: Z,345.00', expected: 234500 }, // Z -> 2
+    { input: 'Rs. S,000.00', expected: 500000 },
+    { input: 'Rs. 5,0O0.00', expected: 500000 },
+    { input: 'Total ₹ B,B00.00', expected: 880000 },
+    { input: 'Amount: I2,345', expected: 1234500 },
+    { input: 'Amount: 1Z,345', expected: 1234500 },
+    { input: 'Paid: l0,000.00', expected: 1000000 },
+    { input: 'Paid: 10,000.OO', expected: 1000000 },
+    { input: '1,000.00 Rs.', expected: 100000 },
+    { input: 'Rs1,000.00', expected: 100000 },
+    { input: '1,000.00/-', expected: 100000 },
+    { input: '₹ 1,000.00 /-', expected: 100000 },
+    { input: 'Total: 1 000.00', expected: 100000 },
+    { input: 'Total: 1, 000.00', expected: 100000 },
+    { input: 'Total: 1 ,000.00', expected: 100000 },
+    { input: 'Total: 1,000 . 00', expected: 100000 },
   ];
 
   for (const c of cases) {

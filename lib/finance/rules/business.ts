@@ -23,3 +23,14 @@ export function isGoalPossible(targetPaise: number, savedPaise: number, daysRema
   // A simplistic check: can they save the remainder? We assume yes for now unless days=0.
   return true; 
 }
+
+/**
+ * Determines if two expenses are duplicates of each other.
+ * Checks if amount, date, and description match exactly.
+ */
+export function isDuplicateExpense(
+  amountPaiseA: number, dateA: string, descA: string,
+  amountPaiseB: number, dateB: string, descB: string
+): boolean {
+  return amountPaiseA === amountPaiseB && dateA === dateB && (descA || '').trim() === (descB || '').trim();
+}

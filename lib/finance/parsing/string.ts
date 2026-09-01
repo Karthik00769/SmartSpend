@@ -92,10 +92,10 @@ export function extractAmount(raw: string): number {
   const isCredit = clean.includes('CR') || clean.startsWith('+');
   
   // Remove common text prefixes/words BEFORE OCR substitution
-  clean = clean.replace(/RS\.?|INR|AMOUNT|TOTAL|NET|PAYMENT/g, '');
+  clean = clean.replace(/RS\.?|INR|AMOUNT|TOTAL|NET|PAYMENT|PAID/g, '');
   
   // OCR common misreads for numbers
-  clean = clean.replace(/O/g, '0').replace(/I/g, '1').replace(/L/g, '1').replace(/S/g, '5').replace(/B/g, '8');
+  clean = clean.replace(/O/g, '0').replace(/I/g, '1').replace(/L/g, '1').replace(/S/g, '5').replace(/B/g, '8').replace(/Z/g, '2');
 
   clean = clean.replace(/[^\d.-]/g, '');
   if (!clean) return 0;

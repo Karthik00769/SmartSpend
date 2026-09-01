@@ -1,4 +1,5 @@
 import pool, { query } from '@/lib/db';
+import { Rules as FinanceRules } from '@/lib/finance';
 import type {
   CreateExpenseInput,
   GetExpensesQuery,
@@ -213,20 +214,23 @@ export async function createExpense(input: any): Promise<ExpenseDTO> {
     }
   }
 
-  // ── Duplicate guard: same user + amount + date + description within 60 seconds ──
-  const [duplicate] = await query<any[]>(
-    `SELECT id FROM expenses
+  // ── Duplicate guard using FinanceCore ──
+  const [recentExpenses] = await query<any[]>(
+    `SELECT id, amount_paise, DATE_FORMAT(expense_date, '%Y-%m-%d') as expense_date, description FROM expenses
      WHERE user_id = ?
-       AND amount_paise = ?
-       AND expense_date = ?
-       AND description = ?
        AND deleted_at IS NULL
        AND created_at >= DATE_SUB(NOW(), INTERVAL 60 SECOND)
-     LIMIT 1`,
-    [userId, amountPaise, date, description ?? ''],
+     ORDER BY created_at DESC`,
+    [userId],
   );
-  if (duplicate) {
-    throw new Error('Duplicate expense: an identical entry was just saved. Please wait a moment before retrying.');
+
+  for (const recent of recentExpenses) {
+    if (FinanceRules.isDuplicateExpense(
+      amountPaise, date, description ?? '',
+      Number(recent.amount_paise), recent.expense_date, recent.description ?? ''
+    )) {
+      throw new Error('Duplicate expense: an identical entry was just saved. Please wait a moment before retrying.');
+    }
   }
 
   const result = await query<ResultSetHeader>(
@@ -252,18 +256,18 @@ export async function monthlyExpenseSummary(
   userId: string,
   year: number,
   month: number,
-): Promise<{ totalSpent: number; transactionCount: number; dailyAvg: number }> {
+): Promise<{ totalSpentPaise: number; transactionCount: number; dailyAvgPaise: number }> {
   interface SummaryRow {
-    total_spent:       string;
-    transaction_count: string;
-    daily_avg:         string;
+    total_spent_paise:       string;
+    transaction_count:       string;
+    daily_avg_paise:         string;
   }
 
   const [row] = await query<SummaryRow[]>(
     `SELECT
-       COALESCE(SUM(amount_paise), 0)                                            AS total_spent,
+       COALESCE(SUM(amount_paise), 0)                                       AS total_spent_paise,
        COUNT(id)                                                            AS transaction_count,
-       ROUND(COALESCE(SUM(amount_paise), 0) / NULLIF(DAY(LAST_DAY(STR_TO_DATE(CONCAT(?, '-', LPAD(?, 2, '0'), '-01'), '%Y-%m-%d'))), 0), 2) AS daily_avg
+       ROUND(COALESCE(SUM(amount_paise), 0) / NULLIF(DAY(LAST_DAY(STR_TO_DATE(CONCAT(?, '-', LPAD(?, 2, '0'), '-01'), '%Y-%m-%d'))), 0), 0) AS daily_avg_paise
      FROM expenses
      WHERE user_id    = ?
        AND deleted_at IS NULL
@@ -273,9 +277,9 @@ export async function monthlyExpenseSummary(
   );
 
   return {
-    totalSpent:       parseFloat(row?.total_spent       || '0'),
-    transactionCount: parseInt(row?.transaction_count   || '0', 10),
-    dailyAvg:         parseFloat(row?.daily_avg         || '0'),
+    totalSpentPaise:  parseInt(row?.total_spent_paise || '0', 10),
+    transactionCount: parseInt(row?.transaction_count || '0', 10),
+    dailyAvgPaise:    parseInt(row?.daily_avg_paise   || '0', 10),
   };
 }
 
@@ -283,7 +287,7 @@ export async function categoryWiseTotals(
   userId: string,
   year: number,
   month: number,
-): Promise<{ categoryId: number; name: string; icon: string; total: number }[]> {
+): Promise<{ categoryId: number; name: string; icon: string; totalPaise: number }[]> {
   interface CatRow {
     category_id: number;
     name:        string;
@@ -312,17 +316,17 @@ export async function categoryWiseTotals(
     categoryId: r.category_id,
     name:       r.name,
     icon:       r.icon || '📌',
-    total:      parseFloat(r.total || '0'),
+    totalPaise: parseInt(r.total || '0', 10),
   }));
 }
 
-export async function getMonthlyTrends(userId: string, months: number = 6): Promise<{ month_label: string; total_spent: string }[]> {
+export async function getMonthlyTrends(userId: string, months: number = 6): Promise<{ month_label: string; total_spent_paise: string }[]> {
   // GROUP BY uses only YEAR/MONTH (DATE_FORMAT is functionally dependent on them).
   // Avoids ONLY_FULL_GROUP_BY error in MySQL strict mode.
   const sql = `
     SELECT
       DATE_FORMAT(expense_date, '%b %Y') AS month_label,
-      COALESCE(SUM(amount_paise), 0)           AS total_spent
+      COALESCE(SUM(amount_paise), 0)     AS total_spent_paise
     FROM expenses
     WHERE user_id    = ?
       AND deleted_at IS NULL
@@ -330,5 +334,5 @@ export async function getMonthlyTrends(userId: string, months: number = 6): Prom
     GROUP BY YEAR(expense_date), MONTH(expense_date), DATE_FORMAT(expense_date, '%b %Y')
     ORDER BY YEAR(expense_date) ASC, MONTH(expense_date) ASC
   `;
-  return query<{ month_label: string; total_spent: string }[]>(sql, [userId, months]);
+  return query<{ month_label: string; total_spent_paise: string }[]>(sql, [userId, months]);
 }

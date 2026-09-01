@@ -10,6 +10,7 @@ import { authOptions }               from '@/lib/auth/authOptions';
 import { processReceiptImage }       from '@/lib/ocr';
 import { processBankStatement }      from '@/lib/bank';
 import * as FinanceCore              from '@/lib/finance';
+import { checkRateLimit }            from '@/lib/security/rate-limit';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -18,8 +19,14 @@ const MAX_BYTES   = 10 * 1024 * 1024;
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const PDF_TYPE    = 'application/pdf';
 const TEXT_TYPES  = new Set(['text/csv', 'text/plain', 'text/tab-separated-values']);
+const EXCEL_TYPES = new Set(['application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
 
 export async function POST(req: NextRequest) {
+  const ip = req.headers.get('x-forwarded-for') ?? 'unknown-ip';
+  if (!checkRateLimit(ip, 20, 60 * 1000)) { // 20 uploads per minute
+    return NextResponse.json({ ok: false, error: 'Rate limit exceeded.' }, { status: 429 });
+  }
+
   const session = await getServerSession(authOptions);
   if (!session?.user) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
@@ -38,8 +45,9 @@ export async function POST(req: NextRequest) {
     const isImage  = IMAGE_TYPES.has(mimeType) || ['.jpg', '.jpeg', '.png', '.webp'].includes(ext);
     const isPDF    = mimeType === PDF_TYPE || ext === '.pdf';
     const isText   = TEXT_TYPES.has(mimeType) || ['.csv', '.txt', '.tsv'].includes(ext);
+    const isExcel  = EXCEL_TYPES.has(mimeType) || ['.xls', '.xlsx'].includes(ext);
 
-    if (!isImage && !isPDF && !isText) {
+    if (!isImage && !isPDF && !isText && !isExcel) {
       return NextResponse.json({ ok: false, error: 'Unsupported file type.' }, { status: 415 });
     }
 
@@ -74,10 +82,11 @@ export async function POST(req: NextRequest) {
         },
       });
     } else {
-      // Bank Document (PDF or CSV)
+      // Bank Document (PDF, CSV, Excel)
       const textContent = isText ? buffer.toString('utf8') : '';
+      const fileType = isExcel ? 'excel' : isPDF ? 'pdf' : 'csv';
       const bankResult = await processBankStatement(buffer, textContent, {
-        fileType: isPDF ? 'pdf' : 'csv',
+        fileType,
         fileName: file.name
       });
       
@@ -91,7 +100,7 @@ export async function POST(req: NextRequest) {
           skippedCount: importResult.skippedCount,
           skippedRows: importResult.skippedRows,
           source: 'bank',
-          parseMode: isPDF ? 'pdf-lines' : 'csv',
+          parseMode: fileType,
         },
       });
     }
