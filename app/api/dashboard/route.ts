@@ -100,13 +100,13 @@ export async function GET(req: NextRequest) {
         icon:  '📌',
       })),
       budgetCategories: categories.map(c => {
-        const allocated = parseFloat(c.limit_amount);
-        const spent     = parseFloat(c.total_spent);
+        const allocatedPaise = parseFloat(c.limit_amount);
+        const spentPaise     = parseFloat(c.total_spent);
         
-        const allocatedPaise = FinanceMath.inrToPaise(allocated);
-        const spentPaise     = FinanceMath.inrToPaise(spent);
+        const allocated = FinanceMath.paiseToInr(allocatedPaise);
+        const spent     = FinanceMath.paiseToInr(spentPaise);
         
-        const usedPct = allocated > 0 ? Budget.calculateBudgetProgress(spentPaise, allocatedPaise) : null;
+        const usedPct = allocatedPaise > 0 ? Budget.calculateBudgetProgress(spentPaise, allocatedPaise) : null;
         
         return {
           category:    c.category,

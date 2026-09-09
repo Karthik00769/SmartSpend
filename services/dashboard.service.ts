@@ -74,7 +74,7 @@ export async function getDashboardSummary(userId: string): Promise<DashboardSumm
       [userId, lastWeekStart, lastWeekEndStr]
     ),
     query<CategoryRow[]>(
-      `SELECT c.id AS category_id, c.name AS category, c.icon, c.color, COALESCE(SUM(e.amount_paise), 0) AS total_spent
+      `SELECT c.id AS category_id, c.name AS category, c.icon, c.color_hex AS color, COALESCE(SUM(e.amount_paise), 0) AS total_spent
        FROM expenses e
        JOIN categories c ON e.category_id = c.id
        WHERE e.user_id = ? AND e.deleted_at IS NULL AND YEAR(e.expense_date) = ? AND MONTH(e.expense_date) = ?
