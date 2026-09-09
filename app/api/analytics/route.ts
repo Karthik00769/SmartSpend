@@ -29,7 +29,7 @@ const AnalyticsQuerySchema = z.object({
   month: z.coerce.number().int().min(1).max(12).optional(),
 });
 
-interface UserRow { monthly_income: string }
+interface UserRow { monthly_income_paise: string }
 interface DailyRow { date: string; total: string }
 
 export async function GET(req: NextRequest) {
@@ -47,10 +47,10 @@ export async function GET(req: NextRequest) {
   try {
     // ── 1. Fetch user's monthly income ────────────────────────────────────────
     const [userRow] = await query<UserRow[]>(
-      `SELECT monthly_income FROM users WHERE id = ? LIMIT 1`,
+      `SELECT monthly_income_paise FROM users WHERE id = ? LIMIT 1`,
       [userId],
     );
-    const monthlyIncome = parseFloat(userRow?.monthly_income ?? '0');
+    const monthlyIncome = parseFloat(userRow?.monthly_income_paise ?? '0');
 
     // ── 2. Full engine bundle (summary, weekly, categories, chart data) ───────
     const bundle = await generateSummaries(userId, year, month, monthlyIncome);
@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
     const dailyRows = await query<DailyRow[]>(
       `SELECT 
          DATE_FORMAT(expense_date, '%Y-%m-%d') AS date, 
-         SUM(amount) AS total
+         SUM(amount_paise) AS total
        FROM expenses
        WHERE user_id = ? AND deleted_at IS NULL
        GROUP BY DATE_FORMAT(expense_date, '%Y-%m-%d')

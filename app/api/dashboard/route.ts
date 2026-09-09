@@ -11,7 +11,7 @@ interface MonthlyStats {
 }
 
 interface UserRow {
-  monthly_income: string;
+  monthly_income_paise: string;
 }
 
 interface CategoryRow {
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
     const [statsRow] = await query<MonthlyStats[]>(`
       SELECT
         COUNT(e.id)                                                         AS total_transactions,
-        COALESCE(SUM(e.amount), 0)                                          AS total_spent
+        COALESCE(SUM(e.amount_paise), 0)                                    AS total_spent
 
       FROM users u
       LEFT JOIN expenses e
@@ -46,31 +46,33 @@ export async function GET(req: NextRequest) {
        AND YEAR(e.expense_date)  = ?
        AND MONTH(e.expense_date) = ?
       WHERE u.id = ?
-      GROUP BY u.id, u.monthly_income
+      GROUP BY u.id, u.monthly_income_paise
     `, [year, month, userId]);
 
     const [userRow] = await query<UserRow[]>(
-      `SELECT monthly_income FROM users WHERE id = ?`,
+      `SELECT monthly_income_paise FROM users WHERE id = ?`,
       [userId]
     );
 
-    const totalIncome  = parseFloat(userRow?.monthly_income ?? '0');
+    const totalIncome  = parseFloat(userRow?.monthly_income_paise ?? '0');
     const totalSpent   = parseFloat(statsRow?.total_spent ?? '0');
     const savings      = Analytics.calculateSavings(totalIncome, totalSpent);
 
     const categories = await query<CategoryRow[]>(`
       SELECT
-        COALESCE(e.category, b.category)                 AS category,
-        COALESCE(SUM(e.amount), 0)                       AS total_spent,
-        COALESCE(b.amount, 0)                            AS limit_amount
+        COALESCE(c.name, bc.name)                        AS category,
+        COALESCE(SUM(e.amount_paise), 0)                 AS total_spent,
+        COALESCE(b.limit_paise, 0)                       AS limit_amount
       FROM (
-        SELECT DISTINCT category FROM expenses WHERE user_id = ? AND YEAR(expense_date) = ? AND MONTH(expense_date) = ?
+        SELECT DISTINCT category_id FROM expenses WHERE user_id = ? AND YEAR(expense_date) = ? AND MONTH(expense_date) = ?
         UNION
-        SELECT DISTINCT category FROM budgets WHERE user_id = ? AND year = ? AND month = ?
+        SELECT DISTINCT category_id FROM budgets WHERE user_id = ? AND year = ? AND month = ?
       ) as cats
-      LEFT JOIN expenses e ON e.category = cats.category AND e.user_id = ? AND YEAR(e.expense_date) = ? AND MONTH(e.expense_date) = ?
-      LEFT JOIN budgets b ON b.category = cats.category AND b.user_id = ? AND b.year = ? AND b.month = ?
-      GROUP BY COALESCE(e.category, b.category), b.amount
+      LEFT JOIN expenses e ON e.category_id = cats.category_id AND e.user_id = ? AND YEAR(e.expense_date) = ? AND MONTH(e.expense_date) = ?
+      LEFT JOIN budgets b ON b.category_id = cats.category_id AND b.user_id = ? AND b.year = ? AND b.month = ?
+      LEFT JOIN categories c ON e.category_id = c.id
+      LEFT JOIN categories bc ON b.category_id = bc.id
+      GROUP BY COALESCE(c.name, bc.name), b.limit_paise
       ORDER BY total_spent DESC
     `, [userId, year, month, userId, year, month, userId, year, month, userId, year, month]);
 
