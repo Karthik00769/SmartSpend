@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
         listGoals({ userId: queryData.userId, status: 'active' } as any)
       ]);
 
-      const totalSpent  = summary.totalSpent;
+      const totalSpent  = summary.totalSpentPaise;
       const topCat      = categories[0];
 
       // Rule-based insights derived entirely from DB data — no AI hallucination
@@ -64,10 +64,10 @@ export async function GET(req: NextRequest) {
 
       // 1. Top spending category
       if (topCat && totalSpent > 0) {
-        const pct = Math.round(Analytics.calculateCategoryPct(topCat.total, totalSpent));
+        const pct = Math.round(Analytics.calculateCategoryPct(topCat.totalPaise, totalSpent));
         newInsights.push({
           type:    'monthly_summary',
-          content: `Your top spending category this month is ${topCat.name} at ${topCat.total.toFixed(2)} (${pct}% of total spend).`,
+          content: `Your top spending category this month is ${topCat.name} at ${(topCat.totalPaise / 100).toFixed(2)} (${pct}% of total spend).`,
         });
       }
 
