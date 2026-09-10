@@ -54,7 +54,7 @@ describe('Bank Import Hardening', () => {
     expect(processExpenseMock).toHaveBeenNthCalledWith(1, {
       userId: 'user-1',
       categoryId: undefined,
-      amountPaise: 123450,
+      amountMinor: 123450,
       date: '2026-09-01',
       description: 'Ref123',
       source: 'bank_import',
@@ -63,7 +63,7 @@ describe('Bank Import Hardening', () => {
     expect(processExpenseMock).toHaveBeenNthCalledWith(2, {
       userId: 'user-1',
       categoryId: undefined,
-      amountPaise: 123400,
+      amountMinor: 123400,
       date: '2026-09-01',
       description: 'Ref456',
       source: 'bank_import',
@@ -72,7 +72,7 @@ describe('Bank Import Hardening', () => {
     expect(processExpenseMock).toHaveBeenNthCalledWith(3, {
       userId: 'user-1',
       categoryId: undefined,
-      amountPaise: 123450,
+      amountMinor: 123450,
       date: '2026-09-01',
       description: 'Ref789',
       source: 'bank_import',
@@ -123,7 +123,7 @@ describe('Bank Import Hardening', () => {
 
   it('should handle engine validation failures', async () => {
     processExpenseMock.mockResolvedValueOnce({
-      validation: { valid: false, errors: [{ field: 'amountPaise', message: 'Invalid amount' }] },
+      validation: { valid: false, errors: [{ field: 'amountMinor', message: 'Invalid amount' }] },
     });
 
     const txs: RawBankTransaction[] = [

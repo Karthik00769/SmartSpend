@@ -8,7 +8,7 @@ import { Math as FinanceMath } from '@/lib/finance';
  * GET /api/reports/export?months=6
  *
  * Generates and streams a downloadable CSV for full expense history.
- * Uses amount_paise (integer) column and converts to INR for display.
+ * Uses amount_minor (integer) column and converts to INR for display.
  */
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -20,20 +20,20 @@ export async function GET(req: NextRequest) {
     const list = await query<{
       expense_date: string;
       category:     string;
-      amount_paise: number;
+      amount_minor: number;
       description:  string;
     }[]>(
-      `SELECT expense_date, category, amount_paise, description
+      `SELECT expense_date, category, amount_minor, description
        FROM expenses
        WHERE user_id = ? AND deleted_at IS NULL
        ORDER BY expense_date DESC`,
       [userId]
     );
 
-    // Generate CSV contents — convert paise to INR via FinanceCore
+    // Generate CSV contents — convert minor to INR via FinanceCore
     const header = 'Date,Category,Amount (INR),Description\n';
     const rows = list.map(r =>
-      `"${r.expense_date}","${r.category}","${FinanceMath.paiseToInr(r.amount_paise).toFixed(2)}","${r.description.replace(/"/g, '""')}"`
+      `"${r.expense_date}","${r.category}","${FinanceMath.minorToInr(r.amount_minor).toFixed(2)}","${r.description.replace(/"/g, '""')}"`
     ).join('\n');
 
     const csvContent = header + rows;

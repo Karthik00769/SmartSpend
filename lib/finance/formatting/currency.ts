@@ -4,18 +4,18 @@
  * UI Formatters for Indian Currency.
  */
 
-import { paiseToInr } from '../calculations/math';
+import { minorToInr } from '../calculations/math';
 
 export const CURRENCY_SYMBOL = '₹';
 
 /**
- * Formats a raw Paise amount into the Indian Numbering System string.
+ * Formats a raw Minor amount into the Indian Numbering System string.
  * Example: 1500000 -> "₹15,000.00"
- * @param amountPaise Amount in Paise
+ * @param amountMinor Amount in Minor
  * @returns Formatted INR string
  */
-export function formatINR(amountPaise: number): string {
-  const amountInr = paiseToInr(amountPaise);
+export function formatINR(amountMinor: number): string {
+  const amountInr = minorToInr(amountMinor);
   try {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -30,13 +30,13 @@ export function formatINR(amountPaise: number): string {
 }
 
 /**
- * Formats a raw Paise amount to an INR string without decimals if they are .00
+ * Formats a raw Minor amount to an INR string without decimals if they are .00
  * Example: 1500000 -> "₹15,000"
- * @param amountPaise Amount in Paise
+ * @param amountMinor Amount in Minor
  * @returns Formatted INR string
  */
-export function formatCompactINR(amountPaise: number): string {
-  const amountInr = paiseToInr(amountPaise);
+export function formatCompactINR(amountMinor: number): string {
+  const amountInr = minorToInr(amountMinor);
   try {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',

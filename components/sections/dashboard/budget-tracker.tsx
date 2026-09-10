@@ -76,8 +76,8 @@ function BudgetRow({ cat, onDeleted, fmt = (n: number) => n.toLocaleString('en-I
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <span className={`text-sm font-semibold tabular-nums ${getTextColor(pct)}`}>
-            {fmt(FinanceCore.Math.paiseToInr(cat.spentPaise))}
-            <span className="text-muted-foreground font-normal"> / {fmt(FinanceCore.Math.paiseToInr(cat.allocatedPaise))}</span>
+            {fmt(FinanceCore.Math.minorToInr(cat.spentMinor))}
+            <span className="text-muted-foreground font-normal"> / {fmt(FinanceCore.Math.minorToInr(cat.allocatedMinor))}</span>
           </span>
           <button
             onClick={handleDelete}
@@ -103,10 +103,10 @@ function BudgetRow({ cat, onDeleted, fmt = (n: number) => n.toLocaleString('en-I
         <span className="text-[11px] text-muted-foreground">
           {pct !== null ? `${pct.toFixed(0)}% used` : 'No spend yet'}
         </span>
-        <span className={`text-[11px] font-medium ${cat.remainingPaise < 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
-          {cat.remainingPaise >= 0
-            ? `${fmt(FinanceCore.Math.paiseToInr(cat.remainingPaise))} left`
-            : `${fmt(FinanceCore.Math.paiseToInr(Math.abs(cat.remainingPaise)))} over`}
+        <span className={`text-[11px] font-medium ${cat.remainingMinor < 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+          {cat.remainingMinor >= 0
+            ? `${fmt(FinanceCore.Math.minorToInr(cat.remainingMinor))} left`
+            : `${fmt(FinanceCore.Math.minorToInr(Math.abs(cat.remainingMinor)))} over`}
         </span>
       </div>
     </div>
@@ -116,7 +116,7 @@ function BudgetRow({ cat, onDeleted, fmt = (n: number) => n.toLocaleString('en-I
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function BudgetTracker({ budget, onDeleted, fmt = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }: BudgetTrackerProps) {
-  const overallPct = Math.round(Analytics.calculateBudgetUsedPct(budget.totalSpentPaise, budget.totalBudgetPaise));
+  const overallPct = Math.round(Analytics.calculateBudgetUsedPct(budget.totalSpentMinor, budget.totalBudgetMinor));
 
   if (budget.categories.length === 0) {
     return (
@@ -134,7 +134,7 @@ export function BudgetTracker({ budget, onDeleted, fmt = (n: number) => n.toLoca
         <div>
           <h3 className="text-lg font-semibold text-foreground">Budget Overview</h3>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {fmt(FinanceCore.Math.paiseToInr(budget.totalSpentPaise))} spent of {fmt(FinanceCore.Math.paiseToInr(budget.totalBudgetPaise))} total
+            {fmt(FinanceCore.Math.minorToInr(budget.totalSpentMinor))} spent of {fmt(FinanceCore.Math.minorToInr(budget.totalBudgetMinor))} total
           </p>
         </div>
         <div className="text-right">
@@ -167,14 +167,14 @@ export function BudgetTracker({ budget, onDeleted, fmt = (n: number) => n.toLoca
             .filter(c => (c.usedPct ?? 0) >= 100)
             .map(c => (
               <p key={c.id} className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1.5">
-                🚨 <strong>{c.category}</strong> exceeded by {fmt(FinanceCore.Math.paiseToInr(Math.abs(c.remainingPaise)))}
+                🚨 <strong>{c.category}</strong> exceeded by {fmt(FinanceCore.Math.minorToInr(Math.abs(c.remainingMinor)))}
               </p>
             ))}
           {budget.categories
             .filter(c => (c.usedPct ?? 0) >= 80 && (c.usedPct ?? 0) < 100)
             .map(c => (
               <p key={c.id} className="text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1.5">
-                ⚠️ <strong>{c.category}</strong> at {c.usedPct?.toFixed(0)}% — {fmt(FinanceCore.Math.paiseToInr(c.remainingPaise))} remaining
+                ⚠️ <strong>{c.category}</strong> at {c.usedPct?.toFixed(0)}% — {fmt(FinanceCore.Math.minorToInr(c.remainingMinor))} remaining
               </p>
             ))}
         </div>

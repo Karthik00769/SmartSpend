@@ -85,7 +85,7 @@ export interface ValueChange {
  * direction = 'up' | 'down' | 'stable' (within 1% tolerance).
  */
 export function computeChange(current: number, previous: number): ValueChange {
-  const delta     = Reports.roundPaise(current - previous);
+  const delta     = Reports.roundMinor(current - previous);
   const pct       = Analytics.calculateGrowthPct(current, previous);
   const direction: ChangeDirection =
     Reports.roundPct(Math.abs(pct)) < 1 ? 'stable' : delta > 0 ? 'up' : 'down';

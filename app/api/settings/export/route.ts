@@ -25,12 +25,12 @@ export async function GET(req: NextRequest) {
     // Fetch all user data in parallel — strictly user_id scoped
     const [profile, expenses, budgets, goals, insights] = await Promise.all([
       query<any[]>(
-        `SELECT id, full_name AS name, email, monthly_income_paise AS monthly_income, currency_code AS currency, created_at
+        `SELECT id, full_name AS name, email, monthly_income_minor AS monthly_income_minor, currency_code AS currency, created_at
          FROM users WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
         [userId],
       ),
       query<any[]>(
-        `SELECT e.id, e.amount_paise AS amount, e.description, e.expense_date AS date,
+        `SELECT e.id, e.amount_minor AS amount_minor, e.description, e.expense_date AS date,
                 c.name AS category, e.source, e.created_at
          FROM expenses e
          LEFT JOIN categories c ON e.category_id = c.id
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
         [userId],
       ),
       query<any[]>(
-        `SELECT b.id, c.name AS category, b.limit_paise AS limit_amount, b.month, b.year, b.created_at
+        `SELECT b.id, c.name AS category, b.limit_minor AS limit_minor, b.month, b.year, b.created_at
          FROM budgets b
          LEFT JOIN categories c ON b.category_id = c.id
          WHERE b.user_id = ? AND b.deleted_at IS NULL
@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
         [userId],
       ),
       query<any[]>(
-        `SELECT id, title, description, target_paise AS target_amount, saved_paise AS saved_amount,
+        `SELECT id, title, description, target_minor AS target_minor, saved_minor AS saved_minor,
                 target_date AS deadline, priority, status, created_at
          FROM goals WHERE user_id = ? AND deleted_at IS NULL
          ORDER BY created_at DESC`,

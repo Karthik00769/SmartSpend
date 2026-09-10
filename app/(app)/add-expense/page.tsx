@@ -124,10 +124,10 @@ export default function AddExpensePage() {
         <div className="flex-1 min-w-0">
           {/* Pre-fill banner */}
           {prefill && previewSrc && (
-            <div className="mb-4 p-3 bg-primary/5 border border-primary/20 rounded-lg flex items-center gap-3">
+            <div className="mb-4 p-3 bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 rounded-lg flex items-center gap-3">
               <span className="text-lg shrink-0">{previewSrc === 'scan' ? '📸' : '📄'}</span>
-              <p className="text-sm text-primary flex-1">Data extracted — review and save below.</p>
-              <button onClick={clearPrefill} className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded">✕</button>
+              <p className="text-sm font-medium text-indigo-900 dark:text-indigo-200 flex-1">Data extracted — review and save below.</p>
+              <button onClick={clearPrefill} aria-label="Clear pre-filled data" className="text-xs text-indigo-700/70 hover:text-indigo-900 dark:text-indigo-300/70 dark:hover:text-indigo-200 px-2 py-1 rounded">✕</button>
             </div>
           )}
 
@@ -153,13 +153,13 @@ export default function AddExpensePage() {
       {/* ── MOBILE: stacked layout (unchanged) ── */}
       <div className="md:hidden flex flex-col gap-5 pb-10">
         {prefill && previewSrc && (
-          <div className="p-3 bg-primary/5 border border-primary/20 rounded-xl flex items-center gap-3">
+          <div className="p-3 bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 rounded-xl flex items-center gap-3">
             <span className="text-xl shrink-0">{previewSrc === 'scan' ? '📸' : '📄'}</span>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-primary">Data extracted</p>
-              <p className="text-xs text-muted-foreground">Review and save below.</p>
+              <p className="text-sm font-semibold text-indigo-900 dark:text-indigo-200">Data extracted</p>
+              <p className="text-xs text-indigo-700/80 dark:text-indigo-300/80">Review and save below.</p>
             </div>
-            <button onClick={clearPrefill} className="text-xs text-muted-foreground hover:text-foreground px-2 py-1">✕</button>
+            <button onClick={clearPrefill} aria-label="Clear pre-filled data" className="text-xs text-indigo-700/70 hover:text-indigo-900 dark:text-indigo-300/70 dark:hover:text-indigo-200 px-2 py-1">✕</button>
           </div>
         )}
 

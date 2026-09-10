@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { ExpenseSummary } from '@/components/sections/reports/expense-summary';
 import { HealthScore } from '@/components/sections/reports/health-score';
 import { Card } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { apiGet } from '@/lib/api-client';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -103,13 +104,11 @@ export default function ReportsPage() {
           ) : data && data.monthlyData.length > 0 ? (
             <ExpenseSummary data={data.monthlyData} fmt={fmt} />
           ) : (
-             <Card className="p-12 text-center flex flex-col items-center justify-center border-dashed">
-                <div className="text-4xl mb-4">📈</div>
-                <h2 className="text-xl font-bold text-foreground mb-2">No historical data</h2>
-                <p className="text-muted-foreground mb-6 max-w-md">
-                  We don't have enough data yet to show historical trends.
-                </p>
-              </Card>
+             <EmptyState
+                title="No historical data"
+                description="We don't have enough data yet to show historical trends."
+                icon="📈"
+             />
           )}
         </div>
         <div>

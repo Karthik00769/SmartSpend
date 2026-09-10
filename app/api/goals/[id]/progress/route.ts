@@ -30,8 +30,8 @@ export async function POST(
       return fail('Invalid deposit amount.', 400);
     }
 
-    const amountPaise = FinanceCore.Math.inrToPaise(amount);
-    const updated = await updateGoalProgress(goalId, userId, amountPaise);
+    const amountMinor = FinanceCore.Math.inrToMinor(amount);
+    const updated = await updateGoalProgress(goalId, userId, amountMinor);
     if (!updated) {
       return fail('Goal not found or unauthorized.', 404);
     }

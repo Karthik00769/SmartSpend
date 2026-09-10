@@ -4,7 +4,9 @@ import { useState } from 'react';
 import Link          from 'next/link';
 import { useSmartSpend } from '@/context/smartspend-context';
 import { useInsights }   from '@/hooks/use-insights';
+import { useRouter }     from 'next/navigation';
 import { Card }          from '@/components/ui/card';
+import { EmptyState }    from '@/components/ui/EmptyState';
 import { Button }        from '@/components/ui/button';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
@@ -74,8 +76,8 @@ function InsightCard({ card, badge, bg }: { card: TextAdvice; badge: string; bg:
 
 function SummaryCard({ data, fmt }: { data: any; fmt: (n: number) => string }) {
   const mom = data.monthOverMonth;
-  const totalSpent = FinanceCore.Math.paiseToInr(mom.totalSpend.current);
-  const savings    = FinanceCore.Math.paiseToInr(mom.savings.current);
+  const totalSpent = FinanceCore.Math.minorToInr(mom.totalSpend.current);
+  const savings    = FinanceCore.Math.minorToInr(mom.savings.current);
   const topCat     = mom.categories[0]?.categoryName ?? '—';
   const trend      = mom.totalSpend.direction;
   const trendIcon  = trend === 'up' ? '↑' : trend === 'down' ? '↓' : '→';
@@ -150,7 +152,7 @@ function GoalCard({ goal, fmt }: { goal: GoalProbabilityResult; fmt: (n: number)
       <div className="flex justify-between items-start mb-2">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-foreground truncate">{goal.title}</p>
-          <p className="text-xs text-muted-foreground">{fmt(FinanceCore.Math.paiseToInr(goal.savedAmountPaise))} / {fmt(FinanceCore.Math.paiseToInr(goal.targetAmountPaise))}</p>
+          <p className="text-xs text-muted-foreground">{fmt(FinanceCore.Math.minorToInr(goal.savedAmountMinor))} / {fmt(FinanceCore.Math.minorToInr(goal.targetAmountMinor))}</p>
         </div>
         <span className={`text-base font-bold shrink-0 ml-2 ${riskCls[goal.risk]}`}>{goal.probability}%</span>
       </div>
@@ -179,6 +181,7 @@ function Skeleton() {
 }
 
 export default function InsightsPage() {
+  const router = useRouter();
   const { fmt, expenses } = useSmartSpend();
   const [periodKey, setPeriodKey] = useState<PeriodKey>('this');
   const period = getPeriod(periodKey);
@@ -240,11 +243,11 @@ export default function InsightsPage() {
   expenses.forEach((e, idx) => {
     const key = catLabel(e.categoryName, e.description);
     if (txPieMap.has(key)) {
-      txPieMap.get(key)!.value += FinanceCore.Math.paiseToInr(e.amountPaise);
+      txPieMap.get(key)!.value += FinanceCore.Math.minorToInr(e.amountMinor);
     } else {
       txPieMap.set(key, {
         name:  key,
-        value: FinanceCore.Math.paiseToInr(e.amountPaise),
+        value: FinanceCore.Math.minorToInr(e.amountMinor),
         fill:  COLORS[txPieMap.size % COLORS.length],
         icon:  e.categoryIcon,
       });
@@ -260,12 +263,16 @@ export default function InsightsPage() {
     return (
       <div className="space-y-5">
         <h1 className="text-2xl font-semibold text-foreground">Insights</h1>
-        <Card className="p-12 text-center border-dashed">
-          <p className="text-3xl mb-3">🔍</p>
-          <h2 className="text-base font-semibold text-foreground mb-2">No insights yet</h2>
-          <p className="text-sm text-muted-foreground mb-5">Add expenses to start seeing personalised financial insights.</p>
-          <Link href="/add-expense"><Button size="sm">Add your first expense</Button></Link>
-        </Card>
+        <EmptyState
+          title="No insights yet"
+          description="Add expenses to start seeing personalised financial insights."
+          icon="🔍"
+          action={{
+            label: "Add your first expense",
+            onClick: () => router.push('/dashboard') // Route user to dashboard as there is no /add-expense page yet
+          }}
+          className="border-dashed"
+        />
       </div>
     );
   }
@@ -322,11 +329,11 @@ export default function InsightsPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card className="p-4">
           <p className="text-xs text-muted-foreground mb-1">Total Spent</p>
-          <p className="text-xl font-bold text-foreground tabular-nums">{fmt(FinanceCore.Math.paiseToInr(savingsAnalysis.totalSpentPaise))}</p>
+          <p className="text-xl font-bold text-foreground tabular-nums">{fmt(FinanceCore.Math.minorToInr(savingsAnalysis.totalSpentMinor))}</p>
         </Card>
         <Card className="p-4">
           <p className="text-xs text-muted-foreground mb-1">Savings</p>
-          <p className={`text-xl font-bold tabular-nums ${savingsCls}`}>{fmt(FinanceCore.Math.paiseToInr(savingsAnalysis.savingsPaise))}</p>
+          <p className={`text-xl font-bold tabular-nums ${savingsCls}`}>{fmt(FinanceCore.Math.minorToInr(savingsAnalysis.savingsMinor))}</p>
         </Card>
         <Card className="p-4">
           <p className="text-xs text-muted-foreground mb-1">Savings Rate</p>
@@ -338,11 +345,11 @@ export default function InsightsPage() {
       </div>
 
       {/* ── Monthly Breakdown ── */}
-      {monthlyBreakdown && monthlyBreakdown.some(m => m.totalSpentPaise > 0) && (() => {
+      {monthlyBreakdown && monthlyBreakdown.some(m => m.totalSpentMinor > 0) && (() => {
         const mappedBreakdown = monthlyBreakdown.map(m => ({
           ...m,
-          totalSpent: FinanceCore.Math.paiseToInr(m.totalSpentPaise),
-          savings: FinanceCore.Math.paiseToInr(m.savingsPaise)
+          totalSpent: FinanceCore.Math.minorToInr(m.totalSpentMinor),
+          savings: FinanceCore.Math.minorToInr(m.savingsMinor)
         }));
         return (
         <div>
@@ -393,7 +400,7 @@ export default function InsightsPage() {
                       <p className="text-[10px] text-muted-foreground">{tx.date}</p>
                     </div>
                   </div>
-                  <span className="text-sm font-semibold tabular-nums shrink-0 ml-3">{fmt(FinanceCore.Math.paiseToInr(tx.amountPaise))}</span>
+                  <span className="text-sm font-semibold tabular-nums shrink-0 ml-3">{fmt(FinanceCore.Math.minorToInr(tx.amountMinor))}</span>
                 </div>
               ))}
             </div>
@@ -410,14 +417,14 @@ export default function InsightsPage() {
               // Find the top description for this category by amount
               const topDesc = expenses
                 .filter(e => e.categoryName === c.categoryName && e.description?.trim())
-                .sort((a, b) => b.amountPaise - a.amountPaise)[0]?.description;
+                .sort((a, b) => b.amountMinor - a.amountMinor)[0]?.description;
               const label = catLabel(c.categoryName, topDesc);
               return (
               <Card key={`top-cat-${i}`} className="p-4 flex items-center gap-3">
                 <span className="text-2xl shrink-0">{c.icon}</span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-foreground truncate">{label}</p>
-                  <p className="text-xs text-muted-foreground">{fmt(FinanceCore.Math.paiseToInr(c.totalPaise))}</p>
+                  <p className="text-xs text-muted-foreground">{fmt(FinanceCore.Math.minorToInr(c.totalMinor))}</p>
                 </div>
                 <span className="text-sm font-bold text-primary shrink-0">{c.percentageOfTotal}%</span>
               </Card>
@@ -444,7 +451,7 @@ export default function InsightsPage() {
                     <span className="text-sm text-foreground truncate">{label}</span>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-xs text-muted-foreground tabular-nums">{fmt(FinanceCore.Math.paiseToInr(t.currentSpendPaise))}</span>
+                    <span className="text-xs text-muted-foreground tabular-nums">{fmt(FinanceCore.Math.minorToInr(t.currentSpendMinor))}</span>
                     <span className={`text-sm font-bold ${trendCls(t.trend)}`}>
                       {trendIcon(t.trend)} {t.trend !== 'stable' && t.trend !== 'new' ? `${t.trendPct}%` : t.trend}
                     </span>
@@ -465,7 +472,7 @@ export default function InsightsPage() {
             {anomalies.map((a, i) => {
               const topDesc = expenses
                 .filter(e => e.categoryName === a.categoryName && e.description?.trim())
-                .sort((a2, b) => b.amountPaise - a2.amountPaise)[0]?.description;
+                .sort((a2, b) => b.amountMinor - a2.amountMinor)[0]?.description;
               const label = catLabel(a.categoryName, topDesc);
               return (
               <div key={`anomaly-${i}`} className="p-4 rounded-xl border bg-orange-50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800 flex gap-3">
@@ -474,7 +481,7 @@ export default function InsightsPage() {
                   <p className="text-sm font-semibold text-foreground">{label} — {a.spikeRatio}× spike</p>
                   <p className="text-xs text-muted-foreground mt-0.5">{a.message}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    This month: {fmt(FinanceCore.Math.paiseToInr(a.currentSpendPaise))} · Recent avg: {fmt(FinanceCore.Math.paiseToInr(a.avgPrevSpendPaise))}
+                    This month: {fmt(FinanceCore.Math.minorToInr(a.currentSpendMinor))} · Recent avg: {fmt(FinanceCore.Math.minorToInr(a.avgPrevSpendMinor))}
                   </p>
                 </div>
               </div>

@@ -2,8 +2,9 @@
  * types/api.ts
  * ─────────────────────────────────────────────────────────────────────
  * Canonical TypeScript types for every SmartSpend API request/response.
- * These are used by both the service layer and the route handlers, giving
- * a single source of truth throughout the backend.
+ * All monetary amounts are stored and transmitted in **minor units**
+ * (e.g. minor for INR, cents for USD).  Field names use the `Minor` suffix
+ * to match the database column convention (`amount_minor`, `limit_minor`, …).
  */
 
 // ─── Shared primitives ──────────────────────────────────────────────────────
@@ -51,7 +52,7 @@ export interface ExpenseDTO {
   categorySource?: 'manual' | 'auto';
   categoryIcon:   string;
   source:         string;   // 'manual' | 'receipt_scan' | 'bank_import'
-  amountPaise:    number;
+  amountMinor:    number;
   date:           string;
   description:    string;
   createdAt:      string;
@@ -60,7 +61,7 @@ export interface ExpenseDTO {
 export interface CreateExpenseInput {
   userId?:     string;
   category:    string;
-  amountPaise: number;
+  amountMinor: number;
   date:        string;
   description?: string;
 }
@@ -75,8 +76,8 @@ export interface GetExpensesQuery {
   search?:     string;
   startDate?:  string;
   endDate?:    string;
-  minAmountPaise?: number;
-  maxAmountPaise?: number;
+  minAmountMinor?: number;
+  maxAmountMinor?: number;
   source?:     string;
   categoryId?: number;
 }
@@ -89,20 +90,20 @@ export interface BudgetCategoryDTO {
   category:    string;        // human-readable label
   icon:        string;
   color:       string;
-  allocatedPaise: number;
-  spentPaise:  number;
+  allocatedMinor: number;
+  spentMinor:  number;
   usedPct:     number | null;
   isOverBudget: boolean;
   status:      'safe' | 'warning' | 'exceeded';
   needsAlert:  boolean;
-  remainingPaise: number;
+  remainingMinor: number;
   month:       number;
   year:        number;
 }
 
 export interface BudgetSummaryDTO {
-  totalBudgetPaise: number;
-  totalSpentPaise:  number;
+  totalBudgetMinor: number;
+  totalSpentMinor:  number;
   categories:  BudgetCategoryDTO[];
 }
 
@@ -110,7 +111,7 @@ export interface BudgetSummaryDTO {
 export interface UpsertBudgetInput {
   userId?:      string;
   category:     string;
-  amountPaise:  number;
+  amountMinor:  number;
   month:        number;
   year:         number;
 }
@@ -122,8 +123,8 @@ export interface GoalDTO {
   userId:               string;
   title:                string;
   description:          string;
-  targetAmountPaise:    number;
-  savedAmountPaise:   number;
+  targetAmountMinor:    number;
+  savedAmountMinor:     number;
   deadline:             string;   // ISO date string
   priority:             Priority;
   lifecycleStatus:      GoalLifecycleStatus;
@@ -131,11 +132,11 @@ export interface GoalDTO {
   goalType:             GoalType;
   completionPct:        number;
   daysRemaining:        number;
-  requiredDailySavingsPaise: number | null;
+  requiredDailySavingsMinor: number | null;
   progressPct:          number;
-  remainingPaise:       number;
+  remainingMinor:       number;
   isCompleted:          boolean;
-  requiredMonthlySavingsPaise: number;
+  requiredMonthlySavingsMinor: number;
   createdAt:            string;
 }
 
@@ -144,7 +145,7 @@ export interface CreateGoalInput {
   userId?:      string;
   title:        string;
   description:  string;
-  targetAmountPaise: number;
+  targetAmountMinor: number;
   deadline:     string;
   priority:     Priority;
   goalType:     GoalType;
@@ -220,13 +221,13 @@ export interface SmartAlert {
 
 export interface MonthlyTrend {
   label: string;
-  spentPaise: number;
+  spentMinor: number;
 }
 
 export interface DashboardSummaryDTO {
-  totalSpentPaise: number;
-  totalIncomePaise: number;
-  savingsPaise: number;
+  totalSpentMinor: number;
+  totalIncomeMinor: number;
+  savingsMinor: number;
   savingsRate: number;
   monthlyGrowthPct: number;
   budgetCompliancePct: number;
@@ -261,10 +262,10 @@ export type TrendDirection = 'up' | 'down' | 'stable' | 'new';
 export interface MetricDelta {
   current:      number;
   previous:     number;
-  absolute:     number;       
-  percentage:   number;       
+  absolute:     number;
+  percentage:   number;
   direction:    TrendDirection;
-  isSignificant: boolean;     
+  isSignificant: boolean;
 }
 
 export interface CategoryTrend {
@@ -273,9 +274,9 @@ export interface CategoryTrend {
   icon:         string;
   color:        string;
   delta:        MetricDelta;
-  currentRank:  number;       
-  previousRank: number;       
-  rankChange:   number;       
+  currentRank:  number;
+  previousRank: number;
+  rankChange:   number;
 }
 
 export interface WeekOverWeekResult {
@@ -285,8 +286,8 @@ export interface WeekOverWeekResult {
   txCount:      MetricDelta;
   dailyAvg:     MetricDelta;
   categories:   CategoryTrend[];
-  newCategories: string[];    
-  goneCategories: string[];   
+  newCategories: string[];
+  goneCategories: string[];
 }
 
 export interface MonthOverMonthResult {
@@ -311,60 +312,60 @@ export type AdviceTag =
   | 'summary';
 
 export interface TextAdvice {
-  id:          string;         
+  id:          string;
   severity:    AdviceSeverity;
   tag:         AdviceTag;
-  headline:    string;         
-  detail:      string;         
+  headline:    string;
+  detail:      string;
   emoji:       string;
-  actionLabel?: string;        
-  actionHref?:  string;        
+  actionLabel?: string;
+  actionHref?:  string;
   metadata:    Record<string, unknown>;
 }
 
 export type GoalRisk = 'on_track' | 'at_risk' | 'behind' | 'completed';
 
 export interface GoalMilestone {
-  pct:           number;    
-  label:         string;    
-  estimatedDate: string;    
+  pct:           number;
+  label:         string;
+  estimatedDate: string;
   reached:       boolean;
 }
 
 export interface GoalProbabilityResult {
   goalId:               number;
   title:                string;
-  targetAmountPaise:    number;
-  savedAmountPaise:   number;
+  targetAmountMinor:    number;
+  savedAmountMinor:     number;
   targetDate:           string;
   daysRemaining:        number;
-  requiredDailyAmountPaise: number;    
-  actualDailyRatePaise: number;    
-  projectedAmountPaise: number;    
-  achievementPct:       number;    
-  probability:          number;    
+  requiredDailyAmountMinor: number;
+  actualDailyRateMinor: number;
+  projectedAmountMinor: number;
+  achievementPct:       number;
+  probability:          number;
   risk:                 GoalRisk;
-  weeksNeeded:          number;    
+  weeksNeeded:          number;
   recommendation:       string;
   milestones:           GoalMilestone[];
 }
 
 export interface SpendingPattern {
-  peakDayOfWeek:  string;    
+  peakDayOfWeek:  string;
   lowestDayOfWeek: string;
-  peakWeekOfMonth: number;   
-  avgTransactionSizePaise: number;
-  largestTransactionPaise: number;
+  peakWeekOfMonth: number;
+  avgTransactionSizeMinor: number;
+  largestTransactionMinor: number;
   mostFrequentCategory: string;
-  streakDaysUnderBudget: number;  
+  streakDaysUnderBudget: number;
 }
 
 export interface MonthlyBreakdown {
   year:       number;
   month:      number;
-  label:      string;   
-  totalSpentPaise: number;
-  savingsPaise:    number;
+  label:      string;
+  totalSpentMinor: number;
+  savingsMinor:    number;
   savingsRate: number;
 }
 
@@ -372,7 +373,7 @@ export interface TopCategory {
   categoryName:      string;
   icon:              string;
   color:             string;
-  totalPaise:        number;
+  totalMinor:        number;
   percentageOfTotal: number;
 }
 
@@ -380,48 +381,48 @@ export interface CategoryTrendSummary {
   categoryName: string;
   icon:         string;
   trend:        'increasing' | 'decreasing' | 'stable' | 'new';
-  trendPct:     number;   
-  currentSpendPaise: number;
-  prevSpendPaise:    number;
+  trendPct:     number;
+  currentSpendMinor: number;
+  prevSpendMinor:    number;
 }
 
 export interface SpendingAnomaly {
   categoryName: string;
   icon:         string;
-  currentSpendPaise: number;
-  avgPrevSpendPaise: number;   
-  spikeRatio:   number;   
+  currentSpendMinor: number;
+  avgPrevSpendMinor: number;
+  spikeRatio:   number;
   message:      string;
 }
 
 export interface SavingsAnalysis {
-  incomePaise:  number;
-  totalSpentPaise: number;
-  savingsPaise: number;
+  incomeMinor:  number;
+  totalSpentMinor: number;
+  savingsMinor: number;
   savingsRate:  number;
   classification: 'low' | 'moderate' | 'good';
 }
 
 /** Precomputed state used by AI to generate text insights. No raw expenses allowed. */
 export interface InsightContextDTO {
-  generatedAt:       string;          
+  generatedAt:       string;
   period:            Period;
   weekOverWeek:      WeekOverWeekResult | null;
   monthOverMonth:    MonthOverMonthResult;
   goalProbabilities: GoalProbabilityResult[];
   pattern:           SpendingPattern;
   score: {
-    overall:          number;   
-    savingsRate:      number;   
-    budgetCompliance: number;   
-    goalProgress:     number;   
-    spendingControl:  number;   
+    overall:          number;
+    savingsRate:      number;
+    budgetCompliance: number;
+    goalProgress:     number;
+    spendingControl:  number;
   };
   topCategories:    TopCategory[];
   categoryTrends:   CategoryTrendSummary[];
   anomalies:        SpendingAnomaly[];
   savingsAnalysis:  SavingsAnalysis;
-  monthlyBreakdown: MonthlyBreakdown[]; 
+  monthlyBreakdown: MonthlyBreakdown[];
 }
 
 /** Complete payload for the UI. */
@@ -434,16 +435,85 @@ export interface InsightsEngineOutput {
   advice:            TextAdvice[];
   pattern:           SpendingPattern;
   score: {
-    overall:          number;   
-    savingsRate:      number;   
-    budgetCompliance: number;   
-    goalProgress:     number;   
-    spendingControl:  number;   
+    overall:          number;
+    savingsRate:      number;
+    budgetCompliance: number;
+    goalProgress:     number;
+    spendingControl:  number;
   };
   topCategories:    TopCategory[];
   categoryTrends:   CategoryTrendSummary[];
   anomalies:        SpendingAnomaly[];
   savingsAnalysis:  SavingsAnalysis;
-  aiSuggestions:    string | null;   
-  monthlyBreakdown: MonthlyBreakdown[]; 
+  aiSuggestions:    string | null;
+  monthlyBreakdown: MonthlyBreakdown[];
+}
+
+// ─── Banking ─────────────────────────────────────────────────────────────────
+
+export type AccountType = 'savings' | 'current' | 'credit_card' | 'loan';
+export type TransactionType = 'debit' | 'credit';
+
+export interface BankAccountDTO {
+  id:           number;
+  userId:       string;
+  accountName:  string;
+  bankName:     string;
+  accountLast4: string;
+  accountType:  AccountType;
+  currencyCode: string;
+  isActive:     boolean;
+  createdAt:    string;
+}
+
+export interface BankTransactionDTO {
+  id:                    number;
+  userId:                string;
+  bankAccountId:         number;
+  txnDate:               string;
+  description:           string;
+  amountMinor:           number;
+  currencyCode:          string;
+  transactionType:       TransactionType;
+  referenceNo:           string | null;
+  importedFromStatement: boolean;
+  createdAt:             string;
+}
+
+export interface StatementUploadDTO {
+  id:               number;
+  userId:           string;
+  bankAccountId:    number;
+  originalFilename: string;
+  status:           'uploaded' | 'processing' | 'processed' | 'failed';
+  uploadedAt:       string;
+  mimeType:         string;
+  fileSize:         number;
+}
+
+// ─── Receipts ─────────────────────────────────────────────────────────────────
+
+export type ReceiptStatus = 'uploaded' | 'processing' | 'processed' | 'failed';
+export type ReviewStatus = 'pending' | 'approved' | 'rejected';
+
+export interface ReceiptUploadDTO {
+  id:          number;
+  userId:      string;
+  filename:    string;
+  status:      ReceiptStatus;
+  uploadedAt:  string;
+  mimeType:    string;
+  fileSize:    number;
+}
+
+export interface ReceiptExtractionDTO {
+  id:                   number;
+  receiptUploadId:      number;
+  merchantName:         string | null;
+  extractedAmountMinor: number | null;
+  currencyCode:         string | null;
+  receiptDate:          string | null;
+  confidence:           number;
+  reviewStatus:         ReviewStatus;
+  createdAt:            string;
 }

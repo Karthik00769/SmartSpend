@@ -30,7 +30,7 @@ describe('Bank Statement Pipeline', () => {
   });
 
   it('should throw on unsupported file type', async () => {
-    await expect(processBankStatement(Buffer.from(''), '', { fileType: 'excel' as any }))
+    await expect(processBankStatement(Buffer.from(''), '', { fileType: 'word' as any }))
       .rejects.toThrow(UnsupportedBankFormatError);
   });
 });

@@ -41,8 +41,8 @@ export async function GET(_req: NextRequest) {
       // Run generation in the background so it doesn't block the response
       Promise.resolve().then(async () => {
         try {
-          const totalSpent = summary.totalSpentPaise / 100;
-          const monthlyIncome = summary.totalIncomePaise / 100;
+          const totalSpent = summary.totalSpentMinor / 100;
+          const monthlyIncome = summary.totalIncomeMinor / 100;
           
           const newInsights = [];
           if (totalSpent > (monthlyIncome * 0.8)) {
@@ -56,8 +56,8 @@ export async function GET(_req: NextRequest) {
              if (b.isOverBudget) {
                 const advice = await generateBehavioralAdvice({
                   category: b.category,
-                  spend: b.spentPaise,
-                  budget: b.allocatedPaise,
+                  spend: b.spentMinor,
+                  budget: b.allocatedMinor,
                   currency: '₹'
                 });
                 newInsights.push({ type: 'warning', message: `You are over budget on ${b.category}`, content: advice || `You exceeded your budget for ${b.category}.` });

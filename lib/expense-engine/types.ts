@@ -12,7 +12,7 @@ export interface EngineExpenseInput {
   userId?:     string | number;
   categoryId?: number | string;
   category?:   string;
-  amountPaise: number;
+  amountMinor: number;
   date:        string;
   description?: string;
   source?:     'manual' | 'receipt_scan' | 'bank_import';
@@ -24,7 +24,7 @@ export interface EngineExpenseInput {
 export interface ProcessedExpense {
   userId:        string;
   categoryId:    number;       // resolved (auto-assigned or user-provided)
-  amountPaise:   number;       // amount in paise
+  amountMinor:   number;       // amount in minor units (minor for INR, cents for USD)
   date:          string;       // YYYY-MM-DD
   description:   string;
   week:          number;       // ISO week number (1-53)

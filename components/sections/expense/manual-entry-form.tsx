@@ -305,7 +305,7 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
       </div>
 
       {success && (
-        <div className="mb-4 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+        <div className="mb-4 p-3 bg-green-500/10 border border-green-500/20 rounded-lg" aria-live="polite" role="status">
           <div className="flex items-center gap-2">
             <span>✓</span>
             <div>
@@ -317,7 +317,7 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
       )}
 
       {submitError && !success && (
-        <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+        <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg" aria-live="assertive" role="alert">
           <p className="text-sm text-red-700 dark:text-red-400">⚠️ {submitError}</p>
         </div>
       )}
@@ -341,6 +341,7 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
                       <Input
                         type="number" step="0.01" min="0.01" placeholder="0.00"
                         className="h-10 font-semibold pl-7"
+                        disabled={submitting}
                         {...field}
                         onChange={e => field.onChange(e.target.value ? Number(e.target.value) : '')}
                         value={field.value ?? ''}
@@ -359,6 +360,7 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
               <Select
                 onValueChange={handleCategorySelect}
                 value={useAutoDetect ? AUTO_DETECT_VALUE : (form.watch('categoryId') ? String(form.watch('categoryId')) : '')}
+                disabled={submitting}
               >
                 <SelectTrigger className="h-10">
                   <SelectValue placeholder="Select or Auto Detect" />
@@ -383,6 +385,7 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
                   <Input
                     placeholder="Category name (editable)"
                     className="h-10 border-primary/40 bg-primary/5"
+                    disabled={submitting}
                     value={categoryText}
                     onChange={e => {
                       setCategoryText(e.target.value);
@@ -419,6 +422,7 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
                       type="date"
                       className="h-10 text-foreground"
                       max={today()}
+                      disabled={submitting}
                       {...field}
                     />
                   </FormControl>
@@ -441,6 +445,7 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
                     <Input
                       placeholder="Where did you spend this?"
                       className="h-10"
+                      disabled={submitting}
                       {...field}
                       onChange={e => {
                         field.onChange(e);
@@ -458,14 +463,15 @@ export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: M
             <Button
               type="submit"
               className="flex-1 h-10 font-semibold"
-              disabled={submitting}
+              isLoading={submitting}
             >
-              {submitting ? 'Saving…' : 'Add Expense'}
+              Add Expense
             </Button>
             <Button
               type="button"
               variant="outline"
               className="h-10 px-5"
+              disabled={submitting}
               onClick={() => {
                 form.reset({
                   amount: undefined, categoryId: undefined, categoryName: undefined,

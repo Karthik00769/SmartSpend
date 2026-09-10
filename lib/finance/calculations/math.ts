@@ -2,16 +2,16 @@
  * lib/finance/calculations/math.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * Pure math library. Handles conversion between float UI values and integer
- * (Paise) storage values to prevent floating point anomalies.
+ * (Minor) storage values to prevent floating point anomalies.
  */
 
 /**
- * Convert INR (Float) to Paise (Integer)
+ * Convert INR (Float) to Minor (Integer)
  * Examples: 10.50 -> 1050
  * @param amountInr Amount in Rupees
- * @returns Integer value in Paise
+ * @returns Integer value in Minor
  */
-export function inrToPaise(amountInr: number): number {
+export function inrToMinor(amountInr: number): number {
   if (isNaN(amountInr) || !isFinite(amountInr)) {
     throw new Error('Invalid INR amount provided for conversion');
   }
@@ -20,16 +20,16 @@ export function inrToPaise(amountInr: number): number {
 }
 
 /**
- * Convert Paise (Integer) to INR (Float)
+ * Convert Minor (Integer) to INR (Float)
  * Examples: 1050 -> 10.50
- * @param amountPaise Amount in Paise
+ * @param amountMinor Amount in Minor
  * @returns Float value in INR
  */
-export function paiseToInr(amountPaise: number): number {
-  if (!Number.isInteger(amountPaise)) {
-    throw new Error('Paise value must be a strict integer');
+export function minorToInr(amountMinor: number): number {
+  if (!Number.isInteger(amountMinor)) {
+    throw new Error('Minor value must be a strict integer');
   }
-  return amountPaise / 100;
+  return amountMinor / 100;
 }
 
 /**
@@ -45,12 +45,12 @@ export function calculatePercentage(part: number, total: number): number {
 
 /**
  * Calculates remaining budget. Never returns below 0.
- * @param allocatedPaise Total allocated
- * @param spentPaise Total spent
- * @returns Remaining amount in paise
+ * @param allocatedMinor Total allocated
+ * @param spentMinor Total spent
+ * @returns Remaining amount in minor
  */
-export function calculateRemaining(allocatedPaise: number, spentPaise: number): number {
-  return Math.max(0, allocatedPaise - spentPaise);
+export function calculateRemaining(allocatedMinor: number, spentMinor: number): number {
+  return Math.max(0, allocatedMinor - spentMinor);
 }
 
 /**

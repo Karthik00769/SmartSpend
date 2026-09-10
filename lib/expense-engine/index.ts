@@ -111,7 +111,7 @@ export async function processExpense(
   const savedExpense = await createExpense({
     userId:      processed.userId,
     categoryId:  cat.categoryId,
-    amountPaise: processed.amountPaise,
+    amountMinor: processed.amountMinor,
     date:        processed.date,
     description: processed.description,
     categorySource: cat.confidence === 'exact' ? 'manual' : 'auto',
@@ -162,7 +162,7 @@ export async function generateSummaries(
 
   // ── Build budget map (categoryId → limitAmount) ───────────────────────────
   const budgetMap = new Map<number, number>(
-    budgetSummary.categories.map(c => [c.categoryId, c.allocatedPaise]),
+    budgetSummary.categories.map(c => [c.categoryId, c.allocatedMinor]),
   );
 
   // ── Aggregate ─────────────────────────────────────────────────────────────
@@ -177,7 +177,7 @@ export async function generateSummaries(
     categories,
     monthlyTrend:   trend,
     weeks,
-    dailyExpenses:  currentExpenses.map(e => ({ date: e.date, amount: e.amountPaise })),
+    dailyExpenses:  currentExpenses.map(e => ({ date: e.date, amount: e.amountMinor })),
     dayOfWeekStats: dowStats,
     year,
     month,

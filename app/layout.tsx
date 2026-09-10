@@ -4,8 +4,8 @@ import { Analytics } from '@vercel/analytics/next'
 import { AuthProvider } from '@/context/AuthContext'
 import './globals.css'
 
-const _geist    = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
+const geistSans = Geist({ subsets: ["latin"], variable: '--font-sans' });
+const geistMono = Geist_Mono({ subsets: ["latin"], variable: '--font-mono' });
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -35,7 +35,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="font-sans antialiased">
+      <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}>
         {/* AuthProvider wraps everything — /login, /signup, and all app pages */}
         <AuthProvider>
           {children}

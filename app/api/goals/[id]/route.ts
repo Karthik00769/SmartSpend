@@ -49,7 +49,7 @@ export async function PATCH(
     const { targetAmount, ...rest } = parsed.data as any;
     const patchPayload = { ...rest };
     if (targetAmount !== undefined) {
-      patchPayload.targetPaise = FinanceCore.Math.inrToPaise(targetAmount);
+      patchPayload.targetMinor = FinanceCore.Math.inrToMinor(targetAmount);
     }
     
     const updated = await updateGoal(goalId, userId, patchPayload);

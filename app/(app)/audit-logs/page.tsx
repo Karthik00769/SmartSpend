@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { toast } from 'sonner';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ListSkeleton } from '@/components/ui/LoadingSkeleton';
 
 interface AuditLog {
   id: number;
@@ -75,7 +77,7 @@ export default function AuditLogsPage() {
           />
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-muted-foreground uppercase bg-muted/50">
               <tr>
@@ -89,12 +91,26 @@ export default function AuditLogsPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr>
-                  <td colSpan={6} className="text-center py-8">Loading logs...</td>
-                </tr>
+                [...Array(4)].map((_, i) => (
+                  <tr key={`skel-${i}`}>
+                    <td className="px-4 py-3"><div className="h-4 w-24 bg-muted animate-pulse rounded"></div></td>
+                    <td className="px-4 py-3"><div className="h-4 w-32 bg-muted animate-pulse rounded"></div></td>
+                    <td className="px-4 py-3"><div className="h-4 w-20 bg-muted animate-pulse rounded"></div></td>
+                    <td className="px-4 py-3 hidden sm:table-cell"><div className="h-4 w-32 bg-muted animate-pulse rounded"></div></td>
+                    <td className="px-4 py-3 hidden sm:table-cell"><div className="h-4 w-24 bg-muted animate-pulse rounded"></div></td>
+                    <td className="px-4 py-3"><div className="h-5 w-16 bg-muted animate-pulse rounded-full ml-auto"></div></td>
+                  </tr>
+                ))
               ) : filteredLogs.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-8 text-muted-foreground">No logs found.</td>
+                  <td colSpan={6} className="py-8">
+                    <EmptyState
+                      title="No logs found"
+                      description="No audit logs match your search criteria."
+                      icon="📜"
+                      className="border-none shadow-none bg-transparent"
+                    />
+                  </td>
                 </tr>
               ) : (
                 filteredLogs.map(log => (
@@ -132,6 +148,44 @@ export default function AuditLogsPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile View */}
+        <div className="md:hidden space-y-4">
+          {loading ? (
+            <ListSkeleton />
+          ) : filteredLogs.length === 0 ? (
+            <EmptyState
+              title="No logs found"
+              description="No audit logs match your search criteria."
+              icon="📜"
+              className="border-none shadow-none bg-transparent"
+            />
+          ) : (
+            filteredLogs.map(log => (
+              <div key={log.id} className="p-4 rounded-xl border bg-card flex flex-col gap-2 shadow-sm">
+                <div className="flex justify-between items-start gap-2">
+                  <span className="font-semibold text-foreground break-all">{log.action}</span>
+                  {log.is_valid ? (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-[10px] font-bold uppercase shrink-0">
+                      Valid
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 text-[10px] font-bold uppercase shrink-0">
+                      Altered
+                    </span>
+                  )}
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>{log.entity_type} {log.entity_id ? `#${log.entity_id}` : ''}</span>
+                  <span>{new Date(log.created_at).toLocaleString()}</span>
+                </div>
+                <div className="text-[10px] font-mono text-muted-foreground bg-muted/50 p-2 rounded mt-1 overflow-x-auto">
+                  {JSON.stringify(log.metadata)}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </Card>
       

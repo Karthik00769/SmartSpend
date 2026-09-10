@@ -73,13 +73,13 @@ export async function POST(req: NextRequest) {
     }
 
     // ── FINANCIAL CORE BOUNDARY ──────────────────────────────────────────────
-    const amountPaise = FinanceCore.Math.inrToPaise(parsed.data.amount);
+    const amountMinor = FinanceCore.Math.inrToMinor(parsed.data.amount);
     const sanitizedMerchant = FinanceCore.Parsing.sanitizeMerchantName(parsed.data.description);
 
     const validationResult = FinanceCore.Validation.CreateExpenseInputSchema.safeParse({
       userId,
       categoryId: resolvedCategoryId,
-      amountPaise,
+      amountMinor,
       date: parsed.data.date,
       merchantName: sanitizedMerchant,
       description: parsed.data.description,
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
       {
         userId:      coreData.userId as string,
         categoryId:  coreData.categoryId,
-        amountPaise: coreData.amountPaise,
+        amountMinor: coreData.amountMinor,
         date:        coreData.date,
         description: coreData.merchantName,
         source:      parsed.data.source,

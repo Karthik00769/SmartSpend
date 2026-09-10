@@ -15,12 +15,12 @@ vi.mock('../../finance', () => {
       sanitizeMerchantName: vi.fn((raw: string) => raw.trim()),
     },
     Math: {
-      inrToPaise: vi.fn((inr: number) => Math.round(inr * 100)),
+      inrToMinor: vi.fn((inr: number) => Math.round(inr * 100)),
     },
     Validation: {
       CreateExpenseInputSchema: {
         safeParse: vi.fn((input: any) => {
-          if (input.amountPaise < 100) {
+          if (input.amountMinor < 100) {
             return {
               success: false,
               error: { errors: [{ message: 'Amount must be at least ₹1' }] }
@@ -78,7 +78,7 @@ describe('Bank Adapter - importBankTransactions', () => {
 
   it('should skip rows that fail FinanceCore validation (e.g. amount < 1)', async () => {
     const rawTxns: RawBankTransaction[] = [
-      { dateRaw: '01/01/2024', merchantRaw: 'Amazon', amountRaw: '0.00', referenceRaw: '', balanceRaw: '' } // parsed as 0 paise
+      { dateRaw: '01/01/2024', merchantRaw: 'Amazon', amountRaw: '0.00', referenceRaw: '', balanceRaw: '' } // parsed as 0 minor
     ];
 
     const result = await importBankTransactions(rawTxns, userId);

@@ -11,6 +11,7 @@ import { Button }           from '@/components/ui/button';
 import { Format, Analytics } from '@/lib/finance';
 import type { GoalDTO }     from '@/types/api';
 import type { GoalProbabilityResult } from '@/types/api';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 const STATUS_STYLE: Record<string, { cls: string; label: string }> = {
   active:    { cls: 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400',     label: '🎯 Active' },
@@ -71,7 +72,7 @@ function GoalCard({
   const [deleting,      setDeleting]      = useState(false);
 
   const pct       = goal.progressPct;
-  const remaining = FinanceCore.Math.paiseToInr(goal.remainingPaise);
+  const remaining = FinanceCore.Math.minorToInr(goal.remainingMinor);
   const daysLeft  = goal.daysRemaining ?? 0;
   const isTerminal = goal.lifecycleStatus === 'completed' || goal.lifecycleStatus === 'failed' || goal.lifecycleStatus === 'cancelled';
 
@@ -120,8 +121,8 @@ function GoalCard({
       {/* Amounts */}
       <div className="flex items-end justify-between mb-2">
         <div>
-          <span className="text-xl font-bold text-foreground tabular-nums">{fmt(FinanceCore.Math.paiseToInr(goal.savedAmountPaise))}</span>
-          <span className="text-sm text-muted-foreground ml-1">/ {fmt(FinanceCore.Math.paiseToInr(goal.targetAmountPaise))}</span>
+          <span className="text-xl font-bold text-foreground tabular-nums">{fmt(FinanceCore.Math.minorToInr(goal.savedAmountMinor))}</span>
+          <span className="text-sm text-muted-foreground ml-1">/ {fmt(FinanceCore.Math.minorToInr(goal.targetAmountMinor))}</span>
         </div>
         <span className="text-sm font-bold text-primary">{pct}%</span>
       </div>
@@ -266,13 +267,13 @@ export default function GoalsPage() {
 
         <div className="lg:col-span-2 space-y-8">
           {goals.length === 0 ? (
-            <Card className="p-12 text-center">
-              <p className="text-5xl mb-4">🎯</p>
-              <h3 className="text-lg font-semibold text-foreground mb-2">No goals yet</h3>
-              <p className="text-muted-foreground text-sm">
-                Create your first savings goal to start tracking progress.
-              </p>
-            </Card>
+            <div className="mt-8">
+              <EmptyState
+                title="No goals yet"
+                description="Create your first savings goal to start tracking progress."
+                icon="🎯"
+              />
+            </div>
           ) : (
             <>
               {active.length > 0 && (

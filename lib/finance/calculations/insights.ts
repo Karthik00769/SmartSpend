@@ -208,8 +208,8 @@ export function buildWeekOverWeek(
   currentCats:      CategorySummary[],
   previousCats:     CategorySummary[],
 ): WeekOverWeekResult {
-  const currTotal = currentExpenses.reduce((s, e) => s + e.amountPaise, 0);
-  const prevTotal = previousExpenses.reduce((s, e) => s + e.amountPaise, 0);
+  const currTotal = currentExpenses.reduce((s, e) => s + e.amountMinor, 0);
+  const prevTotal = previousExpenses.reduce((s, e) => s + e.amountMinor, 0);
   const { trends, newCats, goneCats } = compareCategoryLists(currentCats, previousCats);
 
   return {
@@ -296,21 +296,21 @@ export function analyzeGoal(
   const today        = new Date();
   const targetDate   = new Date(goal.deadline + 'T00:00:00Z');
   const daysRemaining = Math.max(0, Math.ceil((targetDate.getTime() - today.getTime()) / 86_400_000));
-  const remaining    = goal.remainingPaise / 100;
+  const remaining    = goal.remainingMinor / 100;
 
   const requiredDailyAmount = daysRemaining > 0 ? remaining / daysRemaining : Infinity;
 
   const projectedExtra   = avgDailySavings * daysRemaining;
   const projectedAmount  = Math.min(
-    goal.targetAmountPaise,
-    goal.savedAmountPaise + projectedExtra,
+    goal.targetAmountMinor,
+    goal.savedAmountMinor + projectedExtra,
   );
   
-  const targetAmountPaise = goal.targetAmountPaise;
-  const projectedAmountPaise = projectedAmount;
+  const targetAmountMinor = goal.targetAmountMinor;
+  const projectedAmountMinor = projectedAmount;
   
-  const achievementPct   = goal.targetAmountPaise > 0
-    ? Math.min(100, Goals.calculateGoalProgress(projectedAmountPaise, targetAmountPaise))
+  const achievementPct   = goal.targetAmountMinor > 0
+    ? Math.min(100, Goals.calculateGoalProgress(projectedAmountMinor, targetAmountMinor))
     : 100;
 
   const ratio       = requiredDailyAmount > 0 ? avgDailySavings / requiredDailyAmount : 2;
@@ -334,13 +334,13 @@ export function analyzeGoal(
   return {
     goalId:               goal.id,
     title:                goal.title,
-    targetAmountPaise:    goal.targetAmountPaise,
-    savedAmountPaise:     goal.savedAmountPaise,
+    targetAmountMinor:    goal.targetAmountMinor,
+    savedAmountMinor:     goal.savedAmountMinor,
     targetDate:           goal.deadline,
     daysRemaining,
-    requiredDailyAmountPaise:  Math.round(requiredDailyAmount),
-    actualDailyRatePaise:      Math.round(avgDailySavings),
-    projectedAmountPaise:      Math.round(projectedAmount),
+    requiredDailyAmountMinor:  Math.round(requiredDailyAmount),
+    actualDailyRateMinor:      Math.round(avgDailySavings),
+    projectedAmountMinor:      Math.round(projectedAmount),
     achievementPct:       Math.round(achievementPct * 10) / 10,
     probability,
     risk,
@@ -396,9 +396,9 @@ function buildMilestones(
   today:           Date,
 ): GoalMilestone[] {
   return MILESTONE_PCTS.map(pct => {
-    const targetForMilestone = goal.targetAmountPaise * (pct / 100);
-    const alreadyReached     = goal.savedAmountPaise >= targetForMilestone;
-    const amountStillNeeded  = Math.max(0, targetForMilestone - goal.savedAmountPaise);
+    const targetForMilestone = goal.targetAmountMinor * (pct / 100);
+    const alreadyReached     = goal.savedAmountMinor >= targetForMilestone;
+    const amountStillNeeded  = Math.max(0, targetForMilestone - goal.savedAmountMinor);
     const daysToMilestone    = avgDailySavings > 0
       ? Math.ceil(amountStillNeeded / avgDailySavings)
       : Infinity;
@@ -433,8 +433,8 @@ export function detectPatterns(
       peakDayOfWeek:        '—',
       lowestDayOfWeek:      '—',
       peakWeekOfMonth:      0,
-      avgTransactionSizePaise:   0,
-      largestTransactionPaise:   0,
+      avgTransactionSizeMinor:   0,
+      largestTransactionMinor:   0,
       mostFrequentCategory: '—',
       streakDaysUnderBudget: 0,
     };
@@ -449,7 +449,7 @@ export function detectPatterns(
     const day = SHORT_DAY[d.getUTCDay()];
     const key = day === 'Sun' ? 'Sun' : day;
     const slot = dowTotals.get(key)!;
-    slot.total += e.amountPaise;
+    slot.total += e.amountMinor;
     slot.count += 1;
   }
 
@@ -468,14 +468,14 @@ export function detectPatterns(
   for (const e of expenses) {
     const day  = parseInt(e.date.split('-')[2], 10);
     const week = Math.min(4, Math.ceil(day / 7));
-    weekOfMonthTotals[week] += e.amountPaise;
+    weekOfMonthTotals[week] += e.amountMinor;
   }
 
   const peakWeekOfMonth = weekOfMonthTotals.indexOf(
     Math.max(...weekOfMonthTotals.slice(1)),
   );
 
-  const amounts              = expenses.map(e => e.amountPaise);
+  const amounts              = expenses.map(e => e.amountMinor);
   const avgTransactionSize   = amounts.reduce((s, a) => s + a, 0) / amounts.length;
   const largestTransaction   = Math.max(...amounts);
 
@@ -496,8 +496,8 @@ export function detectPatterns(
     peakDayOfWeek:        peakDay.day,
     lowestDayOfWeek:      lowestDay.day,
     peakWeekOfMonth,
-    avgTransactionSizePaise:   Math.round(avgTransactionSize),
-    largestTransactionPaise:   Math.round(largestTransaction),
+    avgTransactionSizeMinor:   Math.round(avgTransactionSize),
+    largestTransactionMinor:   Math.round(largestTransaction),
     mostFrequentCategory,
     streakDaysUnderBudget,
   };
@@ -506,7 +506,7 @@ export function detectPatterns(
 function computeStreak(expenses: ExpenseDTO[], dailyBudget: number): number {
   const byDate = new Map<string, number>();
   for (const e of expenses) {
-    byDate.set(e.date, (byDate.get(e.date) ?? 0) + e.amountPaise);
+    byDate.set(e.date, (byDate.get(e.date) ?? 0) + e.amountMinor);
   }
 
   const today = new Date();

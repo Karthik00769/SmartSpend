@@ -2,8 +2,8 @@ import { BudgetSummaryDTO, GoalDTO } from '@/types/api';
 import { Analytics, Budget, Reports } from '../finance';
 
 export interface HealthScoreInput {
-  monthlyIncomePaise: number;
-  totalSpentPaise: number;
+  monthlyIncomeMinor: number;
+  totalSpentMinor: number;
   budgets: BudgetSummaryDTO;
   goals: GoalDTO[];
 }
@@ -37,10 +37,10 @@ export interface HealthScoreResult {
  * - Goal Progress (10%)
  */
 export function calculateHealthScore(data: HealthScoreInput): HealthScoreResult {
-  const { monthlyIncomePaise, totalSpentPaise, budgets, goals } = data;
+  const { monthlyIncomeMinor, totalSpentMinor, budgets, goals } = data;
 
   // Zero-state fix: If no data exists, score is strictly 0.
-  if (totalSpentPaise === 0 && budgets.categories.length === 0 && goals.length === 0) {
+  if (totalSpentMinor === 0 && budgets.categories.length === 0 && goals.length === 0) {
     return {
       score: 0,
       status: 'warning',
@@ -61,7 +61,7 @@ export function calculateHealthScore(data: HealthScoreInput): HealthScoreResult 
 
   // 1. Savings Rate (40 Points)
   // Target: Saving at least 20% of income yields full points.
-  const savingsRatePct = Analytics.calculateSavingsRate(monthlyIncomePaise, totalSpentPaise);
+  const savingsRatePct = Analytics.calculateSavingsRate(monthlyIncomeMinor, totalSpentMinor);
   
   let savingsRateScore = 0;
   if (savingsRatePct >= 20) {
@@ -79,25 +79,24 @@ export function calculateHealthScore(data: HealthScoreInput): HealthScoreResult 
   if (budgets.categories.length > 0) {
     const compliantCount = budgets.categories.filter((c) => !c.isOverBudget).length;
     budgetCompliancePct = Analytics.calculateCategoryPct(compliantCount, budgets.categories.length);
-    budgetComplianceScore = Reports.roundPaise(budgetCompliancePct * 0.3);
+    budgetComplianceScore = Reports.roundMinor(budgetCompliancePct * 0.3);
   }
 
   // 3. Spending Stability (20 Points)
   // Target: Ratio of overall spent to overall total budget cap across all categories.
   let spendingStabilityScore = 0; 
-  if (budgets.totalBudgetPaise > 0) {
-    const spendRatio = Budget.calculateBudgetProgress(totalSpentPaise, budgets.totalBudgetPaise) / 100;
+  if (budgets.totalBudgetMinor > 0) {
+    const spendRatio = Budget.calculateBudgetProgress(totalSpentMinor, budgets.totalBudgetMinor) / 100;
     
     if (spendRatio > 1.2) {
-      spendingStabilityScore = 0; // highly unstable/overboard
+      spendingStabilityScore = 0;
     } else if (spendRatio > 1) {
-      spendingStabilityScore = 10; // slightly over total budget buffer
+      spendingStabilityScore = 10;
     } else {
-      spendingStabilityScore = 20; // well within total defined boundaries
+      spendingStabilityScore = 20;
     }
-  } else if (monthlyIncomePaise > 0 && totalSpentPaise > 0) {
-    // If no budgets but spending exists, evaluate based on income
-    const incomeRatio = totalSpentPaise / monthlyIncomePaise;
+  } else if (monthlyIncomeMinor > 0 && totalSpentMinor > 0) {
+    const incomeRatio = totalSpentMinor / monthlyIncomeMinor;
     if (incomeRatio <= 0.5) spendingStabilityScore = 20;
     else if (incomeRatio <= 0.8) spendingStabilityScore = 10;
     else spendingStabilityScore = 0;
@@ -138,10 +137,10 @@ export function calculateHealthScore(data: HealthScoreInput): HealthScoreResult 
       budgetComplianceScore,
       spendingStabilityScore,
       goalProgressScore,
-      savingsRateScorePct:        Reports.roundPaise(Analytics.calculateCategoryPct(savingsRateScore, 40)),
-      budgetComplianceScorePct:   Reports.roundPaise(Analytics.calculateCategoryPct(budgetComplianceScore, 30)),
-      spendingStabilityScorePct:  Reports.roundPaise(Analytics.calculateCategoryPct(spendingStabilityScore, 20)),
-      goalProgressScorePct:       Reports.roundPaise(Analytics.calculateCategoryPct(goalProgressScore, 10)),
+      savingsRateScorePct:        Reports.roundMinor(Analytics.calculateCategoryPct(savingsRateScore, 40)),
+      budgetComplianceScorePct:   Reports.roundMinor(Analytics.calculateCategoryPct(budgetComplianceScore, 30)),
+      spendingStabilityScorePct:  Reports.roundMinor(Analytics.calculateCategoryPct(spendingStabilityScore, 20)),
+      goalProgressScorePct:       Reports.roundMinor(Analytics.calculateCategoryPct(goalProgressScore, 10)),
       savingsRatePct,
       budgetCompliancePct
     }

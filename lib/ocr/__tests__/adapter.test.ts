@@ -27,7 +27,7 @@ vi.mock('@/services/expense.service', () => ({
 }));
 
 vi.mock('@/services/budget.service', () => ({
-  listBudgets: vi.fn(async () => ({ categories: [], totalAllocatedPaise: 0 })),
+  listBudgets: vi.fn(async () => ({ categories: [], totalAllocatedminor: 0 })),
 }));
 
 vi.mock('@/lib/ai/expenseCategorizer', () => ({
@@ -114,7 +114,7 @@ describe('OCR Adapter — importReceiptRows', () => {
   it('skips a duplicate receipt (same merchant, amount, date)', async () => {
     const existing = [{
       merchant:    'STARBUCKS',
-      amountPaise: 35000,   // 350.00 INR = 35000 paise
+      amountMinor: 35000,   // 350.00 INR = 35000 minor
       date:        '2026-05-15',
     }];
 
@@ -163,13 +163,13 @@ describe('OCR Adapter — importReceiptRows', () => {
   it('does not flag as duplicate when amount exceeds tolerance', async () => {
     const existing = [{
       merchant:    'STARBUCKS',
-      amountPaise: 34000,  // 340 INR — 10 INR = 1000p difference from incoming 35000p
+      amountMinor: 34000,  // 340 INR — 10 INR = 1000p difference from incoming 35000p
       date:        '2026-05-15',
     }];
 
     const result = await importReceiptRows(
       [makeRow()],                                   // 350 INR = 35000p
-      { userId: USER_ID, existingReceipts: existing, amountTolerancePaise: 500 },
+      { userId: USER_ID, existingReceipts: existing, amountToleranceMinor: 500 },
       // tolerance = 500p = ₹5, delta = 1000p — should NOT be duplicate
     );
 

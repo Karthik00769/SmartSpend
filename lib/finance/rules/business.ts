@@ -9,16 +9,16 @@ import { calculateRemaining } from '../calculations/math';
 /**
  * Determines if a category's budget has been exceeded.
  */
-export function isBudgetExceeded(allocatedPaise: number, spentPaise: number): boolean {
-  return spentPaise > allocatedPaise;
+export function isBudgetExceeded(allocatedMinor: number, spentMinor: number): boolean {
+  return spentMinor > allocatedMinor;
 }
 
 /**
  * Determines if a goal is mathematically possible to reach by its deadline
  * given a steady savings velocity. (Placeholder logic for future advanced rules).
  */
-export function isGoalPossible(targetPaise: number, savedPaise: number, daysRemaining: number): boolean {
-  if (savedPaise >= targetPaise) return true;
+export function isGoalPossible(targetMinor: number, savedMinor: number, daysRemaining: number): boolean {
+  if (savedMinor >= targetMinor) return true;
   if (daysRemaining <= 0) return false;
   // A simplistic check: can they save the remainder? We assume yes for now unless days=0.
   return true; 
@@ -29,8 +29,8 @@ export function isGoalPossible(targetPaise: number, savedPaise: number, daysRema
  * Checks if amount, date, and description match exactly.
  */
 export function isDuplicateExpense(
-  amountPaiseA: number, dateA: string, descA: string,
-  amountPaiseB: number, dateB: string, descB: string
+  amountMinorA: number, dateA: string, descA: string,
+  amountMinorB: number, dateB: string, descB: string
 ): boolean {
-  return amountPaiseA === amountPaiseB && dateA === dateB && (descA || '').trim() === (descB || '').trim();
+  return amountMinorA === amountMinorB && dateA === dateB && (descA || '').trim() === (descB || '').trim();
 }

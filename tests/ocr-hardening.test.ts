@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as FinanceCore from '../lib/finance';
 
-describe('OCR Hardening - extractAmount (Canonical Paise)', () => {
+describe('OCR Hardening - extractAmount (Canonical minor)', () => {
   const cases = [
     { input: 'Total: ₹1,234.50', expected: 123450 },
     { input: 'AMOUNT Rs 1234', expected: 123400 },
@@ -34,10 +34,10 @@ describe('OCR Hardening - extractAmount (Canonical Paise)', () => {
   ];
 
   for (const c of cases) {
-    it(`should parse OCR amount ${c.input} as ${c.expected} paise`, () => {
+    it(`should parse OCR amount ${c.input} as ${c.expected} minor`, () => {
       const inr = FinanceCore.Parsing.extractAmount(c.input);
-      const paise = FinanceCore.Math.inrToPaise(inr);
-      expect(paise).toBe(c.expected);
+      const minor = FinanceCore.Math.inrToMinor(inr);
+      expect(minor).toBe(c.expected);
     });
   }
 });

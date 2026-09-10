@@ -32,7 +32,7 @@ describe('Expense Engine - Manual Entry Integration', () => {
     const raw = {
       userId: 'u1',
       categoryId: 3, // Food
-      amountPaise: 15000, // 150 INR (float)
+      amountMinor: 15000, // 150 INR (float)
       date: validDate,
       description: 'Zomato order',
       source: 'manual' as const,
@@ -45,9 +45,9 @@ describe('Expense Engine - Manual Entry Integration', () => {
     expect(result.processed.needsReview).toBe(false);
     expect(result.categorization.categoryId).toBe(3);
 
-    // DB Call — engine passes Paise directly to createExpense
+    // DB Call — engine passes minor directly to createExpense
     expect(createExpense).toHaveBeenCalledWith(expect.objectContaining({
-      amountPaise: 15000,   // 150 INR → 15000 paise
+      amountMinor: 15000,   // 150 INR → 15000 minor
       categorySource: 'manual',
     }));
   });
@@ -55,7 +55,7 @@ describe('Expense Engine - Manual Entry Integration', () => {
   it('invalid category: should reject manual entry if no categoryId is present', async () => {
     const raw = {
       userId: 'u1',
-      amountPaise: 15000,
+      amountMinor: 15000,
       date: validDate,
       description: 'Unknown expense',
       source: 'manual' as const,
@@ -73,7 +73,7 @@ describe('Expense Engine - Manual Entry Integration', () => {
     const raw = {
       userId: 'u1',
       categoryId: 4,
-      amountPaise: 10000,
+      amountMinor: 10000,
       date: validDate,
       description: 'Netflix', // Usually keywords trigger confidence 80
       source: 'manual' as const,

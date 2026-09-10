@@ -2,7 +2,7 @@
  * hooks/use-currency.ts
  * ─────────────────────────────────────────────────────────────────────
  * Provides currency formatting and symbol for the UI.
- * Now hardcoded to INR via FinanceCore since the system is canonicalized to Paise.
+ * Now hardcoded to INR via FinanceCore since the system is canonicalized to Minor.
  */
 'use client';
 
@@ -11,7 +11,7 @@ import { Format } from '@/lib/finance';
 
 export interface UseCurrencyReturn {
   currency: string;
-  fmt:      (amountPaise: number) => string;
+  fmt:      (amountMinor: number) => string;
   refresh:  () => void;
 }
 
@@ -23,7 +23,7 @@ export function useCurrency(): UseCurrencyReturn {
   const refresh = useCallback(() => {}, []);
 
   const fmt = useCallback(
-    (amountPaise: number) => Format.formatINR(amountPaise),
+    (amountMinor: number) => Format.formatINR(amountMinor),
     [],
   );
 

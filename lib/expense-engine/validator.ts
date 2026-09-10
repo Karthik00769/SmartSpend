@@ -12,7 +12,7 @@ import { MIN_AMOUNT_INR, MAX_AMOUNT_INR, MAX_DESCRIPTION_LENGTH } from '../finan
 import { isFutureDateIST } from '../finance/dates/timezone';
 
 const EngineInputSchema = z.object({
-  amountPaise: z.number().int().min(MIN_AMOUNT_INR * 100, `Amount must be at least ₹${MIN_AMOUNT_INR}`).max(MAX_AMOUNT_INR * 100, `Amount cannot exceed ₹${MAX_AMOUNT_INR}`),
+  amountMinor: z.number().int().min(MIN_AMOUNT_INR * 100, `Amount must be at least ₹${MIN_AMOUNT_INR}`).max(MAX_AMOUNT_INR * 100, `Amount cannot exceed ₹${MAX_AMOUNT_INR}`),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format.').refine(d => {
     const parsed = new Date(d + 'T00:00:00Z');
     return !isNaN(parsed.getTime());
@@ -89,7 +89,7 @@ export function enrichExpense(
   return {
     userId,
     categoryId,
-    amountPaise:   input.amountPaise,
+    amountMinor:   input.amountMinor,
     date:          input.date,
     description:   input.description?.trim() ?? '',
     week,

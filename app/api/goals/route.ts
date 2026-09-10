@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const { targetAmount, ...rest } = parsed.data as any;
-    const bodyData = { ...rest, targetPaise: FinanceCore.Math.inrToPaise(targetAmount) };
+    const bodyData = { ...rest, targetMinor: FinanceCore.Math.inrToMinor(targetAmount) };
     bodyData.userId = (session.user as any).id;
 
     // ── ENFORCE: deadline must be today or future ─────────────────────────────

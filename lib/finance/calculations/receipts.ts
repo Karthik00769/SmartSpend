@@ -14,8 +14,8 @@
 export interface NormalizedReceipt {
   /** Merchant name, already sanitized */
   merchant: string;
-  /** Amount in Paise (integer) */
-  amountPaise: number;
+  /** Amount in Minor (integer) */
+  amountMinor: number;
   /** ISO date string YYYY-MM-DD */
   date: string;
 }
@@ -29,7 +29,7 @@ export interface NormalizedReceipt {
  *
  * Duplicate criteria (ALL three must match within tolerance):
  *   1. Merchant name matches (case-insensitive, trimmed)
- *   2. Amount is within `amountTolerancePaise` (default 0 — exact match)
+ *   2. Amount is within `amountToleranceMinor` (default 0 — exact match)
  *   3. Date is within `dateDeltaDays` (default 0 — same day)
  *
  * @param incoming   The receipt to check
@@ -41,11 +41,11 @@ export function detectDuplicates(
   incoming:  NormalizedReceipt,
   existing:  NormalizedReceipt[],
   options: {
-    amountTolerancePaise?: number;
+    amountToleranceMinor?: number;
     dateDeltaDays?: number;
   } = {},
 ): number[] {
-  const { amountTolerancePaise = 0, dateDeltaDays = 0 } = options;
+  const { amountToleranceMinor = 0, dateDeltaDays = 0 } = options;
 
   const incomingMerchant = incoming.merchant.toLowerCase().trim();
   const incomingDate     = new Date(incoming.date).getTime();
@@ -61,8 +61,8 @@ export function detectDuplicates(
     if (!merchantMatch) continue;
 
     // 2. Amount tolerance
-    const amountDelta = Math.abs(candidate.amountPaise - incoming.amountPaise);
-    if (amountDelta > amountTolerancePaise) continue;
+    const amountDelta = Math.abs(candidate.amountMinor - incoming.amountMinor);
+    if (amountDelta > amountToleranceMinor) continue;
 
     // 3. Date proximity
     const candidateDate = new Date(candidate.date).getTime();
@@ -83,7 +83,7 @@ export function detectDuplicates(
 export function isDuplicate(
   incoming: NormalizedReceipt,
   existing: NormalizedReceipt[],
-  options?: { amountTolerancePaise?: number; dateDeltaDays?: number },
+  options?: { amountToleranceMinor?: number; dateDeltaDays?: number },
 ): boolean {
   return detectDuplicates(incoming, existing, options).length > 0;
 }

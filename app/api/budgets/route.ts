@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const { amount, ...rest } = parsed.data as any;
-    const bodyData = { ...rest, amountPaise: FinanceCore.Math.inrToPaise(amount) };
+    const bodyData = { ...rest, amountMinor: FinanceCore.Math.inrToMinor(amount) };
     bodyData.userId = (session.user as any).id;
 
     // ── ENFORCE ONLY CURRENT OR FUTURE MONTHS ────

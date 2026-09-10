@@ -14,7 +14,7 @@ export async function runInsightsEngine(context: InsightContextDTO): Promise<Ins
   };
 
   const geminiKey = process.env.GEMINI_API_KEY;
-  if (!geminiKey || context.savingsAnalysis.incomePaise <= 0) {
+  if (!geminiKey || context.savingsAnalysis.incomeMinor <= 0) {
     return output;
   }
 
@@ -27,8 +27,8 @@ export async function runInsightsEngine(context: InsightContextDTO): Promise<Ins
       `Do not force decisions. Give 2-3 optional, actionable suggestions.`,
       `Be concise (max 120 words). Use plain language, no markdown.`,
       ``,
-      `Income: ${context.savingsAnalysis.incomePaise}`,
-      `Total spent: ${context.savingsAnalysis.totalSpentPaise}`,
+      `Income: ${context.savingsAnalysis.incomeMinor}`,
+      `Total spent: ${context.savingsAnalysis.totalSpentMinor}`,
       `Savings rate: ${savingsAnalysis.savingsRate}% (${savingsAnalysis.classification})`,
       `Health score: ${score.overall}/100`,
       ``,

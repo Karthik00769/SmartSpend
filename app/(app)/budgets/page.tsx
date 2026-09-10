@@ -5,6 +5,7 @@ import { useSmartSpend } from '@/context/smartspend-context';
 import { BudgetForm }    from '@/components/sections/budget/budget-form';
 import { BudgetTracker } from '@/components/sections/dashboard/budget-tracker';
 import { Card }          from '@/components/ui/card';
+import { EmptyState }    from '@/components/ui/EmptyState';
 import * as FinanceCore from '@/lib/finance';
 import { Button }        from '@/components/ui/button';
 import {
@@ -91,23 +92,23 @@ export default function BudgetPage() {
           {[
             {
               label: 'Total Budget',
-              value: `${fmt(FinanceCore.Math.paiseToInr(budget.totalBudgetPaise))}`,
+              value: `${fmt(FinanceCore.Math.minorToInr(budget.totalBudgetMinor))}`,
               icon: '📋',
               cls: 'text-foreground',
             },
             {
               label: 'Total Spent',
-              value: `${fmt(FinanceCore.Math.paiseToInr(budget.totalSpentPaise))}`,
+              value: `${fmt(FinanceCore.Math.minorToInr(budget.totalSpentMinor))}`,
               icon: '💸',
-              cls: budget.totalSpentPaise > budget.totalBudgetPaise
+              cls: budget.totalSpentMinor > budget.totalBudgetMinor
                 ? 'text-red-600 dark:text-red-400'
                 : 'text-foreground',
             },
             {
               label: 'Remaining',
-              value: `${fmt(FinanceCore.Math.paiseToInr(FinanceCore.Math.subtract(budget.totalBudgetPaise, budget.totalSpentPaise)))}`,
+              value: `${fmt(FinanceCore.Math.minorToInr(FinanceCore.Math.subtract(budget.totalBudgetMinor, budget.totalSpentMinor)))}`,
               icon: '💰',
-              cls: FinanceCore.Budget.isBudgetExceeded(budget.totalSpentPaise, budget.totalBudgetPaise)
+              cls: FinanceCore.Budget.isBudgetExceeded(budget.totalSpentMinor, budget.totalBudgetMinor)
                 ? 'text-red-600 dark:text-red-400'
                 : 'text-green-600 dark:text-green-400',
             },
@@ -153,12 +154,11 @@ export default function BudgetPage() {
                 fmt={fmt}
               />
             ) : (
-              <Card className="p-12 text-center">
-                <p className="text-4xl mb-3">💡</p>
-                <p className="text-muted-foreground">
-                  No budgets set yet. Use the form to set your first category limit.
-                </p>
-              </Card>
+              <EmptyState
+                title="No budgets set yet"
+                description="Use the form to set your first category limit."
+                icon="💡"
+              />
             )}
           </div>
         </div>

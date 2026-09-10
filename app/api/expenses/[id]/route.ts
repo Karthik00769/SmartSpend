@@ -48,7 +48,7 @@ export async function PATCH(
     const patchPayload: Parameters<typeof updateExpense>[2] = { ...safeRest, categoryId };
     
     if (amount !== undefined) {
-      patchPayload.amountPaise = FinanceCore.Math.inrToPaise(amount);
+      patchPayload.amountMinor = FinanceCore.Math.inrToMinor(amount);
     }
 
     const updated = await updateExpense(id, userId, patchPayload);

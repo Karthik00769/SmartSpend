@@ -14,7 +14,7 @@ function getPrevMonth(year: number, month: number): Period {
 }
 
 function prevPrevSummaryTotal(expenses: ExpenseDTO[]): number {
-  return expenses.reduce((s, e) => s + e.amountPaise, 0);
+  return expenses.reduce((s, e) => s + e.amountMinor, 0);
 }
 
 export async function buildInsightContext(
@@ -39,15 +39,15 @@ export async function buildInsightContext(
     listExpenses({ userId, year: prevPrevMonth.year, month: prevPrevMonth.month, limit: 500 }),
     listBudgets({ userId, year, month }),
     listGoals({ userId, status: 'active' }),
-    query<{ monthly_income_paise: string }[]>(`SELECT monthly_income_paise FROM users WHERE id = ? LIMIT 1`, [userId]),
+    query<{ monthly_income_minor: string }[]>(`SELECT monthly_income_minor FROM users WHERE id = ? LIMIT 1`, [userId]),
   ]);
 
-  const monthlyIncomePaise = parseInt(userRows[0]?.monthly_income_paise ?? '0', 10);
-  const monthlyIncome      = FinanceMath.paiseToInr(monthlyIncomePaise);
-  const dailyBudget        = monthlyIncomePaise > 0 ? FinanceMath.paiseToInr(monthlyIncomePaise) / 30 : 0;
+  const monthlyIncomeMinor = parseInt(userRows[0]?.monthly_income_minor ?? '0', 10);
+  const monthlyIncome      = FinanceMath.minorToInr(monthlyIncomeMinor);
+  const dailyBudget        = monthlyIncomeMinor > 0 ? FinanceMath.minorToInr(monthlyIncomeMinor) / 30 : 0;
 
   const budgetMap = new Map<number, number>(
-    budgetSummary.categories.map(c => [c.categoryId, c.allocatedPaise]),
+    budgetSummary.categories.map(c => [c.categoryId, c.allocatedMinor]),
   );
 
   const [currentSummary, prevSummary] = [
@@ -139,7 +139,7 @@ export async function buildInsightContext(
     categoryName:      c.name,
     icon:              c.icon,
     color:             c.color,
-    totalPaise:        c.totalSpent,
+    totalMinor:        c.totalSpent,
     percentageOfTotal: Reports.calculateCategoryPercentage(c.totalSpent, totalCurrentSpend),
   }));
 
@@ -156,10 +156,10 @@ export async function buildInsightContext(
       icon:         c.icon,
       trend,
       trendPct:     Reports.roundPct(Math.abs(delta.percentage)),
-      currentSpendPaise: c.totalSpent,
-      prevSpendPaise:    prev,
+      currentSpendMinor: c.totalSpent,
+      prevSpendMinor:    prev,
     };
-  }).sort((a, b) => b.currentSpendPaise - a.currentSpendPaise);
+  }).sort((a, b) => b.currentSpendMinor - a.currentSpendMinor);
 
   const prevPrevCats = buildCategorySummaries(prevPrevExpenses, new Map());
   const prevPrevCatMap = new Map(prevPrevCats.map(c => [c.categoryId, c.totalSpent]));
@@ -175,8 +175,8 @@ export async function buildInsightContext(
       anomalies.push({
         categoryName: c.name,
         icon:         c.icon,
-        currentSpendPaise: c.totalSpent,
-        avgPrevSpendPaise: Reports.calculateTwoMonthAverage(p1, p2),
+        currentSpendMinor: c.totalSpent,
+        avgPrevSpendMinor: Reports.calculateTwoMonthAverage(p1, p2),
         spikeRatio:   Reports.calculateSpikeRatio(c.totalSpent, avg),
         message:      `${c.name} spending is ${Reports.calculateSpikeRatio(c.totalSpent, avg)}× your recent average — unusually high this month.`,
       });
@@ -185,9 +185,9 @@ export async function buildInsightContext(
 
   const savingsRate = currentSummary.savingsRate;
   const savingsAnalysis: SavingsAnalysis = {
-    incomePaise:         monthlyIncomePaise,
-    totalSpentPaise:     currentSummary.totalSpent,
-    savingsPaise:        currentSummary.savings,
+    incomeMinor:     monthlyIncomeMinor,
+    totalSpentMinor: currentSummary.totalSpent,
+    savingsMinor:    currentSummary.savings,
     savingsRate,
     classification: Reports.classifySavingsRate(savingsRate),
   };
@@ -200,24 +200,24 @@ export async function buildInsightContext(
       year:       prevPrevMonth.year,
       month:      prevPrevMonth.month,
       label:      `${MONTH_NAMES[prevPrevMonth.month]} ${prevPrevMonth.year}`,
-      totalSpentPaise: prevPrevSummary.totalSpent,
-      savingsPaise:    prevPrevSummary.savings,
+      totalSpentMinor: prevPrevSummary.totalSpent,
+      savingsMinor:    prevPrevSummary.savings,
       savingsRate: prevPrevSummary.savingsRate,
     },
     {
       year:       prevMonth.year,
       month:      prevMonth.month,
       label:      `${MONTH_NAMES[prevMonth.month]} ${prevMonth.year}`,
-      totalSpentPaise: prevSummary.totalSpent,
-      savingsPaise:    prevSummary.savings,
+      totalSpentMinor: prevSummary.totalSpent,
+      savingsMinor:    prevSummary.savings,
       savingsRate: prevSummary.savingsRate,
     },
     {
       year,
       month,
       label:      `${MONTH_NAMES[month]} ${year}`,
-      totalSpentPaise: currentSummary.totalSpent,
-      savingsPaise:    currentSummary.savings,
+      totalSpentMinor: currentSummary.totalSpent,
+      savingsMinor:    currentSummary.savings,
       savingsRate: currentSummary.savingsRate,
     },
   ];

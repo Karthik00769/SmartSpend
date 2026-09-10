@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { DesktopSidebar, MobileTopBar, MobileOverlaySidebar } from './navigation';
+import { DesktopSidebar, MobileTopBar, MobileBottomTabBar } from './navigation';
 import { OfflineBanner } from '@/components/ui/offline-banner';
 import { useSmartSpend } from '@/context/smartspend-context';
 
@@ -14,7 +14,6 @@ function getInitialCollapsed(): boolean {
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [isMobile, setIsMobile] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
   // Mirror the sidebar collapsed state so we can adjust the main margin
   const [collapsed, setCollapsed] = useState(getInitialCollapsed);
 
@@ -51,15 +50,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (isMobile) {
     return (
-      <div className="flex flex-col min-h-screen bg-background">
-        <MobileTopBar onOpen={() => setMobileOpen(true)} />
-        <MobileOverlaySidebar open={mobileOpen} onClose={() => setMobileOpen(false)} />
+      <div className="flex flex-col min-h-screen bg-background pb-16">
+        <MobileTopBar onOpen={() => {}} />
         {banner}
         <main className="flex-1 overflow-y-auto pt-14">
           <div className="max-w-2xl mx-auto px-4 py-5">
             {children}
           </div>
         </main>
+        <MobileBottomTabBar />
       </div>
     );
   }

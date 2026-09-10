@@ -4,9 +4,9 @@ export type GoalStatus = 'on_track' | 'at_risk' | 'completed' | 'overdue';
  * Calculates the progress of a goal as a percentage (0-100).
  * If target is 0, returns 100 if anything is saved, else 0.
  */
-export function calculateGoalProgress(savedPaise: number, targetPaise: number): number {
-  if (targetPaise <= 0) return savedPaise >= 0 ? 100 : 0;
-  const progress = (savedPaise / targetPaise) * 100;
+export function calculateGoalProgress(savedMinor: number, targetMinor: number): number {
+  if (targetMinor <= 0) return savedMinor >= 0 ? 100 : 0;
+  const progress = (savedMinor / targetMinor) * 100;
   return progress; // Do not cap at 100 here to allow showing > 100% in backend, UI can cap if it wants, wait, let's keep it raw
 }
 
@@ -14,31 +14,31 @@ export function calculateGoalProgress(savedPaise: number, targetPaise: number): 
  * Calculates the remaining amount needed to reach the goal.
  * Returns 0 if already completed.
  */
-export function calculateGoalRemaining(savedPaise: number, targetPaise: number): number {
-  return Math.max(0, targetPaise - savedPaise);
+export function calculateGoalRemaining(savedMinor: number, targetMinor: number): number {
+  return Math.max(0, targetMinor - savedMinor);
 }
 
 /**
  * Checks if the goal is fully funded.
  */
-export function isGoalCompleted(savedPaise: number, targetPaise: number): boolean {
-  return savedPaise >= targetPaise;
+export function isGoalCompleted(savedMinor: number, targetMinor: number): boolean {
+  return savedMinor >= targetMinor;
 }
 
 /**
  * Calculates the required monthly savings to meet the goal on time.
  */
-export function calculateRequiredMonthlySavings(remainingPaise: number, monthsRemaining: number): number {
-  if (remainingPaise <= 0) return 0;
-  if (monthsRemaining <= 0) return remainingPaise; // Need it all right now
-  return Math.ceil(remainingPaise / monthsRemaining);
+export function calculateRequiredMonthlySavings(remainingMinor: number, monthsRemaining: number): number {
+  if (remainingMinor <= 0) return 0;
+  if (monthsRemaining <= 0) return remainingMinor; // Need it all right now
+  return Math.ceil(remainingMinor / monthsRemaining);
 }
 
 /**
  * Determines the status of the goal.
  */
-export function calculateGoalStatus(savedPaise: number, targetPaise: number, targetDateISO: string): GoalStatus {
-  if (isGoalCompleted(savedPaise, targetPaise)) {
+export function calculateGoalStatus(savedMinor: number, targetMinor: number, targetDateISO: string): GoalStatus {
+  if (isGoalCompleted(savedMinor, targetMinor)) {
     return 'completed';
   }
 

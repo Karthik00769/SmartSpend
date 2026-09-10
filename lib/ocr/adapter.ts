@@ -7,7 +7,7 @@
  *   RawReceipt[]
  *     → FinanceCore.Parsing.extractAmount()   (INR float from string)
  *     → FinanceCore.Parsing.extractDate()     (YYYY-MM-DD from string)
- *     → FinanceCore.Math.inrToPaise()         (Paise integer)
+ *     → FinanceCore.Math.inrToMinor()         (minor integer)
  *     → FinanceCore.Receipts.isDuplicate()    (skip if seen)
  *     → ExpenseEngine.processExpense()        (validate + persist)
  *
@@ -39,8 +39,8 @@ export interface OCRImportOptions {
    * Caller is responsible for supplying this list.
    */
   existingReceipts?: NormalizedReceipt[];
-  /** Paise tolerance for duplicate amount matching (default: 0 = exact) */
-  amountTolerancePaise?: number;
+  /** minor tolerance for duplicate amount matching (default: 0 = exact) */
+  amountToleranceMinor?: number;
   /** Day window for duplicate date matching (default: 0 = same day) */
   dateDeltaDays?: number;
 }
@@ -77,7 +77,7 @@ export async function importReceiptRows(
   const {
     userId,
     existingReceipts       = [],
-    amountTolerancePaise   = 0,
+    amountToleranceMinor   = 0,
     dateDeltaDays          = 0,
   } = options;
 
@@ -123,15 +123,15 @@ export async function importReceiptRows(
         continue;
       }
 
-      // ── 3. Convert to Paise via FinanceCore ───────────────────────────────
-      const amountPaise = FinanceMath.inrToPaise(amountInr);
+      // ── 3. Convert to minor via FinanceCore ───────────────────────────────
+      const amountMinor = FinanceMath.inrToMinor(amountInr);
 
       // ── 4. Sanitize merchant via FinanceCore ──────────────────────────────
       const merchant = Parsing.sanitizeMerchantName(row.merchantRaw);
 
       // ── 5. Duplicate detection via FinanceCore.Receipts ───────────────────
-      const candidate: NormalizedReceipt = { merchant, amountPaise, date: dateISO };
-      if (Receipts.isDuplicate(candidate, seenThisBatch, { amountTolerancePaise, dateDeltaDays })) {
+      const candidate: NormalizedReceipt = { merchant, amountMinor, date: dateISO };
+      if (Receipts.isDuplicate(candidate, seenThisBatch, { amountToleranceMinor, dateDeltaDays })) {
         result.duplicates++;
         result.skipped++;
         continue;
@@ -140,7 +140,7 @@ export async function importReceiptRows(
       // ── 6. Pass through ExpenseEngine (validate + persist) ────────────────
       await processExpense(
         {
-          amountPaise: amountPaise,       // ExpenseEngine validator expects amount in paise
+          amountMinor: amountMinor,       // ExpenseEngine validator expects amount in minor
           date:        dateISO,
           description: merchant,
           source:      'receipt_scan' as const,

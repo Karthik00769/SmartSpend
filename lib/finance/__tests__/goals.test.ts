@@ -61,10 +61,10 @@ describe('FinanceCore.Goals', () => {
     it('returns total remaining if less than a month', () => {
       expect(Goals.calculateRequiredMonthlySavings(50000, 0)).toBe(50000);
     });
-    it('returns 0 if no remaining paise', () => {
+    it('returns 0 if no remaining minor', () => {
       expect(Goals.calculateRequiredMonthlySavings(0, 5)).toBe(0);
     });
-    it('rounds up to nearest integer paise', () => {
+    it('rounds up to nearest integer minor', () => {
       expect(Goals.calculateRequiredMonthlySavings(100000, 3)).toBe(33334);
     });
   });

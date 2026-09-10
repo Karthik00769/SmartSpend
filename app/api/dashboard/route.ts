@@ -11,7 +11,7 @@ interface MonthlyStats {
 }
 
 interface UserRow {
-  monthly_income_paise: string;
+  monthly_income_minor: string;
 }
 
 interface CategoryRow {
@@ -38,41 +38,42 @@ export async function GET(req: NextRequest) {
     const [statsRow] = await query<MonthlyStats[]>(`
       SELECT
         COUNT(e.id)                                                         AS total_transactions,
-        COALESCE(SUM(e.amount_paise), 0)                                    AS total_spent
+        COALESCE(SUM(e.amount_minor), 0)                                    AS total_spent
 
       FROM users u
       LEFT JOIN expenses e
         ON e.user_id = u.id
        AND YEAR(e.expense_date)  = ?
        AND MONTH(e.expense_date) = ?
+       AND e.deleted_at IS NULL
       WHERE u.id = ?
-      GROUP BY u.id, u.monthly_income_paise
+      GROUP BY u.id, u.monthly_income_minor
     `, [year, month, userId]);
 
     const [userRow] = await query<UserRow[]>(
-      `SELECT monthly_income_paise FROM users WHERE id = ?`,
+      `SELECT monthly_income_minor FROM users WHERE id = ?`,
       [userId]
     );
 
-    const totalIncome  = parseFloat(userRow?.monthly_income_paise ?? '0');
+    const totalIncome  = parseFloat(userRow?.monthly_income_minor ?? '0');
     const totalSpent   = parseFloat(statsRow?.total_spent ?? '0');
     const savings      = Analytics.calculateSavings(totalIncome, totalSpent);
 
     const categories = await query<CategoryRow[]>(`
       SELECT
         COALESCE(c.name, bc.name)                        AS category,
-        COALESCE(SUM(e.amount_paise), 0)                 AS total_spent,
-        COALESCE(b.limit_paise, 0)                       AS limit_amount
+        COALESCE(SUM(e.amount_minor), 0)                 AS total_spent,
+        COALESCE(b.limit_minor, 0)                       AS limit_amount
       FROM (
-        SELECT DISTINCT category_id FROM expenses WHERE user_id = ? AND YEAR(expense_date) = ? AND MONTH(expense_date) = ?
+        SELECT DISTINCT category_id FROM expenses WHERE user_id = ? AND YEAR(expense_date) = ? AND MONTH(expense_date) = ? AND deleted_at IS NULL
         UNION
-        SELECT DISTINCT category_id FROM budgets WHERE user_id = ? AND year = ? AND month = ?
+        SELECT DISTINCT category_id FROM budgets WHERE user_id = ? AND year = ? AND month = ? AND deleted_at IS NULL
       ) as cats
-      LEFT JOIN expenses e ON e.category_id = cats.category_id AND e.user_id = ? AND YEAR(e.expense_date) = ? AND MONTH(e.expense_date) = ?
-      LEFT JOIN budgets b ON b.category_id = cats.category_id AND b.user_id = ? AND b.year = ? AND b.month = ?
+      LEFT JOIN expenses e ON e.category_id = cats.category_id AND e.user_id = ? AND YEAR(e.expense_date) = ? AND MONTH(e.expense_date) = ? AND e.deleted_at IS NULL
+      LEFT JOIN budgets b ON b.category_id = cats.category_id AND b.user_id = ? AND b.year = ? AND b.month = ? AND b.deleted_at IS NULL
       LEFT JOIN categories c ON e.category_id = c.id
       LEFT JOIN categories bc ON b.category_id = bc.id
-      GROUP BY COALESCE(c.name, bc.name), b.limit_paise
+      GROUP BY COALESCE(c.name, bc.name), b.limit_minor
       ORDER BY total_spent DESC
     `, [userId, year, month, userId, year, month, userId, year, month, userId, year, month]);
 
@@ -100,13 +101,13 @@ export async function GET(req: NextRequest) {
         icon:  '📌',
       })),
       budgetCategories: categories.map(c => {
-        const allocatedPaise = parseFloat(c.limit_amount);
-        const spentPaise     = parseFloat(c.total_spent);
+        const allocatedMinor = parseFloat(c.limit_amount);
+        const spentMinor     = parseFloat(c.total_spent);
         
-        const allocated = FinanceMath.paiseToInr(allocatedPaise);
-        const spent     = FinanceMath.paiseToInr(spentPaise);
+        const allocated = FinanceMath.minorToInr(allocatedMinor);
+        const spent     = FinanceMath.minorToInr(spentMinor);
         
-        const usedPct = allocatedPaise > 0 ? Budget.calculateBudgetProgress(spentPaise, allocatedPaise) : null;
+        const usedPct = allocatedMinor > 0 ? Budget.calculateBudgetProgress(spentMinor, allocatedMinor) : null;
         
         return {
           category:    c.category,
@@ -114,10 +115,10 @@ export async function GET(req: NextRequest) {
           allocated,
           spent,
           usedPct:     usedPct ? Math.round(usedPct * 100) / 100 : null,
-          isOverBudget: Budget.isBudgetExceeded(spentPaise, allocatedPaise),
-          status:      Budget.calculateBudgetStatus(spentPaise, allocatedPaise),
-          needsAlert:  Budget.needsBudgetAlert(spentPaise, allocatedPaise),
-          remaining:   Budget.calculateRemainingBudget(spentPaise, allocatedPaise) / 100,
+          isOverBudget: Budget.isBudgetExceeded(spentMinor, allocatedMinor),
+          status:      Budget.calculateBudgetStatus(spentMinor, allocatedMinor),
+          needsAlert:  Budget.needsBudgetAlert(spentMinor, allocatedMinor),
+          remaining:   Budget.calculateRemainingBudget(spentMinor, allocatedMinor) / 100,
           month,
           year,
         };

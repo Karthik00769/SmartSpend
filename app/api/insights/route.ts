@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
         listGoals({ userId: queryData.userId, status: 'active' } as any)
       ]);
 
-      const totalSpent  = summary.totalSpentPaise;
+      const totalSpent  = summary.totalSpentMinor;
       const topCat      = categories[0];
 
       // Rule-based insights derived entirely from DB data — no AI hallucination
@@ -64,10 +64,10 @@ export async function GET(req: NextRequest) {
 
       // 1. Top spending category
       if (topCat && totalSpent > 0) {
-        const pct = Math.round(Analytics.calculateCategoryPct(topCat.totalPaise, totalSpent));
+        const pct = Math.round(Analytics.calculateCategoryPct(topCat.totalMinor, totalSpent));
         newInsights.push({
           type:    'monthly_summary',
-          content: `Your top spending category this month is ${topCat.name} at ${(topCat.totalPaise / 100).toFixed(2)} (${pct}% of total spend).`,
+          content: `Your top spending category this month is ${topCat.name} at ${(topCat.totalMinor / 100).toFixed(2)} (${pct}% of total spend).`,
         });
       }
 
@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
       for (const b of budgets.categories.filter(b => b.isOverBudget).slice(0, 2)) {
         newInsights.push({
           type:    'budget_exceeded',
-          content: `You've exceeded your ${b.category} budget by ${Math.abs(b.remainingPaise / 100).toFixed(2)} (${(b.spentPaise / 100).toFixed(2)} spent vs ${(b.allocatedPaise / 100).toFixed(2)} limit).`,
+          content: `You've exceeded your ${b.category} budget by ${Math.abs(b.remainingMinor / 100).toFixed(2)} (${(b.spentMinor / 100).toFixed(2)} spent vs ${(b.allocatedMinor / 100).toFixed(2)} limit).`,
         });
       }
 
@@ -83,7 +83,7 @@ export async function GET(req: NextRequest) {
       for (const b of budgets.categories.filter(b => !b.isOverBudget && (b.usedPct ?? 0) >= 80).slice(0, 1)) {
         newInsights.push({
           type:    'overspending_alert',
-          content: `You're at ${b.usedPct?.toFixed(0)}% of your ${b.category} budget — ${(b.remainingPaise / 100).toFixed(2)} remaining.`,
+          content: `You're at ${b.usedPct?.toFixed(0)}% of your ${b.category} budget — ${(b.remainingMinor / 100).toFixed(2)} remaining.`,
         });
       }
 
@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
         const pct = g.progressPct;
         newInsights.push({
           type:    pct >= 75 ? 'savings_opportunity' : 'goal_at_risk',
-          content: `Your "${g.title}" goal is ${pct}% complete (${(g.savedAmountPaise / 100).toFixed(2)} of ${(g.targetAmountPaise / 100).toFixed(2)} saved).`,
+          content: `Your "${g.title}" goal is ${pct}% complete (${(g.savedAmountMinor / 100).toFixed(2)} of ${(g.targetAmountMinor / 100).toFixed(2)} saved).`,
         });
       }
 

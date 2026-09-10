@@ -2,15 +2,15 @@
  * lib/finance/calculations/reports.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * FinanceCore.Reports — owns ALL reporting and analytics calculations.
- * Integer-safe, Paise-first, deterministic.
+ * Integer-safe, Minor-first, deterministic.
  */
 
 /**
- * Round a paise integer value to a clean 2-decimal representation (still integer).
+ * Round a minor integer value to a clean 2-decimal representation (still integer).
  * Useful for totals that must stay integer after reduce ops.
  */
-export function roundPaise(paise: number): number {
-  return Math.round(paise);
+export function roundMinor(minor: number): number {
+  return Math.round(minor);
 }
 
 /**
@@ -38,52 +38,52 @@ export function clamp(value: number, min: number, max: number): number {
  * Safe percentage of a category within a total.
  * Returns 0 on zero denominator.
  */
-export function calculateCategoryPercentage(categoryPaise: number, totalPaise: number): number {
-  if (totalPaise <= 0) return 0;
-  return roundPct((categoryPaise / totalPaise) * 100);
+export function calculateCategoryPercentage(categoryMinor: number, totalMinor: number): number {
+  if (totalMinor <= 0) return 0;
+  return roundPct((categoryMinor / totalMinor) * 100);
 }
 
 /**
- * Calculate savings from income and spent (Paise).
+ * Calculate savings from income and spent (Minor).
  * Returns 0 if income <= 0. Never returns negative.
  */
-export function calculateSavingsPaise(incomePaise: number, spentPaise: number): number {
-  if (incomePaise <= 0) return 0;
-  return Math.max(0, incomePaise - spentPaise);
+export function calculateSavingsMinor(incomeMinor: number, spentMinor: number): number {
+  if (incomeMinor <= 0) return 0;
+  return Math.max(0, incomeMinor - spentMinor);
 }
 
 /**
  * Calculate savings rate as a percentage.
  * Returns 0 if income <= 0.
  */
-export function calculateSavingsRate(incomePaise: number, spentPaise: number): number {
-  if (incomePaise <= 0) return 0;
-  const savings = Math.max(0, incomePaise - spentPaise);
-  return roundPct((savings / incomePaise) * 100);
+export function calculateSavingsRate(incomeMinor: number, spentMinor: number): number {
+  if (incomeMinor <= 0) return 0;
+  const savings = Math.max(0, incomeMinor - spentMinor);
+  return roundPct((savings / incomeMinor) * 100);
 }
 
 /**
  * Calculate expense growth percentage between two periods.
  */
-export function calculateExpenseGrowthPct(currentPaise: number, previousPaise: number): number {
-  if (previousPaise <= 0) return 0;
-  return roundPct(((currentPaise - previousPaise) / previousPaise) * 100);
+export function calculateExpenseGrowthPct(currentMinor: number, previousMinor: number): number {
+  if (previousMinor <= 0) return 0;
+  return roundPct(((currentMinor - previousMinor) / previousMinor) * 100);
 }
 
 /**
  * Calculate average spend from a total and a count.
  */
-export function calculateAverageSpend(totalPaise: number, count: number): number {
+export function calculateAverageSpend(totalMinor: number, count: number): number {
   if (count <= 0) return 0;
-  return roundPaise(totalPaise / count);
+  return roundMinor(totalMinor / count);
 }
 
 /**
  * Calculate daily average spend from a monthly total.
  */
-export function calculateDailyAverage(totalPaise: number, daysInMonth: number): number {
+export function calculateDailyAverage(totalMinor: number, daysInMonth: number): number {
   if (daysInMonth <= 0) return 0;
-  return roundPaise(totalPaise / daysInMonth);
+  return roundMinor(totalMinor / daysInMonth);
 }
 
 /**
@@ -98,41 +98,41 @@ export function classifySavingsRate(savingsRatePct: number): 'low' | 'moderate' 
 /**
  * Determine spending trend direction.
  */
-export function determineTrendDirection(currentPaise: number, previousPaise: number): 'up' | 'down' | 'stable' {
-  const pct = calculateExpenseGrowthPct(currentPaise, previousPaise);
+export function determineTrendDirection(currentMinor: number, previousMinor: number): 'up' | 'down' | 'stable' {
+  const pct = calculateExpenseGrowthPct(currentMinor, previousMinor);
   if (Math.abs(pct) < 1) return 'stable';
-  return currentPaise > previousPaise ? 'up' : 'down';
+  return currentMinor > previousMinor ? 'up' : 'down';
 }
 
 /**
  * Calculate monthly comparison: returns growth pct and direction.
  */
 export function calculateMonthlyComparison(
-  currentPaise: number,
-  previousPaise: number,
+  currentMinor: number,
+  previousMinor: number,
 ): { growthPct: number; direction: 'up' | 'down' | 'stable' } {
   return {
-    growthPct:  calculateExpenseGrowthPct(currentPaise, previousPaise),
-    direction:  determineTrendDirection(currentPaise, previousPaise),
+    growthPct:  calculateExpenseGrowthPct(currentMinor, previousMinor),
+    direction:  determineTrendDirection(currentMinor, previousMinor),
   };
 }
 
 /**
  * Calculate anomaly spike ratio: current spend vs two-month average.
  */
-export function calculateSpikeRatio(currentPaise: number, avgPrevPaise: number): number {
-  if (avgPrevPaise <= 0) return 0;
-  return roundRatio(currentPaise / avgPrevPaise);
+export function calculateSpikeRatio(currentMinor: number, avgPrevMinor: number): number {
+  if (avgPrevMinor <= 0) return 0;
+  return roundRatio(currentMinor / avgPrevMinor);
 }
 
 /**
  * Calculate the two-month average for anomaly detection.
  * Ignores periods with 0 spend (not counted in divisor).
  */
-export function calculateTwoMonthAverage(prev1Paise: number, prev2Paise: number): number {
-  const divisor = (prev1Paise > 0 ? 1 : 0) + (prev2Paise > 0 ? 1 : 0);
+export function calculateTwoMonthAverage(prev1Minor: number, prev2Minor: number): number {
+  const divisor = (prev1Minor > 0 ? 1 : 0) + (prev2Minor > 0 ? 1 : 0);
   if (divisor === 0) return 0;
-  return roundPaise((prev1Paise + prev2Paise) / divisor);
+  return roundMinor((prev1Minor + prev2Minor) / divisor);
 }
 
 /**

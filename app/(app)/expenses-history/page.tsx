@@ -10,6 +10,8 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ListSkeleton } from '@/components/ui/LoadingSkeleton';
 import { apiGet, apiPatch, apiDelete, buildQuery, ApiRequestError } from '@/lib/api-client';
 import { format } from 'date-fns';
 import type { ExpenseDTO } from '@/types/api';
@@ -49,7 +51,7 @@ function EditRow({ expense, categories, onSave, onCancel, saving }: {
   saving:     boolean;
 }) {
   const [form, setForm] = useState<EditState>({
-    amount:       String(FinanceCore.Math.paiseToInr(expense.amountPaise)),
+    amount:       String(FinanceCore.Math.minorToInr(expense.amountMinor)),
     description:  expense.description,
     categoryName: expense.categoryName,
     categoryId:   String(expense.categoryId ?? ''),
@@ -121,6 +123,66 @@ function EditRow({ expense, categories, onSave, onCancel, saving }: {
         </div>
       </TableCell>
     </TableRow>
+  );
+}
+
+function MobileEditCard({ expense, categories, onSave, onCancel, saving }: {
+  expense:    ExpenseDTO;
+  categories: Category[];
+  onSave:     (id: string, patch: EditState) => Promise<void>;
+  onCancel:   () => void;
+  saving:     boolean;
+}) {
+  const [form, setForm] = useState<EditState>({
+    amount:       String(FinanceCore.Math.minorToInr(expense.amountMinor)),
+    description:  expense.description,
+    categoryName: expense.categoryName,
+    categoryId:   String(expense.categoryId ?? ''),
+    date:         expense.date,
+  });
+
+  const set = (k: keyof EditState) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm(p => ({ ...p, [k]: e.target.value }));
+
+  const isManual = !expense.source || expense.source === 'manual';
+
+  return (
+    <div className="p-4 rounded-xl border-2 border-primary/20 bg-primary/5 flex flex-col gap-3 shadow-sm animate-in fade-in zoom-in-95 duration-200">
+      <div className="flex gap-2">
+        {isManual ? (
+          <Select
+            value={form.categoryId}
+            onValueChange={v => {
+              const cat = categories.find(c => String(c.id) === v);
+              setForm(p => ({ ...p, categoryId: v, categoryName: cat?.label ?? p.categoryName }));
+            }}
+          >
+            <SelectTrigger className="h-9 flex-1"><SelectValue placeholder="Category" /></SelectTrigger>
+            <SelectContent>
+              {categories.map(c => (
+                <SelectItem key={c.id} value={String(c.id)}>
+                  <span className="mr-1">{c.icon}</span>{c.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Input value={form.categoryName} onChange={set('categoryName')} className="h-9 flex-1" placeholder="Category" />
+        )}
+        <Input type="date" value={form.date} onChange={set('date')} className="h-9 w-32 shrink-0 text-xs" />
+      </div>
+      <Input value={form.description} onChange={set('description')} className="h-9" placeholder="Description" />
+      <div className="flex items-center gap-2">
+        <span className="text-xl font-bold text-muted-foreground">$</span>
+        <Input type="number" step="0.01" min="0.01" value={form.amount} onChange={set('amount')} className="h-10 text-lg font-bold flex-1" />
+      </div>
+      <div className="flex gap-2 justify-end mt-1">
+        <Button size="sm" variant="outline" className="h-9 flex-1" onClick={onCancel}>Cancel</Button>
+        <Button size="sm" className="h-9 flex-1" disabled={saving} onClick={() => onSave(expense.id, form)}>
+          {saving ? '…' : 'Save'}
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -286,7 +348,9 @@ export default function ExpensesHistoryPage() {
             ⚠️ {error}
           </div>
         )}
-        <div className="overflow-x-auto">
+        
+        {/* Desktop View */}
+        <div className="hidden md:block overflow-x-auto">
           <Table>
             <TableHeader className="bg-muted/40">
               <TableRow>
@@ -301,16 +365,32 @@ export default function ExpensesHistoryPage() {
             </TableHeader>
             <TableBody>
               {loading && (
-                <TableRow>
-                  <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
-                    <span className="animate-spin inline-block mr-2">⌛</span>Loading…
-                  </TableCell>
-                </TableRow>
+                [...Array(4)].map((_, i) => (
+                  <TableRow key={`skel-${i}`}>
+                    <TableCell><div className="h-4 w-16 bg-muted animate-pulse rounded"></div></TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <div className="h-8 w-8 bg-muted animate-pulse rounded-full"></div>
+                        <div className="h-4 w-24 bg-muted animate-pulse rounded"></div>
+                      </div>
+                    </TableCell>
+                    <TableCell><div className="h-4 w-32 bg-muted animate-pulse rounded"></div></TableCell>
+                    <TableCell><div className="h-4 w-20 bg-muted animate-pulse rounded"></div></TableCell>
+                    <TableCell><div className="h-5 w-16 bg-muted animate-pulse rounded-full"></div></TableCell>
+                    <TableCell><div className="h-4 w-16 bg-muted animate-pulse rounded ml-auto"></div></TableCell>
+                    <TableCell></TableCell>
+                  </TableRow>
+                ))
               )}
               {!loading && expenses.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
-                    No expenses found. Try adjusting your filters.
+                  <TableCell colSpan={7} className="h-64 py-8">
+                    <EmptyState
+                      title="No expenses found"
+                      description="Try adjusting your filters or date range."
+                      icon="💸"
+                      className="border-none shadow-none bg-transparent"
+                    />
                   </TableCell>
                 </TableRow>
               )}
@@ -346,7 +426,7 @@ export default function ExpensesHistoryPage() {
                     <TableCell className="text-xs text-muted-foreground">{exp.date}</TableCell>
                     <TableCell><SourceBadge source={exp.source} /></TableCell>
                     <TableCell className="text-right font-bold tabular-nums">
-                      ${FinanceCore.Math.paiseToInr(exp.amountPaise).toFixed(2)}
+                      ${FinanceCore.Math.minorToInr(exp.amountMinor).toFixed(2)}
                     </TableCell>
                     <TableCell className="no-print">
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
@@ -364,6 +444,77 @@ export default function ExpensesHistoryPage() {
               )}
             </TableBody>
           </Table>
+        </div>
+
+        {/* Mobile View */}
+        <div className="md:hidden flex flex-col divide-y divide-border/40">
+          {loading && (
+            <div className="p-4">
+              <ListSkeleton />
+            </div>
+          )}
+          {!loading && expenses.length === 0 && (
+            <div className="p-4">
+              <EmptyState
+                title="No expenses found"
+                description="Try adjusting your filters."
+                icon="💸"
+                className="border-none shadow-none bg-transparent"
+              />
+            </div>
+          )}
+          {!loading && expenses.map(exp => 
+            editingId === exp.id ? (
+              <div key={exp.id} className="p-3">
+                <MobileEditCard
+                  expense={exp}
+                  categories={categories}
+                  onSave={handleSave}
+                  onCancel={() => setEditingId(null)}
+                  saving={savingId === exp.id}
+                />
+              </div>
+            ) : (
+              <div key={exp.id} className="p-4 hover:bg-muted/30 transition-colors flex flex-col gap-2 relative group">
+                <div className="flex justify-between items-start gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center text-lg shrink-0">
+                      {exp.categoryIcon}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-foreground truncate text-sm">
+                        {exp.categoryName}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                        {exp.description || '—'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="font-bold text-foreground tabular-nums text-sm">
+                      ${FinanceCore.Math.minorToInr(exp.amountMinor).toFixed(2)}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      {exp.date}
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex justify-between items-center mt-1">
+                  <SourceBadge source={exp.source} />
+                  <div className="flex gap-2">
+                    <button onClick={() => setEditingId(exp.id)}
+                      className="text-xs w-8 h-8 flex items-center justify-center rounded-lg bg-muted/50 hover:bg-primary/10 hover:text-primary transition-colors active:scale-95"
+                      title="Edit">✏️</button>
+                    <button onClick={() => handleDelete(exp.id)}
+                      disabled={deletingId === exp.id}
+                      className="text-xs w-8 h-8 flex items-center justify-center rounded-lg bg-muted/50 hover:bg-red-500/10 hover:text-red-500 transition-colors disabled:opacity-50 active:scale-95"
+                      title="Delete">{deletingId === exp.id ? '…' : '🗑️'}</button>
+                  </div>
+                </div>
+              </div>
+            )
+          )}
         </div>
 
         {totalPages > 1 && (

@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
 
     return ok({
       ...profile,
-      monthly_income: FinanceCore.Math.paiseToInr(profile.monthlyIncomePaise)
+      monthly_income: FinanceCore.Math.minorToInr(profile.monthlyIncomeMinor)
     });
   } catch (err: any) {
     console.error('[GET /api/settings/profile] ERROR:', err?.message ?? err, err?.stack);
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
     const success = await updateUserProfile(userId, {
       name:           parsed.data.name,
       email:          parsed.data.email,
-      monthlyIncomePaise: FinanceCore.Math.inrToPaise(parsed.data.monthly_income),
+      monthlyIncomeMinor: FinanceCore.Math.inrToMinor(parsed.data.monthly_income),
       currency:       parsed.data.currency,
       timezone:       parsed.data.timezone,
       preferences:    parsed.data.preferences as any,

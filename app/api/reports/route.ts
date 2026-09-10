@@ -19,11 +19,11 @@ interface MonthlyRow {
   yr:                 number;
   mo:                 number;
   month_label:        string;
-  total_spent_paise:  string;
+  total_spent_minor:  string;
 }
 
 interface UserRow {
-  monthly_income_paise: string;
+  monthly_income_minor: string;
 }
 
 export async function GET(req: NextRequest) {
@@ -36,12 +36,12 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const months = Reports.clamp(Number(searchParams.get('months') ?? 6), 1, 24);
 
-    // Get user income (Paise)
+    // Get user income (minor units)
     const userRows = await query<UserRow[]>(
-      `SELECT monthly_income_paise FROM users WHERE id = ?`,
+      `SELECT monthly_income_minor FROM users WHERE id = ?`,
       [userId]
     );
-    const monthlyIncomePaise = parseInt(userRows[0]?.monthly_income_paise ?? '0', 10);
+    const monthlyIncomeMinor = parseInt(userRows[0]?.monthly_income_minor ?? '0', 10);
 
     // Monthly totals for the past N months (including current)
     const rows = await query<MonthlyRow[]>(`
@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
         YEAR(e.expense_date)                                AS yr,
         MONTH(e.expense_date)                               AS mo,
         DATE_FORMAT(e.expense_date, '%b %Y')                AS month_label,
-        COALESCE(SUM(e.amount_paise), 0)                    AS total_spent_paise
+        COALESCE(SUM(e.amount_minor), 0)                    AS total_spent_minor
       FROM expenses e
       WHERE
         e.user_id = ?
@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
     const currentYear = now.getFullYear();
 
     const latestMonth = rows.find(r => r.mo === currentMonth && r.yr === currentYear);
-    const totalSpentPaise = latestMonth ? parseInt(latestMonth.total_spent_paise, 10) : 0;
+    const totalSpentMinor = latestMonth ? parseInt(latestMonth.total_spent_minor, 10) : 0;
 
     const [budgets, goals] = await Promise.all([
       listBudgets({ userId, month: currentMonth, year: currentYear }),
@@ -79,25 +79,25 @@ export async function GET(req: NextRequest) {
     ]);
 
     const healthData = calculateHealthScore({
-      monthlyIncomePaise,
-      totalSpentPaise,
+      monthlyIncomeMinor,
+      totalSpentMinor,
       budgets,
       goals
     });
 
     return ok({
       monthlyData: rows.map(r => {
-        const spentPaise   = parseInt(r.total_spent_paise, 10);
-        const savingsPaise = Reports.calculateSavingsPaise(monthlyIncomePaise, spentPaise);
+        const spentMinor   = parseInt(r.total_spent_minor, 10);
+        const savingsMinor = Reports.calculateSavingsMinor(monthlyIncomeMinor, spentMinor);
         return {
           month:         r.month_label,
-          incomePaise:   monthlyIncomePaise,
-          expensesPaise: spentPaise,
-          savingsPaise,
+          incomeMinor:   monthlyIncomeMinor,
+          expensesMinor: spentMinor,
+          savingsMinor,
           // Backwards-compat INR floats for the existing chart component
-          income:   FinanceMath.paiseToInr(monthlyIncomePaise),
-          expenses: FinanceMath.paiseToInr(spentPaise),
-          savings:  FinanceMath.paiseToInr(savingsPaise),
+          income:   FinanceMath.minorToInr(monthlyIncomeMinor),
+          expenses: FinanceMath.minorToInr(spentMinor),
+          savings:  FinanceMath.minorToInr(savingsMinor),
         };
       }),
       health: {

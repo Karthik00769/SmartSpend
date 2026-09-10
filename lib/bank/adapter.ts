@@ -43,13 +43,13 @@ export async function importBankTransactions(
           return;
         }
 
-        // Convert to Paise
-        const amountPaise = FinanceCore.Math.inrToPaise(amountInr);
+        // Convert to Minor
+        const amountMinor = FinanceCore.Math.inrToMinor(amountInr);
 
         const validationInput = {
           userId,
           categoryId: 1, // Fallback
-          amountPaise,
+          amountMinor,
           date: dateStr,
           merchantName: merchantStr,
           description: raw.referenceRaw || merchantStr
@@ -69,7 +69,7 @@ export async function importBankTransactions(
         const engineResult = await processExpense({
           userId,
           categoryId: undefined,
-          amountPaise: amountPaise,
+          amountMinor: amountMinor,
           date: dateStr,
           description: raw.referenceRaw || merchantStr,
           source: 'bank_import'
