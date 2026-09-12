@@ -47,3 +47,11 @@ export async function query<T = unknown>(sql: string, params?: any[]): Promise<T
   return rows as T;
 }
 
+/**
+ * Get a connection from the pool for transaction management.
+ * Caller MUST call connection.release() when done.
+ */
+export async function getConnection() {
+  return await pool.getConnection();
+}
+

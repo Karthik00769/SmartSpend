@@ -5,6 +5,7 @@ import { query }        from '@/lib/db';
 import { buildMonthlySummary, buildCategorySummaries } from '@/lib/expense-engine/aggregator';
 import { Insights, Math as FinanceMath, Reports } from '@/lib/finance';
 import { getISOWeek, getWeekStart } from '@/lib/expense-engine/validator';
+import { startOfWeekIST, endOfWeekIST, formatDateIST, nowIST } from '@/lib/time/time.service';
 
 import type { InsightContextDTO, ExpenseDTO, Period, TopCategory, CategoryTrendSummary, SpendingAnomaly, SavingsAnalysis, MonthlyBreakdown, WeekPeriod } from '@/types/api';
 
@@ -60,39 +61,44 @@ export async function buildInsightContext(
     buildCategorySummaries(prevExpenses, new Map()),
   ];
 
-  // Week-over-week
-  const today     = new Date();
-  const thisWeek  = getISOWeek(today);
-  const weekStart = getWeekStart(today);
-  const weekEnd   = new Date(weekStart);
-  weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
-  const prevWeekStart = new Date(weekStart);
-  prevWeekStart.setUTCDate(prevWeekStart.getUTCDate() - 7);
-  const prevWeekEnd = new Date(prevWeekStart);
-  prevWeekEnd.setUTCDate(prevWeekEnd.getUTCDate() + 6);
+  // Week-over-week using IST
+  const today = nowIST();
+  const weekStartDate = startOfWeekIST(today);
+  const weekEndDate = endOfWeekIST(today);
+  
+  const prevWeekStartDate = new Date(weekStartDate);
+  prevWeekStartDate.setDate(prevWeekStartDate.getDate() - 7);
+  const prevWeekEndDate = new Date(weekStartDate);
+  prevWeekEndDate.setDate(prevWeekEndDate.getDate() - 1);
+
+  const weekStart = formatDateIST(weekStartDate);
+  const weekEnd = formatDateIST(weekEndDate);
+  const prevWeekStart = formatDateIST(prevWeekStartDate);
+  const prevWeekEnd = formatDateIST(prevWeekEndDate);
+
+  const thisWeek = getISOWeek(today);
 
   const currWeekExpenses = [...currentExpenses, ...prevExpenses].filter(e => {
-    return e.date >= weekStart.toISOString().slice(0, 10) &&
-           e.date <= weekEnd.toISOString().slice(0, 10);
+    return e.date >= weekStart && e.date <= weekEnd;
   });
 
   const prevWeekExpenses = [...currentExpenses, ...prevExpenses].filter(e => {
-    return e.date >= prevWeekStart.toISOString().slice(0, 10) &&
-           e.date <= prevWeekEnd.toISOString().slice(0, 10);
+    return e.date >= prevWeekStart && e.date <= prevWeekEnd;
   });
 
   let wowResult = null;
   if (currWeekExpenses.length > 0 || prevWeekExpenses.length > 0) {
     const currentWeekPeriod: WeekPeriod = {
       year, weekNumber: thisWeek,
-      startDate: weekStart.toISOString().slice(0, 10),
-      endDate:   weekEnd.toISOString().slice(0, 10),
+      startDate: weekStart,
+      endDate:   weekEnd,
     };
+    const prevWeekYear = prevWeekStartDate.getMonth() === 11 && today.getMonth() === 0 ? year - 1 : year;
     const prevWeekPeriod: WeekPeriod = {
-      year: prevWeekStart.getUTCFullYear(),
+      year: prevWeekYear,
       weekNumber: thisWeek - 1 > 0 ? thisWeek - 1 : 52,
-      startDate: prevWeekStart.toISOString().slice(0, 10),
-      endDate:   prevWeekEnd.toISOString().slice(0, 10),
+      startDate: prevWeekStart,
+      endDate:   prevWeekEnd,
     };
     wowResult = Insights.buildWeekOverWeek(
       currWeekExpenses, prevWeekExpenses,

@@ -1,3 +1,10 @@
+/**
+ * @deprecated This health score implementation uses 40/30/20/10 weighting.
+ * For consistency, consider migrating to Insights.computeHealthScore() which uses 35/25/25/15.
+ * This implementation is kept for backwards compatibility with Reports API.
+ * TODO: Migrate Reports API to use Insights.computeHealthScore() and remove this file.
+ */
+
 import { BudgetSummaryDTO, GoalDTO } from '@/types/api';
 import { Core } from '../finance';
 
@@ -26,6 +33,9 @@ export interface HealthScoreResult {
   recommendations: string[];
 }
 
+/**
+ * @deprecated Use Insights.computeHealthScore() for consistency across the application
+ */
 export function calculateHealthScore(data: HealthScoreInput): HealthScoreResult {
   const { monthlyIncomeMinor, totalSpentMinor, budgets, goals } = data;
   const recommendations: string[] = [];

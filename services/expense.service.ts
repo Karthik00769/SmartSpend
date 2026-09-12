@@ -1,11 +1,12 @@
 import pool, { query } from '@/lib/db';
-import { Rules as FinanceRules } from '@/lib/finance';
+import { Rules as FinanceRules, Core } from '@/lib/finance';
 import type {
   GetExpensesQuery,
   ExpenseDTO,
   ExpenseCreateDTO,
 } from '@/types/api';
 import { ResultSetHeader } from 'mysql2';
+import { getMonthBoundariesIST } from '@/lib/time/time.service';
 
 interface ExpenseRow {
   id: string;
@@ -58,8 +59,18 @@ export async function listExpenses(params: GetExpensesQuery): Promise<ExpenseDTO
   `;
   const args: (string | number)[] = [String(userId)];
 
-  if (year) { sql += ' AND YEAR(e.expense_date) = ?'; args.push(Number(year)); }
-  if (month) { sql += ' AND MONTH(e.expense_date) = ?'; args.push(Number(month)); }
+  // Replace YEAR/MONTH with date range filtering
+  if (year && month) {
+    const { startStr, endStr } = getMonthBoundariesIST(Number(year), Number(month));
+    sql += ' AND e.expense_date >= ? AND e.expense_date < ?';
+    args.push(startStr, endStr);
+  } else if (year) {
+    const { startStr: janStart } = getMonthBoundariesIST(Number(year), 1);
+    const { endStr: decEnd } = getMonthBoundariesIST(Number(year), 12);
+    sql += ' AND e.expense_date >= ? AND e.expense_date < ?';
+    args.push(janStart, decEnd);
+  }
+  
   if (startDate) { sql += ' AND e.expense_date >= ?'; args.push(String(startDate)); }
   if (endDate) { sql += ' AND e.expense_date <= ?'; args.push(String(endDate)); }
   if (minAmountMinor) { sql += ' AND e.amount_minor >= ?'; args.push(Number(minAmountMinor)); }
@@ -92,8 +103,18 @@ export async function countExpenses(params: any): Promise<number> {
   `;
   const args: (string | number)[] = [String(userId)];
 
-  if (year) { sql += ' AND YEAR(e.expense_date) = ?'; args.push(Number(year)); }
-  if (month) { sql += ' AND MONTH(e.expense_date) = ?'; args.push(Number(month)); }
+  // Replace YEAR/MONTH with date range filtering
+  if (year && month) {
+    const { startStr, endStr } = getMonthBoundariesIST(Number(year), Number(month));
+    sql += ' AND e.expense_date >= ? AND e.expense_date < ?';
+    args.push(startStr, endStr);
+  } else if (year) {
+    const { startStr: janStart } = getMonthBoundariesIST(Number(year), 1);
+    const { endStr: decEnd } = getMonthBoundariesIST(Number(year), 12);
+    sql += ' AND e.expense_date >= ? AND e.expense_date < ?';
+    args.push(janStart, decEnd);
+  }
+  
   if (startDate) { sql += ' AND e.expense_date >= ?'; args.push(String(startDate)); }
   if (endDate) { sql += ' AND e.expense_date <= ?'; args.push(String(endDate)); }
   if (minAmountMinor) { sql += ' AND e.amount_minor >= ?'; args.push(Number(minAmountMinor)); }
@@ -115,24 +136,72 @@ export async function updateExpense(
   userId: string,
   patch: { amountMinor?: number; description?: string; categoryId?: number; date?: string },
 ): Promise<ExpenseDTO> {
+  // 1. Get old values BEFORE update for audit trail
+  const [oldRow] = await query<ExpenseRow[]>(
+    `SELECT e.*, c.name AS category_name, c.icon AS category_icon
+     FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
+     WHERE e.id = ? AND e.user_id = ? AND e.deleted_at IS NULL`,
+    [id, userId],
+  );
+  
+  if (!oldRow) throw new Error('Expense not found.');
+
+  // 2. Check 24-hour immutability rule
+  const createdAt = new Date(oldRow.created_at);
+  const now = new Date();
+  const hoursSinceCreation = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
+  
+  if (hoursSinceCreation > 24) {
+    throw new Error('This expense is locked and can no longer be edited.');
+  }
+
+  const oldValues = {
+    amount_minor: Number(oldRow.amount_minor),
+    description: oldRow.description,
+    category_id: oldRow.category_id,
+    expense_date: oldRow.expense_date,
+  };
+
   const sets: string[] = [];
   const args: (string | number)[] = [];
+  const newValues: any = {};
 
-  if (patch.amountMinor != null) { sets.push('amount_minor = ?'); args.push(patch.amountMinor); }
-  if (patch.description != null) { sets.push('description = ?'); args.push(patch.description); }
-  if (patch.categoryId != null) { sets.push('category_id = ?'); args.push(patch.categoryId); }
-  if (patch.date != null) { sets.push('expense_date = ?'); args.push(patch.date); }
+  if (patch.amountMinor != null) { 
+    sets.push('amount_minor = ?'); 
+    args.push(patch.amountMinor); 
+    newValues.amount_minor = patch.amountMinor;
+  }
+  if (patch.description != null) { 
+    sets.push('description = ?'); 
+    args.push(patch.description); 
+    newValues.description = patch.description;
+  }
+  if (patch.categoryId != null) { 
+    sets.push('category_id = ?'); 
+    args.push(patch.categoryId); 
+    newValues.category_id = patch.categoryId;
+  }
+  if (patch.date != null) { 
+    sets.push('expense_date = ?'); 
+    args.push(patch.date); 
+    newValues.expense_date = patch.date;
+  }
 
   if (sets.length === 0) throw new Error('Nothing to update.');
 
   sets.push('updated_at = NOW()');
   args.push(id, userId);
 
+  // 3. Log to expense_audit_log BEFORE making changes (LEDGER IMMUTABILITY)
+  await logExpenseAudit(Number(id), userId, 'UPDATE', oldValues, newValues);
+
+  // 4. Perform update
   await query<ResultSetHeader>(
     `UPDATE expenses SET ${sets.join(', ')} WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
     args,
   );
 
+  // 5. Get updated row
   const [row] = await query<ExpenseRow[]>(
     `SELECT e.*, c.name AS category_name, c.icon AS category_icon
      FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
@@ -141,17 +210,162 @@ export async function updateExpense(
   );
   if (!row) throw new Error('Expense not found after update.');
 
-  await logAuditEvent(userId, 'EXPENSE_UPDATED', 'EXPENSE', Number(id), patch);
+  // 6. Log to general audit_logs
+  await logAuditEvent(userId, 'EXPENSE_UPDATED', 'EXPENSE', Number(id), { oldValues, newValues });
+  
   return toDTO(row);
 }
 
-export async function softDeleteExpense(id: string, userId: string): Promise<void> {
+export async function softDeleteExpense(id: string, userId: string, reason?: string): Promise<void> {
+  // Get expense details before deletion for audit
+  const [expense] = await query<ExpenseRow[]>(
+    `SELECT * FROM expenses WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+    [id, userId]
+  );
+  
+  if (!expense) throw new Error('Expense not found or already deleted.');
+
+  const oldValues = {
+    amount_minor: Number(expense.amount_minor),
+    description: expense.description,
+    category_id: expense.category_id,
+    expense_date: expense.expense_date,
+  };
+
+  // Log to expense_audit_log
+  await logExpenseAudit(Number(id), userId, 'DELETE', oldValues, null, reason);
+
   const result = await query<ResultSetHeader>(
-    `UPDATE expenses SET deleted_at = NOW() WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+    `UPDATE expenses 
+     SET deleted_at = NOW(), deleted_by = ?, delete_reason = ?
+     WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+    [userId, reason || null, id, userId],
+  );
+  
+  if (result.affectedRows === 0) throw new Error('Expense not found or already deleted.');
+  
+  await logAuditEvent(userId, 'EXPENSE_DELETED', 'EXPENSE', Number(id), { reason });
+}
+
+/**
+ * Restore soft-deleted expense
+ */
+export async function restoreExpense(id: string, userId: string): Promise<ExpenseDTO> {
+  // Check if expense exists and is deleted
+  const [expense] = await query<ExpenseRow[]>(
+    `SELECT * FROM expenses WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL`,
+    [id, userId]
+  );
+  
+  if (!expense) throw new Error('Expense not found or not deleted.');
+
+  const oldValues = {
+    deleted_at: expense.deleted_at,
+    deleted_by: expense.user_id,
+  };
+
+  // Log restore to expense_audit_log
+  await logExpenseAudit(Number(id), userId, 'RESTORE', oldValues, { restored: true });
+
+  // Restore the expense
+  await query<ResultSetHeader>(
+    `UPDATE expenses 
+     SET deleted_at = NULL, deleted_by = NULL, delete_reason = NULL, 
+         restored_at = NOW(), restored_by = ?
+     WHERE id = ? AND user_id = ?`,
+    [userId, id, userId],
+  );
+
+  // Get restored expense
+  const [row] = await query<ExpenseRow[]>(
+    `SELECT e.*, c.name AS category_name, c.icon AS category_icon
+     FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
+     WHERE e.id = ? AND e.user_id = ?`,
     [id, userId],
   );
-  if (result.affectedRows === 0) throw new Error('Expense not found or already deleted.');
-  await logAuditEvent(userId, 'EXPENSE_DELETED', 'EXPENSE', Number(id), {});
+
+  if (!row) throw new Error('Expense not found after restore.');
+
+  await logAuditEvent(userId, 'EXPENSE_RESTORED', 'EXPENSE', Number(id), {});
+  
+  return toDTO(row);
+}
+
+/**
+ * Log expense audit trail entry
+ */
+async function logExpenseAudit(
+  expenseId: number,
+  userId: string,
+  operation: 'CREATE' | 'UPDATE' | 'DELETE' | 'RESTORE',
+  oldValues: any | null,
+  newValues: any | null,
+  reason?: string
+): Promise<void> {
+  const crypto = require('crypto');
+  
+  // Get previous hash for this expense
+  const [lastLog] = await query<{ entry_hash: string }[]>(
+    `SELECT entry_hash FROM expense_audit_log 
+     WHERE expense_id = ? ORDER BY id DESC LIMIT 1`,
+    [expenseId]
+  );
+  
+  const previousHash = lastLog?.entry_hash || '0'.repeat(64);
+  
+  // Create payload for hashing
+  const payload = JSON.stringify({
+    expenseId,
+    userId,
+    operation,
+    oldValues,
+    newValues,
+    timestamp: new Date().toISOString(),
+  });
+
+  const entryHash = crypto
+    .createHash('sha256')
+    .update(previousHash + payload)
+    .digest('hex');
+
+  // Create human-readable summary
+  let summary = '';
+  if (operation === 'UPDATE' && oldValues && newValues) {
+    const changes: string[] = [];
+    for (const key in newValues) {
+      if (oldValues[key] !== newValues[key]) {
+        changes.push(`${key}: ${oldValues[key]} → ${newValues[key]}`);
+      }
+    }
+    summary = changes.join('; ');
+  } else if (operation === 'DELETE') {
+    summary = `Expense deleted: ${oldValues?.description || 'N/A'}`;
+  } else if (operation === 'CREATE') {
+    summary = `Expense created: ${newValues?.description || 'N/A'}`;
+  } else if (operation === 'RESTORE') {
+    summary = 'Expense restored from deleted state';
+  }
+
+  // Insert audit log
+  await query(
+    `INSERT INTO expense_audit_log 
+     (expense_id, user_id, operation, old_values, new_values, changes_summary, 
+      changed_by, previous_hash, entry_hash, reason, sequence_no)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
+       (SELECT COALESCE(MAX(s.sequence_no), 0) + 1 FROM expense_audit_log s))`,
+    [
+      expenseId,
+      userId,
+      operation,
+      oldValues ? JSON.stringify(oldValues) : null,
+      newValues ? JSON.stringify(newValues) : null,
+      summary,
+      userId,
+      previousHash,
+      entryHash,
+      reason || null,
+    ]
+  );
 }
 
 import { logAuditEvent } from './audit.service';
@@ -260,7 +474,10 @@ export async function createExpense(input: ExpenseCreateDTO): Promise<ExpenseDTO
     [result.insertId],
   );
 
-  await logAuditEvent(userId, 'EXPENSE_ADDED', 'EXPENSE', result.insertId, { amountMinor, categoryId, Date, description });
+  await logAuditEvent(userId, 'EXPENSE_ADDED', 'EXPENSE', result.insertId, { amountMinor, categoryId, expenseDate, description });
+  
+  // Log to expense_audit_log for immutable trail
+  await logExpenseAudit(result.insertId, userId, 'CREATE', null, { amountMinor, categoryId, expenseDate, description, source, categorySource });
 
   return toDTO(row);
 }
@@ -269,30 +486,45 @@ export async function monthlyExpenseSummary(
   userId: string,
   year: number,
   month: number,
-): Promise<{ totalSpentMinor: number; transactionCount: number; dailyAvgMinor: number }> {
+): Promise<{ totalSpentMinor: number; transactionCount: number; dailyAvgMinor: number; savingsRate: number }> {
   interface SummaryRow {
     total_spent_minor: string;
     transaction_count: string;
     daily_avg_minor: string;
   }
 
+  const { startStr, endStr } = getMonthBoundariesIST(year, month);
+  const daysInMonth = new Date(year, month, 0).getDate();
+
   const [row] = await query<SummaryRow[]>(
     `SELECT
-       COALESCE(SUM(amount_minor), 0)                                       AS total_spent_minor,
-       COUNT(id)                                                            AS transaction_count,
-       ROUND(COALESCE(SUM(amount_minor), 0) / NULLIF(DAY(LAST_DAY(STR_TO_DATE(CONCAT(?, '-', LPAD(?, 2, '0'), '-01'), '%Y-%m-%d'))), 0), 0) AS daily_avg_minor
+       COALESCE(SUM(amount_minor), 0) AS total_spent_minor,
+       COUNT(id) AS transaction_count,
+       ROUND(COALESCE(SUM(amount_minor), 0) / ?, 0) AS daily_avg_minor
      FROM expenses
-     WHERE user_id    = ?
+     WHERE user_id = ?
        AND deleted_at IS NULL
-       AND YEAR(expense_date)  = ?
-       AND MONTH(expense_date) = ?`,
-    [year, month, userId, year, month],
+       AND expense_date >= ?
+       AND expense_date < ?`,
+    [daysInMonth, userId, startStr, endStr],
   );
 
+  // Get user's monthly income for savings rate calculation
+  const [userRow] = await query<{ monthly_income_minor: string }[]>(
+    `SELECT monthly_income_minor FROM users WHERE id = ? LIMIT 1`,
+    [userId],
+  );
+  const monthlyIncomeMinor = Number(userRow?.monthly_income_minor ?? 0);
+  const totalSpentMinor = parseInt(row?.total_spent_minor || '0', 10);
+
+  // Use canonical savings rate formula
+  const savingsRate = Core.calculateSavingsRate(monthlyIncomeMinor, totalSpentMinor);
+
   return {
-    totalSpentMinor: parseInt(row?.total_spent_minor || '0', 10),
+    totalSpentMinor,
     transactionCount: parseInt(row?.transaction_count || '0', 10),
     dailyAvgMinor: parseInt(row?.daily_avg_minor || '0', 10),
+    savingsRate,
   };
 }
 
@@ -308,6 +540,8 @@ export async function categoryWiseTotals(
     total: string;
   }
 
+  const { startStr, endStr } = getMonthBoundariesIST(year, month);
+
   const rows = await query<CatRow[]>(
     `SELECT
        e.category_id,
@@ -316,13 +550,13 @@ export async function categoryWiseTotals(
        SUM(e.amount_minor) AS total
      FROM expenses e
      JOIN categories c ON e.category_id = c.id
-     WHERE e.user_id    = ?
+     WHERE e.user_id = ?
        AND e.deleted_at IS NULL
-       AND YEAR(e.expense_date)  = ?
-       AND MONTH(e.expense_date) = ?
+       AND e.expense_date >= ?
+       AND e.expense_date < ?
      GROUP BY e.category_id, c.name, c.icon
      ORDER BY total DESC`,
-    [userId, year, month],
+    [userId, startStr, endStr],
   );
 
   return rows.map((r) => ({
@@ -334,6 +568,21 @@ export async function categoryWiseTotals(
 }
 
 export async function getMonthlyTrends(userId: string, months = 6): Promise<{ month_label: string; total_spent_minor: string }[]> {
+  // Calculate start date for N months ago in IST
+  const { currentMonthIST, currentYearIST } = await import('@/lib/time/time.service');
+  const currentMonth = currentMonthIST();
+  const currentYear = currentYearIST();
+  
+  let startYear = currentYear;
+  let startMonth = currentMonth - months + 1;
+  
+  if (startMonth <= 0) {
+    startYear = currentYear - 1;
+    startMonth = 12 + startMonth;
+  }
+  
+  const { startStr } = getMonthBoundariesIST(startYear, startMonth);
+
   const sql = `
     SELECT
       DATE_FORMAT(expense_date, '%b %Y') AS month_label,
@@ -341,9 +590,9 @@ export async function getMonthlyTrends(userId: string, months = 6): Promise<{ mo
     FROM expenses
     WHERE user_id    = ?
       AND deleted_at IS NULL
-      AND expense_date >= DATE_FORMAT(DATE_SUB(NOW(), INTERVAL ? MONTH), '%Y-%m-01')
-    GROUP BY YEAR(expense_date), MONTH(expense_date), DATE_FORMAT(expense_date, '%b %Y')
-    ORDER BY YEAR(expense_date) ASC, MONTH(expense_date) ASC
+      AND expense_date >= ?
+    GROUP BY DATE_FORMAT(expense_date, '%Y-%m')
+    ORDER BY DATE_FORMAT(expense_date, '%Y-%m') ASC
   `;
-  return query<{ month_label: string; total_spent_minor: string }[]>(sql, [userId, months]);
+  return query<{ month_label: string; total_spent_minor: string }[]>(sql, [userId, startStr]);
 }

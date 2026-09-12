@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth/authOptions';
 import { ok, fail } from '@/lib/api-response';
 import { Analytics, Budget, Math as FinanceMath } from '@/lib/finance';
+import { getMonthBoundariesIST } from '@/lib/time/time.service';
 
 interface MonthlyStats {
   total_transactions: string;
@@ -35,6 +36,9 @@ export async function GET(req: NextRequest) {
       return fail('Invalid year or month format', 400);
     }
 
+    // Use IST month boundaries for filtering
+    const { startStr: monthStart, endStr: monthEnd } = getMonthBoundariesIST(year, month);
+
     const [statsRow] = await query<MonthlyStats[]>(`
       SELECT
         COUNT(e.id)                                                         AS total_transactions,
@@ -43,12 +47,12 @@ export async function GET(req: NextRequest) {
       FROM users u
       LEFT JOIN expenses e
         ON e.user_id = u.id
-       AND YEAR(e.expense_date)  = ?
-       AND MONTH(e.expense_date) = ?
+       AND e.expense_date >= ?
+       AND e.expense_date < ?
        AND e.deleted_at IS NULL
       WHERE u.id = ?
       GROUP BY u.id, u.monthly_income_minor
-    `, [year, month, userId]);
+    `, [monthStart, monthEnd, userId]);
 
     const [userRow] = await query<UserRow[]>(
       `SELECT monthly_income_minor FROM users WHERE id = ?`,
@@ -65,17 +69,17 @@ export async function GET(req: NextRequest) {
         COALESCE(SUM(e.amount_minor), 0)                 AS total_spent,
         COALESCE(b.limit_minor, 0)                       AS limit_amount
       FROM (
-        SELECT DISTINCT category_id FROM expenses WHERE user_id = ? AND YEAR(expense_date) = ? AND MONTH(expense_date) = ? AND deleted_at IS NULL
+        SELECT DISTINCT category_id FROM expenses WHERE user_id = ? AND expense_date >= ? AND expense_date < ? AND deleted_at IS NULL
         UNION
         SELECT DISTINCT category_id FROM budgets WHERE user_id = ? AND year = ? AND month = ? AND deleted_at IS NULL
       ) as cats
-      LEFT JOIN expenses e ON e.category_id = cats.category_id AND e.user_id = ? AND YEAR(e.expense_date) = ? AND MONTH(e.expense_date) = ? AND e.deleted_at IS NULL
+      LEFT JOIN expenses e ON e.category_id = cats.category_id AND e.user_id = ? AND e.expense_date >= ? AND e.expense_date < ? AND e.deleted_at IS NULL
       LEFT JOIN budgets b ON b.category_id = cats.category_id AND b.user_id = ? AND b.year = ? AND b.month = ? AND b.deleted_at IS NULL
       LEFT JOIN categories c ON e.category_id = c.id
       LEFT JOIN categories bc ON b.category_id = bc.id
       GROUP BY COALESCE(c.name, bc.name), b.limit_minor
       ORDER BY total_spent DESC
-    `, [userId, year, month, userId, year, month, userId, year, month, userId, year, month]);
+    `, [userId, monthStart, monthEnd, userId, year, month, userId, monthStart, monthEnd, userId, year, month]);
 
     let totalBudget = 0;
     for (const c of categories) {
@@ -118,7 +122,7 @@ export async function GET(req: NextRequest) {
           isOverBudget: Budget.isBudgetExceeded(spentMinor, allocatedMinor),
           status:      Budget.calculateBudgetStatus(spentMinor, allocatedMinor),
           needsAlert:  Budget.needsBudgetAlert(spentMinor, allocatedMinor),
-          remaining:   Budget.calculateRemainingBudget(spentMinor, allocatedMinor) / 100,
+          remaining:   FinanceMath.minorToInr(Budget.calculateRemainingBudget(spentMinor, allocatedMinor)),
           month,
           year,
         };

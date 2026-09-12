@@ -1,9 +1,11 @@
 import { query } from '@/lib/db';
 import { Budget, Core, Goals, Math as FinanceMath } from '@/lib/finance';
+import { computeHealthScore } from '@/lib/finance/calculations/insights';
 import type { DashboardSummaryDTO, SmartAlert, BudgetCategoryDTO, ExpenseDTO } from '@/types/api';
 import { listBudgets } from './budget.service';
 import { listGoals } from './goal.service';
 import { fetchInsights } from './insight.service';
+import { currentMonthIST, currentYearIST, startOfWeekIST, endOfWeekIST, getMonthBoundariesIST, formatDateIST } from '@/lib/time/time.service';
 
 interface MonthlyStats {
   total_spent: string;
@@ -18,9 +20,8 @@ interface CategoryRow {
 }
 
 export async function getDashboardSummary(userId: string): Promise<DashboardSummaryDTO> {
-  const now          = new Date();
-  const currentMonth = now.getMonth() + 1;
-  const currentYear  = now.getFullYear();
+  const currentMonth = currentMonthIST();
+  const currentYear = currentYearIST();
 
   // Current user income
   const [userRow] = await query<{ monthly_income_minor: string }[]>(
@@ -29,21 +30,25 @@ export async function getDashboardSummary(userId: string): Promise<DashboardSumm
   );
   const monthlyIncomeMinor = Number(userRow?.monthly_income_minor ?? 0);
 
-  // Weekly spending dates
-  const dayOfWeek  = (now.getDay() + 6) % 7; // 0=Mon
-  const thisMonStart = new Date(now);
-  thisMonStart.setDate(now.getDate() - dayOfWeek);
-  const thisWeekStart = thisMonStart.toISOString().slice(0, 10);
+  // Week boundaries in IST
+  const thisWeekStartDate = startOfWeekIST();
+  const thisWeekEndDate = endOfWeekIST();
+  const thisWeekStart = formatDateIST(thisWeekStartDate);
+  const thisWeekEnd = formatDateIST(thisWeekEndDate);
 
-  const lastMonStart = new Date(thisMonStart);
-  lastMonStart.setDate(thisMonStart.getDate() - 7);
-  const lastWeekStart = lastMonStart.toISOString().slice(0, 10);
+  const lastWeekStartDate = new Date(thisWeekStartDate);
+  lastWeekStartDate.setDate(lastWeekStartDate.getDate() - 7);
+  const lastWeekEndDate = new Date(thisWeekStartDate);
+  lastWeekEndDate.setDate(lastWeekEndDate.getDate() - 1);
+  const lastWeekStart = formatDateIST(lastWeekStartDate);
+  const lastWeekEnd = formatDateIST(lastWeekEndDate);
 
-  const lastWeekEnd = new Date(thisMonStart);
-  lastWeekEnd.setDate(thisMonStart.getDate() - 1);
-  const lastWeekEndStr = lastWeekEnd.toISOString().slice(0, 10);
-
-  const todayStr = now.toISOString().slice(0, 10);
+  // Month boundaries in IST
+  const { startStr: currentMonthStart, endStr: currentMonthEnd } = getMonthBoundariesIST(currentYear, currentMonth);
+  
+  const lastMonth = currentMonth === 1 ? 12 : currentMonth - 1;
+  const lastMonthYear = currentMonth === 1 ? currentYear - 1 : currentYear;
+  const { startStr: lastMonthStart, endStr: lastMonthEnd } = getMonthBoundariesIST(lastMonthYear, lastMonth);
 
   // Parallel fetches
   const [
@@ -58,29 +63,29 @@ export async function getDashboardSummary(userId: string): Promise<DashboardSumm
     insightsBundle,
   ] = await Promise.all([
     query<MonthlyStats[]>(
-      `SELECT COALESCE(SUM(amount_minor), 0) AS total_spent FROM expenses WHERE user_id = ? AND deleted_at IS NULL AND YEAR(expense_date) = ? AND MONTH(expense_date) = ?`,
-      [userId, currentYear, currentMonth],
+      `SELECT COALESCE(SUM(amount_minor), 0) AS total_spent FROM expenses WHERE user_id = ? AND deleted_at IS NULL AND expense_date >= ? AND expense_date < ?`,
+      [userId, currentMonthStart, currentMonthEnd],
     ),
     query<MonthlyStats[]>(
-      `SELECT COALESCE(SUM(amount_minor), 0) AS total_spent FROM expenses WHERE user_id = ? AND deleted_at IS NULL AND YEAR(expense_date) = ? AND MONTH(expense_date) = ?`,
-      [userId, currentMonth === 1 ? currentYear - 1 : currentYear, currentMonth === 1 ? 12 : currentMonth - 1],
-    ),
-    query<MonthlyStats[]>(
-      `SELECT COALESCE(SUM(amount_minor), 0) AS total_spent FROM expenses WHERE user_id = ? AND deleted_at IS NULL AND expense_date >= ? AND expense_date <= ?`,
-      [userId, thisWeekStart, todayStr],
+      `SELECT COALESCE(SUM(amount_minor), 0) AS total_spent FROM expenses WHERE user_id = ? AND deleted_at IS NULL AND expense_date >= ? AND expense_date < ?`,
+      [userId, lastMonthStart, lastMonthEnd],
     ),
     query<MonthlyStats[]>(
       `SELECT COALESCE(SUM(amount_minor), 0) AS total_spent FROM expenses WHERE user_id = ? AND deleted_at IS NULL AND expense_date >= ? AND expense_date <= ?`,
-      [userId, lastWeekStart, lastWeekEndStr],
+      [userId, thisWeekStart, thisWeekEnd],
+    ),
+    query<MonthlyStats[]>(
+      `SELECT COALESCE(SUM(amount_minor), 0) AS total_spent FROM expenses WHERE user_id = ? AND deleted_at IS NULL AND expense_date >= ? AND expense_date <= ?`,
+      [userId, lastWeekStart, lastWeekEnd],
     ),
     query<CategoryRow[]>(
       `SELECT c.id AS category_id, c.name AS category, c.icon, c.color_hex AS color, COALESCE(SUM(e.amount_minor), 0) AS total_spent
        FROM expenses e
        JOIN categories c ON e.category_id = c.id
-       WHERE e.user_id = ? AND e.deleted_at IS NULL AND YEAR(e.expense_date) = ? AND MONTH(e.expense_date) = ?
+       WHERE e.user_id = ? AND e.deleted_at IS NULL AND e.expense_date >= ? AND e.expense_date < ?
        GROUP BY c.id
        ORDER BY total_spent DESC LIMIT 5`,
-      [userId, currentYear, currentMonth],
+      [userId, currentMonthStart, currentMonthEnd],
     ),
     query<any[]>(
       `SELECT e.id, e.amount_minor, DATE_FORMAT(e.expense_date, '%Y-%m-%d') as date, e.description,
@@ -122,7 +127,7 @@ export async function getDashboardSummary(userId: string): Promise<DashboardSumm
         level:     'critical',
         emoji:     '🚨',
         title:     `${b.icon} ${b.category} budget exceeded`,
-        detail:    `${Math.abs(b.remainingMinor) / 100} over your ${b.allocatedMinor / 100} limit.`,
+        detail:    `${FinanceMath.minorToInr(Math.abs(b.remainingMinor))} over your ${FinanceMath.minorToInr(b.allocatedMinor)} limit.`,
         href:      '/budgets',
         hrefLabel: 'Review budget',
       });
@@ -132,7 +137,7 @@ export async function getDashboardSummary(userId: string): Promise<DashboardSumm
         level:     'warning',
         emoji:     '⚠️',
         title:     `${b.icon} ${b.category} at ${b.usedPct?.toFixed(0) ?? '0'}%`,
-        detail:    `${b.remainingMinor / 100} remaining of your ${b.allocatedMinor / 100} limit.`,
+        detail:    `${FinanceMath.minorToInr(b.remainingMinor)} remaining of your ${FinanceMath.minorToInr(b.allocatedMinor)} limit.`,
         href:      '/budgets',
         hrefLabel: 'View budget',
       });
@@ -146,7 +151,7 @@ export async function getDashboardSummary(userId: string): Promise<DashboardSumm
       level:     'warning',
       emoji:     '📈',
       title:     `Spending spike this week (+${spikePct}%)`,
-      detail:    `${thisWeekSpentMinor / 100} this week vs ${lastWeekSpentMinor / 100} last week.`,
+      detail:    `${FinanceMath.minorToInr(thisWeekSpentMinor)} this week vs ${FinanceMath.minorToInr(lastWeekSpentMinor)} last week.`,
       href:      '/expenses-history',
       hrefLabel: 'Review transactions',
     });
@@ -164,7 +169,7 @@ export async function getDashboardSummary(userId: string): Promise<DashboardSumm
           title:     milestone === 100
             ? `Goal "${g.title}" completed!`
             : `${milestone}% milestone — "${g.title}"`,
-          detail:    `${g.savedAmountMinor / 100} of ${g.targetAmountMinor / 100} saved.`,
+          detail:    `${FinanceMath.minorToInr(g.savedAmountMinor)} of ${FinanceMath.minorToInr(g.targetAmountMinor)} saved.`,
           href:      '/goals',
           hrefLabel: 'View goals',
         });
@@ -211,26 +216,86 @@ export async function getDashboardSummary(userId: string): Promise<DashboardSumm
   }));
 
   // 6-month spend trend
+  const startYear = currentMonth >= 6 ? currentYear : currentYear - 1;
+  const startMonth = currentMonth >= 6 ? currentMonth - 5 : 12 - (5 - currentMonth);
+  const { startStr: trendStart } = getMonthBoundariesIST(startYear, startMonth);
+
   const trendRows = await query<{ month_label: string; total_spent: string }[]>(
     `SELECT DATE_FORMAT(expense_date, '%b') AS month_label,
             COALESCE(SUM(amount_minor), 0) AS total_spent
      FROM expenses
      WHERE user_id = ? AND deleted_at IS NULL
-       AND expense_date >= DATE_SUB(DATE_FORMAT(NOW() ,'%Y-%m-01'), INTERVAL 5 MONTH)
+       AND expense_date >= ?
      GROUP BY YEAR(expense_date), MONTH(expense_date), month_label
      ORDER BY YEAR(expense_date) ASC, MONTH(expense_date) ASC`,
-    [userId],
+    [userId, trendStart],
   );
 
   const monthlyTrend = trendRows.map(r => ({ label: r.month_label, spentMinor: Number(r.total_spent) }));
 
-  const { calculateHealthScore } = await import('@/lib/analytics/healthScore');
-  const healthData = calculateHealthScore({
-    monthlyIncomeMinor,
-    totalSpentMinor,
-    budgets,
-    goals,
+  // Use unified health score engine
+  const healthScore = computeHealthScore({
+    summary: {
+      year: currentYear,
+      month: currentMonth,
+      totalSpent: totalSpentMinor,
+      transactionCount: 0,
+      dailyAvg: 0,
+      savings: Math.max(0, monthlyIncomeMinor - totalSpentMinor),
+      savingsRate: Core.calculateSavingsRate(monthlyIncomeMinor, totalSpentMinor),
+      daysInMonth: 30
+    },
+    categories: budgets.categories.map(c => ({
+      categoryId: c.categoryId ?? 0,
+      categoryName: c.category,
+      totalSpent: c.spentMinor,
+      transactionCount: 0,
+      budgetLimit: c.allocatedMinor,
+      budgetUsed: c.usedPct ?? 0,
+      isOverBudget: c.isOverBudget,
+      averageTransaction: 0
+    })),
+    goals: goals.map(g => ({
+      goalId: g.id,
+      title: g.title,
+      targetAmountMinor: g.targetAmountMinor,
+      savedAmountMinor: g.savedAmountMinor,
+      targetDate: g.deadline,
+      daysRemaining: 0,
+      requiredDailyAmountMinor: 0,
+      actualDailyRateMinor: 0,
+      projectedAmountMinor: g.savedAmountMinor,
+      achievementPct: g.progressPct,
+      probability: g.progressPct >= 70 ? 80 : g.progressPct >= 40 ? 50 : 20,
+      risk: 'on_track' as const,
+      weeksNeeded: 0,
+      recommendation: '',
+      milestones: []
+    })),
+    mom: {
+      currentMonth: { year: currentYear, month: currentMonth },
+      previousMonth: { year: currentYear, month: currentMonth - 1 || 12 },
+      totalSpend: { current: totalSpentMinor, previous: 0, absolute: 0, percentage: 0, direction: 'stable' as const, isSignificant: false },
+      txCount: { current: 0, previous: 0, absolute: 0, percentage: 0, direction: 'stable' as const, isSignificant: false },
+      dailyAvg: { current: 0, previous: 0, absolute: 0, percentage: 0, direction: 'stable' as const, isSignificant: false },
+      savings: { current: 0, previous: 0, absolute: 0, percentage: 0, direction: 'stable' as const, isSignificant: false },
+      savingsRate: { current: 0, previous: 0, absolute: 0, percentage: 0, direction: 'stable' as const, isSignificant: false },
+      categories: []
+    }
   });
+
+  const healthData = {
+    score: healthScore.overall,
+    status: healthScore.overall >= 80 ? 'excellent' as const : 
+            healthScore.overall >= 60 ? 'good' as const : 
+            healthScore.overall >= 40 ? 'warning' as const : 'critical' as const,
+    details: {
+      savingsRateScore: Math.round((healthScore.savingsRate / 100) * 35),
+      budgetComplianceScore: Math.round((healthScore.budgetCompliance / 100) * 25),
+      spendingStabilityScore: Math.round((healthScore.spendingControl / 100) * 15),
+      goalProgressScore: Math.round((healthScore.goalProgress / 100) * 25)
+    }
+  };
 
   return {
     totalSpentMinor,

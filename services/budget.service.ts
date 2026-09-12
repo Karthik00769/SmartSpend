@@ -5,6 +5,7 @@ import type {
   BudgetCategoryDTO,
 } from '@/types/api';
 import { Analytics, Budget, Math as FinanceMath } from '../lib/finance';
+import { getMonthBoundariesIST } from '@/lib/time/time.service';
 
 // ─── DB row shape ──────────────────────────────────────────────────────────────
 interface BudgetRow {
@@ -62,6 +63,9 @@ export async function listBudgets(params: GetBudgetsQuery): Promise<BudgetSummar
   const now  = new Date();
   const { userId, month = now.getMonth() + 1, year = now.getFullYear() } = params;
 
+  // Use IST month boundaries for expense filtering
+  const { startStr: monthStart, endStr: monthEnd } = getMonthBoundariesIST(year, month);
+
   const rows = await query<BudgetRow[]>(
     `SELECT
        b.id, b.user_id, b.category_id, b.limit_minor,
@@ -73,8 +77,8 @@ export async function listBudgets(params: GetBudgetsQuery): Promise<BudgetSummar
      LEFT JOIN expenses e
        ON  e.category_id = b.category_id
        AND e.user_id     = b.user_id
-       AND YEAR(e.expense_date)  = b.year
-       AND MONTH(e.expense_date) = b.month
+       AND e.expense_date >= ?
+       AND e.expense_date < ?
        AND e.deleted_at IS NULL
      WHERE b.user_id    = ?
        AND b.year       = ?
@@ -84,7 +88,7 @@ export async function listBudgets(params: GetBudgetsQuery): Promise<BudgetSummar
        b.id, b.user_id, b.category_id, b.limit_minor, b.month, b.year,
        c.name, c.icon, c.color_hex
      ORDER BY total_spent DESC`,
-    [userId, year, month],
+    [monthStart, monthEnd, userId, year, month],
   );
 
   const categories     = rows.map(toDTO);
@@ -140,6 +144,9 @@ export async function getCategoryBudgetStatus(
   month:      number,
   year:       number,
 ): Promise<{ limitMinor: number; spentMinor: number; percent: number; status: 'under' | 'near' | 'over' } | null> {
+  // Use IST month boundaries for expense filtering
+  const { startStr: monthStart, endStr: monthEnd } = getMonthBoundariesIST(year, month);
+
   const [row] = await query<any[]>(
     `SELECT
        b.limit_minor,
@@ -148,8 +155,8 @@ export async function getCategoryBudgetStatus(
      LEFT JOIN expenses e
        ON e.category_id = b.category_id
        AND e.user_id    = b.user_id
-       AND MONTH(e.expense_date) = b.month
-       AND YEAR(e.expense_date)  = b.year
+       AND e.expense_date >= ?
+       AND e.expense_date < ?
        AND e.deleted_at IS NULL
      WHERE b.user_id    = ?
        AND b.category_id = ?
@@ -157,7 +164,7 @@ export async function getCategoryBudgetStatus(
        AND b.year       = ?
        AND b.deleted_at IS NULL
      GROUP BY b.id`,
-    [userId, categoryId, month, year],
+    [monthStart, monthEnd, userId, categoryId, month, year],
   );
 
   if (!row) return null;

@@ -13,7 +13,7 @@ import {
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ListSkeleton } from '@/components/ui/LoadingSkeleton';
 import { apiGet, apiPatch, apiDelete, buildQuery, ApiRequestError } from '@/lib/api-client';
-import { format } from 'date-fns';
+import { formatDateIST, formatIST, nowIST } from '@/lib/time/time.service';
 import type { ExpenseDTO } from '@/types/api';
 import * as FinanceCore from '@/lib/finance';
 import { useSmartSpend } from '@/context/smartspend-context';
@@ -27,7 +27,7 @@ const SOURCE_META: Record<string, { label: string; emoji: string; cls: string }>
 function SourceBadge({ source }: { source: string }) {
   const meta = SOURCE_META[source] ?? SOURCE_META.manual;
   return (
-    <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${meta.cls}`}>
+    <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full source-badge ${meta.cls}`}>
       <span>{meta.emoji}</span>{meta.label}
     </span>
   );
@@ -67,7 +67,7 @@ function EditRow({ expense, categories, onSave, onCancel, saving }: {
   return (
     <TableRow className="bg-primary/5 border-l-2 border-primary">
       <TableCell className="text-xs text-muted-foreground">
-        {format(new Date(expense.createdAt), 'MMM dd, HH:mm')}
+        {formatIST(new Date(expense.createdAt), 'datetime')}
       </TableCell>
 
       <TableCell>
@@ -209,6 +209,13 @@ export default function ExpensesHistoryPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  
+  // Restore UI state
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [deletedExpenses, setDeletedExpenses] = useState<ExpenseDTO[]>([]);
+  const [deletedLoading, setDeletedLoading] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [restoreConfirmId, setRestoreConfirmId] = useState<string | null>(null);
 
   const { fmt } = useSmartSpend();
 
@@ -278,6 +285,33 @@ export default function ExpensesHistoryPage() {
     finally { setDeletingId(null); }
   };
 
+  const fetchDeletedExpenses = async () => {
+    setDeletedLoading(true);
+    try {
+      const qs = buildQuery({ deleted: true, limit: 100 });
+      const data = await apiGet<{ expenses: ExpenseDTO[]; total: number }>(`/api/expenses${qs}`);
+      setDeletedExpenses(data.expenses);
+    } catch (err) {
+      console.error('Failed to load deleted expenses:', err);
+    } finally {
+      setDeletedLoading(false);
+    }
+  };
+
+  const handleRestore = async (id: string) => {
+    setRestoringId(id);
+    try {
+      await apiGet(`/api/expenses/${id}/restore`, { method: 'POST' });
+      setRestoreConfirmId(null);
+      fetchDeletedExpenses();
+      fetchExpenses();
+    } catch (err: any) {
+      alert(err.message || 'Restore failed.');
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
   const clearFilters = () => {
     setSearch(''); setStartDate(''); setEndDate('');
     setMinAmount(''); setMaxAmount(''); setSource(''); setCatFilter(''); setPage(0);
@@ -285,8 +319,30 @@ export default function ExpensesHistoryPage() {
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
+  // Calculate summary statistics for print
+  const totalAmount = expenses.reduce((sum, exp) => sum + exp.amountMinor, 0);
+  const categoryBreakdown = expenses.reduce((acc, exp) => {
+    if (!acc[exp.categoryName]) {
+      acc[exp.categoryName] = { icon: exp.categoryIcon, amount: 0, count: 0 };
+    }
+    acc[exp.categoryName].amount += exp.amountMinor;
+    acc[exp.categoryName].count += 1;
+    return acc;
+  }, {} as Record<string, { icon: string; amount: number; count: number }>);
+
+  const filtersApplied = [
+    search && `Search: "${search}"`,
+    startDate && `From: ${startDate}`,
+    endDate && `To: ${endDate}`,
+    minAmount && `Min: ${fmt(FinanceCore.Math.inrToMinor(parseFloat(minAmount)))}`,
+    maxAmount && `Max: ${fmt(FinanceCore.Math.inrToMinor(parseFloat(maxAmount)))}`,
+    source && `Source: ${SOURCE_META[source]?.label || source}`,
+    catFilter && `Category: ${categories.find(c => String(c.id) === catFilter)?.label || catFilter}`,
+  ].filter(Boolean);
+
   return (
     <div className="space-y-6">
+
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-foreground mb-1">Expense History</h1>
@@ -355,7 +411,7 @@ export default function ExpensesHistoryPage() {
 
         {/* Desktop View */}
         <div className="hidden md:block overflow-x-auto">
-          <Table>
+          <Table className="expense-table">
             <TableHeader className="bg-muted/40">
               <TableRow>
                 <TableHead className="w-[110px]">Added</TableHead>
@@ -411,7 +467,7 @@ export default function ExpensesHistoryPage() {
                 ) : (
                   <TableRow key={exp.id} className="hover:bg-muted/30 transition-colors group">
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                      {format(new Date(exp.createdAt), 'MMM dd, HH:mm')}
+                      {formatIST(new Date(exp.createdAt), 'datetime')}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1.5">
@@ -429,7 +485,7 @@ export default function ExpensesHistoryPage() {
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">{exp.date}</TableCell>
                     <TableCell><SourceBadge source={exp.source} /></TableCell>
-                    <TableCell className="text-right font-bold tabular-nums">
+                    <TableCell className="text-right font-bold tabular-nums amount">
                       {fmt(exp.amountMinor)}
                     </TableCell>
                     <TableCell className="no-print">
@@ -445,6 +501,13 @@ export default function ExpensesHistoryPage() {
                     </TableCell>
                   </TableRow>
                 )
+              )}
+              {!loading && expenses.length > 0 && (
+                <TableRow className="totals-row">
+                  <TableCell colSpan={5} className="text-right font-bold">Total (Current Page):</TableCell>
+                  <TableCell className="text-right font-bold tabular-nums amount">{fmt(totalAmount)}</TableCell>
+                  <TableCell className="no-print" />
+                </TableRow>
               )}
             </TableBody>
           </Table>
@@ -536,6 +599,157 @@ export default function ExpensesHistoryPage() {
           </div>
         )}
       </Card>
+
+      {/* Deleted Expenses Section */}
+      <div className="no-print">
+        <div className="flex items-center justify-between mb-4">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setShowDeleted(!showDeleted);
+              if (!showDeleted) fetchDeletedExpenses();
+            }}
+            className="gap-2"
+          >
+            {showDeleted ? '▼' : '▶'} Deleted Expenses ({deletedExpenses.length})
+          </Button>
+        </div>
+
+        {showDeleted && (
+          <Card className="overflow-hidden border border-red-200 dark:border-red-800">
+            <div className="bg-red-50 dark:bg-red-950/30 p-4 border-b border-red-200 dark:border-red-800">
+              <p className="text-sm text-red-700 dark:text-red-400 font-medium">
+                🗑️ These expenses have been deleted and are hidden from all reports and calculations.
+              </p>
+            </div>
+
+            {deletedLoading ? (
+              <div className="p-4">
+                <ListSkeleton />
+              </div>
+            ) : deletedExpenses.length === 0 ? (
+              <div className="p-8 text-center text-muted-foreground">
+                <p>No deleted expenses found.</p>
+              </div>
+            ) : (
+              <div className="hidden md:block overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-muted/40">
+                    <TableRow>
+                      <TableHead>Deleted At</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead className="w-[100px]">Date</TableHead>
+                      <TableHead className="text-right w-[100px]">Amount</TableHead>
+                      <TableHead className="w-[90px]" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {deletedExpenses.map(exp => (
+                      <TableRow key={exp.id} className="opacity-60 hover:opacity-100 transition-opacity">
+                        <TableCell className="text-xs text-muted-foreground">
+                          {formatIST(new Date(exp.deletedAt!), 'datetime')}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
+                            <span>{exp.categoryIcon}</span>
+                            <span className="font-medium text-sm">{exp.categoryName}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="max-w-[220px]">
+                          <span className="truncate block text-sm text-muted-foreground">
+                            {exp.description || '—'}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{exp.date}</TableCell>
+                        <TableCell className="text-right font-bold tabular-nums">
+                          {fmt(exp.amountMinor)}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setRestoreConfirmId(exp.id)}
+                            disabled={restoringId === exp.id}
+                            className="text-xs h-7 px-2"
+                          >
+                            {restoringId === exp.id ? '...' : '↻ Restore'}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            {/* Mobile view for deleted */}
+            <div className="md:hidden divide-y divide-border/40">
+              {deletedExpenses.map(exp => (
+                <div key={exp.id} className="p-4 opacity-60 hover:opacity-100 transition-opacity">
+                  <div className="flex justify-between items-start gap-3 mb-2">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center text-lg shrink-0">
+                        {exp.categoryIcon}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-foreground truncate text-sm">
+                          {exp.categoryName}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                          {exp.description || '—'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="font-bold text-foreground tabular-nums text-sm">
+                        {fmt(exp.amountMinor)}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{exp.date}</p>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] text-red-600 dark:text-red-400">
+                      Deleted: {formatIST(new Date(exp.deletedAt!), 'date')}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setRestoreConfirmId(exp.id)}
+                      disabled={restoringId === exp.id}
+                      className="text-xs h-7 px-2"
+                    >
+                      {restoringId === exp.id ? '...' : '↻ Restore'}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+      </div>
+
+      {/* Restore Confirmation Modal */}
+      {restoreConfirmId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 no-print"
+          onClick={() => setRestoreConfirmId(null)}>
+          <Card className="max-w-md w-full p-6 animate-in zoom-in-95 fade-in duration-200"
+            onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold mb-2">Restore Expense?</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              This will restore the expense and make it visible in all reports and calculations again.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setRestoreConfirmId(null)}>
+                Cancel
+              </Button>
+              <Button onClick={() => handleRestore(restoreConfirmId)} disabled={restoringId === restoreConfirmId}>
+                {restoringId === restoreConfirmId ? 'Restoring...' : 'Restore'}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

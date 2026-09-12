@@ -6,6 +6,7 @@ import { ok, fail } from '@/lib/api-response';
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/authOptions";
 import { getUserProfile, updateUserProfile } from '@/services/user.service';
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit';
 import { z } from 'zod';
 import { parseBody } from '@/lib/validate';
 import { query } from '@/lib/db';
@@ -63,6 +64,12 @@ export async function POST(req: NextRequest) {
 
   const userId = (session.user as any).id as string;
 
+  // Rate limiting
+  const rateLimitCheck = checkRateLimit(`profile:${userId}`, RATE_LIMITS.PROFILE_UPDATE);
+  if (!rateLimitCheck.allowed) {
+    return fail('Too many profile update attempts. Please try again later.', 429);
+  }
+
   const parsed = await parseBody(req, ProfileUpdateSchema);
   if (!parsed.success) return fail(parsed.message, 400, parsed.fieldErrors);
 
@@ -70,10 +77,22 @@ export async function POST(req: NextRequest) {
     const currentProfile = await getUserProfile(userId);
     if (!currentProfile) return fail('User not found', 404);
 
-    // If email is changing, check for uniqueness
+    // If email is changing, check for uniqueness and invalidate sessions
+    let shouldInvalidateSession = false;
     if (parsed.data.email && parsed.data.email !== currentProfile.email) {
       const existing = await query<any[]>('SELECT id FROM users WHERE email = ? AND id != ?', [parsed.data.email, userId]);
       if (existing.length > 0) return fail('Email already in use by another account.', 400);
+      
+      // Email change requires session invalidation
+      shouldInvalidateSession = true;
+      
+      // Log email change
+      try {
+        const { logEmailChange } = await import('@/lib/audit/audit-logger');
+        await logEmailChange(userId, currentProfile.email, parsed.data.email, req);
+      } catch (auditError) {
+        console.error('[POST /api/settings/profile] Email change audit failed:', auditError);
+      }
     }
 
     const success = await updateUserProfile(userId, {
@@ -82,9 +101,21 @@ export async function POST(req: NextRequest) {
       monthlyIncomeMinor: FinanceCore.Math.inrToMinor(parsed.data.monthly_income),
       currency:       parsed.data.currency,
       preferences:    parsed.data.preferences as any,
-    });
+    }, { req });
 
     if (!success) return fail('Failed to update profile.', 500);
+
+    // Invalidate session if email changed
+    if (shouldInvalidateSession) {
+      await resetSessionVersion(userId);
+      
+      try {
+        const { logSessionInvalidation } = await import('@/lib/audit/audit-logger');
+        await logSessionInvalidation(userId, 'email_changed', req);
+      } catch (auditError) {
+        console.error('[POST /api/settings/profile] Session invalidation audit failed:', auditError);
+      }
+    }
 
     return ok({ message: 'Profile updated successfully' });
   } catch (err) {

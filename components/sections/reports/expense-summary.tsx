@@ -8,14 +8,14 @@ import {
 import { Analytics } from '@/lib/finance';
 
 interface ExpenseSummaryProps {
-  data: Array<{ month: string; income: number; expenses: number; savings: number }>;
+  data: Array<{ month: string; incomeMinor: number; expensesMinor: number; savingsMinor: number }>;
   fmt: (amount: number) => string;
 }
 
 export function ExpenseSummary({ data, fmt }: ExpenseSummaryProps) {
-  const totalExpenses   = data.reduce((sum, item) => sum + item.expenses, 0);
+  const totalExpenses   = data.reduce((sum, item) => sum + item.expensesMinor, 0);
   const averageExpenses = Analytics.calculateAverageSpend(totalExpenses, data.length);
-  const totalSavings    = data.reduce((sum, item) => sum + item.savings, 0);
+  const totalSavings    = data.reduce((sum, item) => sum + item.savingsMinor, 0);
 
   return (
     <Card className="p-6">
@@ -69,7 +69,7 @@ export function ExpenseSummary({ data, fmt }: ExpenseSummaryProps) {
             />
             <Line
               type="monotone"
-              dataKey="expenses"
+              dataKey="expensesMinor"
               name="Expenses"
               stroke="#6366f1"
               strokeWidth={3}
@@ -79,7 +79,7 @@ export function ExpenseSummary({ data, fmt }: ExpenseSummaryProps) {
             />
             <Line
               type="monotone"
-              dataKey="savings"
+              dataKey="savingsMinor"
               name="Savings"
               stroke="#10b981"
               strokeWidth={3}

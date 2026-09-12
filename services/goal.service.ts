@@ -2,6 +2,7 @@ import { query } from '@/lib/db';
 import type { GoalDTO } from '@/types/api';
 import { Goals, Math as FinanceMath, Reports } from '@/lib/finance';
 import { ResultSetHeader } from 'mysql2';
+import { daysUntilIST, todayIST } from '@/lib/time/time.service';
 
 // ─── Row shape from DB ────────────────────────────────────────────────────────
 interface GoalRow {
@@ -31,15 +32,8 @@ function toDTO(row: GoalRow): GoalDTO {
     : new Date().toISOString();
   const status = Goals.calculateGoalStatus(savedMinor, targetMinor, targetDateISO);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const targetDate = new Date(targetDateISO);
-  targetDate.setHours(0, 0, 0, 0);
-  const daysRemaining = Reports.clamp(
-    Math.ceil((targetDate.getTime() - today.getTime()) / 86400000),
-    0,
-    Infinity,
-  );
+  // Use IST for days remaining calculation
+  const daysRemaining = daysUntilIST(targetDateISO);
   const monthsRemaining = daysRemaining / 30;
 
   const requiredMonthlySavingsMinor = Goals.calculateRequiredMonthlySavings(
@@ -156,6 +150,27 @@ export async function updateGoal(
 ): Promise<GoalDTO | null> {
   const sets: string[] = [];
   const args: any[]    = [];
+
+  // Validate completion status before allowing update
+  if (patch.status === 'completed') {
+    const [currentGoal] = await query<GoalRow[]>(
+      BASE_SELECT + ` AND id = ? AND user_id = ?`,
+      [goalId, userId]
+    );
+    
+    if (!currentGoal) {
+      throw new Error('Goal not found');
+    }
+    
+    if (!Goals.isGoalCompleted(
+      Number(currentGoal.saved_minor),
+      Number(currentGoal.target_minor)
+    )) {
+      throw new Error(
+        'Cannot mark goal as completed because saved amount is below target.'
+      );
+    }
+  }
 
   if (patch.title       != null) { sets.push('title = ?');        args.push(patch.title); }
   if (patch.description != null) { sets.push('description = ?');  args.push(patch.description); }

@@ -12,8 +12,9 @@ export function calculateSavings(incomeMinor: number, spentMinor: number): numbe
 
 export function calculateSavingsRate(incomeMinor: number, spentMinor: number): number {
   if (incomeMinor <= 0) return 0;
-  const savings = calculateSavings(incomeMinor, spentMinor);
-  return Math.round((savings / incomeMinor) * 100);
+  const savingsRate = ((incomeMinor - spentMinor) / incomeMinor) * 100;
+  // Cap between -100 and 100
+  return Math.max(-100, Math.min(100, Math.round(savingsRate)));
 }
 
 export function calculateGrowthPct(currentMinor: number, previousMinor: number): number {
@@ -40,7 +41,7 @@ export function calculateBudgetUsage(spentMinor: number, allocatedMinor: number)
 
 export function calculateGoalProgress(savedMinor: number, targetMinor: number): number {
   if (targetMinor <= 0) return savedMinor > 0 ? 100 : 0;
-  return (savedMinor / targetMinor) * 100;
+  return Math.min((savedMinor / targetMinor) * 100, 100);
 }
 
 export function calculateGoalRemaining(savedMinor: number, targetMinor: number): number {
@@ -55,7 +56,7 @@ export function calculateGoalStatus(
   savedMinor: number,
   targetMinor: number,
   targetDateISO: string
-): 'on_track' | 'overdue' | 'completed' {
+): 'on_track' | 'at_risk' | 'behind' | 'overdue' | 'completed' {
   if (savedMinor >= targetMinor) {
     return 'completed';
   }
@@ -68,6 +69,23 @@ export function calculateGoalStatus(
 
   if (targetDate < today) {
     return 'overdue';
+  }
+
+  const daysRemaining = Math.ceil((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const progressPct = calculateGoalProgress(savedMinor, targetMinor);
+
+  // At risk: < 30 days remaining AND < 50% progress
+  if (daysRemaining <= 30 && progressPct < 50) {
+    return 'at_risk';
+  }
+
+  // Behind: Progress is behind expected pace
+  const totalDays = Math.ceil((targetDate.getTime() - new Date(targetDateISO).setMonth(new Date(targetDateISO).getMonth() - 12)) / (1000 * 60 * 60 * 24));
+  const daysPassed = totalDays - daysRemaining;
+  const expectedProgress = totalDays > 0 ? (daysPassed / totalDays) * 100 : 0;
+  
+  if (progressPct < expectedProgress - 10) {
+    return 'behind';
   }
 
   return 'on_track';

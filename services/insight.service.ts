@@ -6,6 +6,7 @@ import type {
   InsightType,
 } from '@/types/api';
 import { Analytics } from '@/lib/finance';
+import { getMonthBoundariesIST } from '@/lib/time/time.service';
 
 interface InsightRow {
   id:                   number;
@@ -86,25 +87,30 @@ export async function generateMonthlyInsights(
   interface CatRow   { name: string; total: string; }
   interface IncRow   { monthly_income_minor: string; }
 
+  // Use IST month boundaries for current and previous month
+  const { startStr: currentMonthStart, endStr: currentMonthEnd } = getMonthBoundariesIST(year, month);
+  
+  const prevMonth = month === 1 ? 12 : month - 1;
+  const prevYear = month === 1 ? year - 1 : year;
+  const { startStr: prevMonthStart, endStr: prevMonthEnd } = getMonthBoundariesIST(prevYear, prevMonth);
+
   const [spendRows, catRows, incRows] = await Promise.all([
     // Current vs previous month spend
     query<SpendRow[]>(`
       SELECT
-        COALESCE(SUM(CASE WHEN MONTH(expense_date)=? AND YEAR(expense_date)=? THEN amount_minor END), 0) AS total_spent,
-        COALESCE(SUM(CASE WHEN MONTH(expense_date)=? AND YEAR(expense_date)=? THEN amount_minor END), 0) AS prev_spent
+        COALESCE(SUM(CASE WHEN expense_date >= ? AND expense_date < ? THEN amount_minor END), 0) AS total_spent,
+        COALESCE(SUM(CASE WHEN expense_date >= ? AND expense_date < ? THEN amount_minor END), 0) AS prev_spent
       FROM expenses
       WHERE user_id = ? AND deleted_at IS NULL
-    `, [month, year,
-        month === 1 ? 12 : month - 1, month === 1 ? year - 1 : year,
-        userId]),
+    `, [currentMonthStart, currentMonthEnd, prevMonthStart, prevMonthEnd, userId]),
     // Top category this month
     query<CatRow[]>(`
       SELECT c.name, SUM(e.amount_minor) AS total
       FROM expenses e
       LEFT JOIN categories c ON e.category_id = c.id
-      WHERE e.user_id = ? AND MONTH(e.expense_date) = ? AND YEAR(e.expense_date) = ? AND e.deleted_at IS NULL
+      WHERE e.user_id = ? AND e.expense_date >= ? AND e.expense_date < ? AND e.deleted_at IS NULL
       GROUP BY c.name ORDER BY total DESC LIMIT 1
-    `, [userId, month, year]),
+    `, [userId, currentMonthStart, currentMonthEnd]),
     query<IncRow[]>(`SELECT monthly_income_minor FROM users WHERE id = ? LIMIT 1`, [userId]),
   ]);
 
@@ -121,7 +127,7 @@ export async function generateMonthlyInsights(
     const pct = Math.round(Analytics.calculateGrowthPct(totalSpentMinor, prevSpentMinor));
     insights.push({
       type:    'overspending_alert',
-      content: `Your spending increased by ${pct}% compared to last month (${(totalSpentMinor/100).toFixed(2)} vs ${(prevSpentMinor/100).toFixed(2)}).`,
+      content: `Your spending increased by ${pct}% compared to last month (${FinanceMath.minorToInr(totalSpentMinor)} vs ${FinanceMath.minorToInr(prevSpentMinor)}).`,
     });
   } else if (prevSpentMinor > 0 && totalSpentMinor < prevSpentMinor * 0.9) {
     const pct = Math.abs(Math.round(Analytics.calculateGrowthPct(totalSpentMinor, prevSpentMinor)));
@@ -136,7 +142,7 @@ export async function generateMonthlyInsights(
     const pct = Math.round(Analytics.calculateCategoryPct(topCatAmtMinor, totalSpentMinor));
     insights.push({
       type:    'monthly_summary',
-      content: `Your top spending category this month is ${topCat} at ${(topCatAmtMinor/100).toFixed(2)} (${pct}% of total spend).`,
+      content: `Your top spending category this month is ${topCat} at ${FinanceMath.minorToInr(topCatAmtMinor)} (${pct}% of total spend).`,
     });
   }
 

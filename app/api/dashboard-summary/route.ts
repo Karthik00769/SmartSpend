@@ -41,8 +41,8 @@ export async function GET(_req: NextRequest) {
       // Run generation in the background so it doesn't block the response
       Promise.resolve().then(async () => {
         try {
-          const totalSpent = summary.totalSpentMinor / 100;
-          const monthlyIncome = summary.totalIncomeMinor / 100;
+          const totalSpent = FinanceMath.minorToInr(summary.totalSpentMinor);
+          const monthlyIncome = FinanceMath.minorToInr(summary.totalIncomeMinor);
           
           const newInsights = [];
           if (totalSpent > (monthlyIncome * 0.8)) {
