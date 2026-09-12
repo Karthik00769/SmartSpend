@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/select';
 
 interface ReportData {
-  monthlyData: Array<{ month: string; income: number; expenses: number; savings: number }>;
+  monthlyData: Array<{ month: string; incomeMinor: number; expensesMinor: number; savingsMinor: number }>;
   health: {
     score: number;
     status: string;

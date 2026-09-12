@@ -20,6 +20,8 @@ interface ExpenseRow {
   expense_date: string;
   description: string;
   created_at: string;
+  deleted_at: string | null;
+  deleted_by: string | null;
 }
 
 function toDTO(row: ExpenseRow): ExpenseDTO {
@@ -35,6 +37,7 @@ function toDTO(row: ExpenseRow): ExpenseDTO {
     date: row.expense_date ? new Date(row.expense_date).toISOString().slice(0, 10) : '',
     description: row.description,
     createdAt: row.created_at,
+    deletedAt: row.deleted_at || undefined,
   };
 }
 
@@ -486,7 +489,7 @@ export async function monthlyExpenseSummary(
   userId: string,
   year: number,
   month: number,
-): Promise<{ totalSpentMinor: number; transactionCount: number; dailyAvgMinor: number; savingsRate: number }> {
+): Promise<{ totalSpentMinor: number; transactionCount: number; dailyAvgMinor: number; savingsRate: number; incomeMinor: number; savingsMinor: number; incomeSpentPct: number }> {
   interface SummaryRow {
     total_spent_minor: string;
     transaction_count: string;
@@ -519,12 +522,45 @@ export async function monthlyExpenseSummary(
 
   // Use canonical savings rate formula
   const savingsRate = Core.calculateSavingsRate(monthlyIncomeMinor, totalSpentMinor);
+  const savingsMinor = Core.calculateSavings(monthlyIncomeMinor, totalSpentMinor);
+  const incomeSpentPct = Core.calculateCategoryPercentage(totalSpentMinor, monthlyIncomeMinor);
 
   return {
     totalSpentMinor,
     transactionCount: parseInt(row?.transaction_count || '0', 10),
     dailyAvgMinor: parseInt(row?.daily_avg_minor || '0', 10),
     savingsRate,
+    incomeMinor: monthlyIncomeMinor,
+    savingsMinor,
+    incomeSpentPct,
+  };
+}
+
+export async function periodExpenseSummary(
+  userId: string,
+  startStr: string,
+  endStr: string,
+): Promise<{ totalSpentMinor: number; transactionCount: number }> {
+  interface SummaryRow {
+    total_spent_minor: string;
+    transaction_count: string;
+  }
+
+  const [row] = await query<SummaryRow[]>(
+    `SELECT
+       COALESCE(SUM(amount_minor), 0) AS total_spent_minor,
+       COUNT(id) AS transaction_count
+     FROM expenses
+     WHERE user_id = ?
+       AND deleted_at IS NULL
+       AND expense_date >= ?
+       AND expense_date <= ?`,
+    [userId, startStr, endStr],
+  );
+
+  return {
+    totalSpentMinor: parseInt(row?.total_spent_minor || '0', 10),
+    transactionCount: parseInt(row?.transaction_count || '0', 10),
   };
 }
 
@@ -585,14 +621,94 @@ export async function getMonthlyTrends(userId: string, months = 6): Promise<{ mo
 
   const sql = `
     SELECT
-      DATE_FORMAT(expense_date, '%b %Y') AS month_label,
+      YEAR(expense_date) AS year_val,
+      MONTH(expense_date) AS month_val,
       COALESCE(SUM(amount_minor), 0)     AS total_spent_minor
     FROM expenses
     WHERE user_id    = ?
       AND deleted_at IS NULL
       AND expense_date >= ?
-    GROUP BY DATE_FORMAT(expense_date, '%Y-%m')
-    ORDER BY DATE_FORMAT(expense_date, '%Y-%m') ASC
+    GROUP BY YEAR(expense_date), MONTH(expense_date)
+    ORDER BY year_val ASC, month_val ASC
   `;
-  return query<{ month_label: string; total_spent_minor: string }[]>(sql, [userId, startStr]);
+  
+  const rows = await query<{ year_val: number; month_val: number; total_spent_minor: string }[]>(sql, [userId, startStr]);
+  
+  return rows.map(r => {
+    const d = new Date(r.year_val, r.month_val - 1, 1);
+    const monthStr = d.toLocaleString('en-US', { month: 'short' });
+    return {
+      month_label: `${monthStr} ${r.year_val}`,
+      total_spent_minor: r.total_spent_minor
+    };
+  });
+}
+
+export async function getCategorySpendingWithBudgets(
+  userId: string,
+  year: number,
+  month: number,
+): Promise<{ category: string; total_spent: string; limit_amount: string }[]> {
+  const { startStr: monthStart, endStr: monthEnd } = getMonthBoundariesIST(year, month);
+  
+  return query<any[]>(`
+    SELECT
+      COALESCE(c.name, bc.name)                        AS category,
+      COALESCE(SUM(e.amount_minor), 0)                 AS total_spent,
+      COALESCE(b.limit_minor, 0)                       AS limit_amount
+    FROM (
+      SELECT DISTINCT category_id FROM expenses WHERE user_id = ? AND expense_date >= ? AND expense_date < ? AND deleted_at IS NULL
+      UNION
+      SELECT DISTINCT category_id FROM budgets WHERE user_id = ? AND year = ? AND month = ? AND deleted_at IS NULL
+    ) as cats
+    LEFT JOIN expenses e ON e.category_id = cats.category_id AND e.user_id = ? AND e.expense_date >= ? AND e.expense_date < ? AND e.deleted_at IS NULL
+    LEFT JOIN budgets b ON b.category_id = cats.category_id AND b.user_id = ? AND b.year = ? AND b.month = ? AND b.deleted_at IS NULL
+    LEFT JOIN categories c ON e.category_id = c.id
+    LEFT JOIN categories bc ON b.category_id = bc.id
+    GROUP BY COALESCE(c.name, bc.name), b.limit_minor
+    ORDER BY total_spent DESC
+  `, [userId, monthStart, monthEnd, userId, year, month, userId, monthStart, monthEnd, userId, year, month]);
+}
+
+export async function getDailyTrends(userId: string): Promise<{ date: string; total: string }[]> {
+  const rows = await query<{ date_val: Date; total: string }[]>(`
+    SELECT 
+      expense_date AS date_val, 
+      SUM(amount_minor) AS total
+    FROM expenses
+    WHERE user_id = ? AND deleted_at IS NULL
+    GROUP BY expense_date
+    ORDER BY expense_date ASC
+  `, [userId]);
+
+  return rows.map(r => {
+    // Format date as YYYY-MM-DD
+    const d = new Date(r.date_val);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return {
+      date: `${yyyy}-${mm}-${dd}`,
+      total: r.total
+    };
+  });
+}
+
+export async function getCategorySpend(
+  userId: string,
+  categoryId: number,
+  year: number,
+  month: number
+): Promise<number> {
+  const { startStr, endStr } = getMonthBoundariesIST(year, month);
+  const [row] = await query<{ total_spent: string }[]>(`
+    SELECT COALESCE(SUM(amount_minor), 0) AS total_spent
+    FROM expenses
+    WHERE user_id = ? 
+      AND category_id = ? 
+      AND expense_date >= ? 
+      AND expense_date < ? 
+      AND deleted_at IS NULL
+  `, [userId, categoryId, startStr, endStr]);
+  return parseInt(row?.total_spent || '0', 10);
 }

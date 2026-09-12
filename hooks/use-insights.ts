@@ -8,7 +8,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { apiGet, apiPatch, buildQuery, ApiRequestError } from '@/lib/api-client';
-import type { InsightsEngineOutput } from '@/types/api';
+import { currentMonthIST, currentYearIST } from '@/lib/time/time.service';
+import type { InsightsEngineOutput, InsightDTO, InsightType } from '@/types/api';
 import { subscribeInsightsRefresh } from '@/context/smartspend-context';
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -29,9 +30,8 @@ export interface UseInsightsReturn {
 }
 
 export function useInsights(opts: UseInsightsOptions = {}): UseInsightsReturn {
-  const now    = new Date();
-  const year   = opts.year   ?? now.getFullYear();
-  const month  = opts.month  ?? now.getMonth() + 1;
+  const year   = opts.year   ?? currentYearIST();
+  const month  = opts.month  ?? currentMonthIST();
   const months = opts.months ?? 3;
 
   const [data,        setData]        = useState<InsightsEngineOutput | null>(null);

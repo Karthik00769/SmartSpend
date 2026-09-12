@@ -1,10 +1,10 @@
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
+import { AI_MODELS } from '@/lib/ai/models';
 import { CATEGORY_RULES } from '@/lib/expense-engine/categorizer';
 import type { CategorizationResult } from '@/lib/expense-engine/types';
 
 const MODEL_CANDIDATES = [
-  'gemini-3-flash',
-  'gemini-3.1-flash-lite',
+  AI_MODELS.GEMINI_FLASH,
 ];
 
 

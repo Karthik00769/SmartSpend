@@ -357,20 +357,22 @@ async function main() {
       const monthlyIncome = user.monthly_income_minor;
       const [savingsMonths] = await conn.execute<any[]>(
         `SELECT 
-          DATE_FORMAT(expense_date, '%Y-%m') as month,
+          YEAR(expense_date) as yr,
+          MONTH(expense_date) as mo,
           SUM(amount_minor) as spent
          FROM expenses 
          WHERE user_id = ?
-         GROUP BY DATE_FORMAT(expense_date, '%Y-%m')`,
+         GROUP BY YEAR(expense_date), MONTH(expense_date)`,
         [user.id]
       );
       
       let totalSavings = 0;
       console.log('Savings Calculation:');
       for (const month of savingsMonths) {
+        const monthStr = `${month.yr}-${String(month.mo).padStart(2, '0')}`;
         const monthlySavings = Number(monthlyIncome) - Number(month.spent);
         totalSavings += monthlySavings;
-        console.log(`  ${month.month}: Income ${Number(monthlyIncome)/100} - Spent ${Number(month.spent)/100} = Saved ${monthlySavings/100}`);
+        console.log(`  ${monthStr}: Income ${Number(monthlyIncome)/100} - Spent ${Number(month.spent)/100} = Saved ${monthlySavings/100}`);
       }
       console.log('SQL Result - Total Savings (minor):', totalSavings);
       console.log('SQL Result - Total Savings (decimal):', (totalSavings / 100).toFixed(2));
@@ -381,19 +383,20 @@ async function main() {
       console.log('🔍 METRIC: Monthly Graph Data');
       const [monthlyData] = await conn.execute<any[]>(
         `SELECT 
-          DATE_FORMAT(expense_date, '%Y-%m') as month,
+          YEAR(expense_date) as yr,
+          MONTH(expense_date) as mo,
           SUM(amount_minor) as total
          FROM expenses 
          WHERE user_id = ?
-         GROUP BY DATE_FORMAT(expense_date, '%Y-%m')
-         ORDER BY month DESC
+         GROUP BY YEAR(expense_date), MONTH(expense_date)
+         ORDER BY yr DESC, mo DESC
          LIMIT 12`,
         [user.id]
       );
       console.log('SQL Query: Last 12 months grouped spending');
       console.log('SQL Result:');
       console.table(monthlyData.map((m: any) => ({
-        month: m.month,
+        month: `${m.yr}-${String(m.mo).padStart(2, '0')}`,
         total_minor: m.total,
         total_decimal: Number(m.total) / 100,
       })));
@@ -809,12 +812,13 @@ async function main() {
       // Calculate actual savings history
       const [savingsHistory] = await conn.execute<any[]>(
         `SELECT 
-           DATE_FORMAT(expense_date, '%Y-%m') as month,
+           YEAR(expense_date) as yr,
+           MONTH(expense_date) as mo,
            SUM(amount_minor) as spent
          FROM expenses 
          WHERE user_id = ?
-         GROUP BY DATE_FORMAT(expense_date, '%Y-%m')
-         ORDER BY month DESC
+         GROUP BY YEAR(expense_date), MONTH(expense_date)
+         ORDER BY yr DESC, mo DESC
          LIMIT 6`,
         [user.id]
       );

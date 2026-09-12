@@ -1,9 +1,8 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { AI_MODELS } from '@/lib/ai/models';
 
 const MODEL_CANDIDATES = [
-  'gemini-1.5-flash',
-  'gemini-1.5-pro',
-  'gemini-pro',
+  AI_MODELS.GEMINI_FLASH,
 ];
 
 export interface CoachInput {

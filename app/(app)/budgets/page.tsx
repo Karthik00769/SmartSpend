@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { currentMonthIST, currentYearIST } from '@/lib/time/time.service';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -34,15 +35,16 @@ export default function BudgetPage() {
     fmt,
   } = useSmartSpend();
 
-  const now = new Date();
-  const years = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1];
+  const currentYear = currentYearIST();
+  const currentMonth = currentMonthIST();
+  const years = [currentYear - 1, currentYear, currentYear + 1];
 
   // Past months are read-only — only current month is editable
   const isCurrentPeriod =
-    period.year === now.getFullYear() && period.month === now.getMonth() + 1;
+    period.year === currentYear && period.month === currentMonth;
   const isPastPeriod = !isCurrentPeriod &&
-    (period.year < now.getFullYear() ||
-      (period.year === now.getFullYear() && period.month < now.getMonth() + 1));
+    (period.year < currentYear ||
+      (period.year === currentYear && period.month < currentMonth));
 
   return (
     <div>

@@ -43,11 +43,11 @@ export async function logAudit(params: AuditLogParams): Promise<void> {
   if (!ip && req) {
     ip = req.headers.get('x-forwarded-for') ||
          req.headers.get('x-real-ip') ||
-         req.ip ||
+         (req as any).ip ||
          'unknown';
     
     // x-forwarded-for may contain multiple IPs, take the first
-    if (ip.includes(',')) {
+    if (ip && typeof ip === 'string' && ip.includes(',')) {
       ip = ip.split(',')[0].trim();
     }
   }

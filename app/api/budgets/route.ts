@@ -18,6 +18,7 @@ import { listBudgets, upsertBudget } from '@/services/budget.service';
 import * as FinanceCore from '@/lib/finance';
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/authOptions";
+import { currentMonthIST, currentYearIST } from '@/lib/time/time.service';
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -50,9 +51,8 @@ export async function POST(req: NextRequest) {
     bodyData.userId = (session.user as any).id;
 
     // ── ENFORCE ONLY CURRENT OR FUTURE MONTHS ────
-    const now = new Date();
-    const currentMonth = now.getMonth() + 1;
-    const currentYear  = now.getFullYear();
+    const currentMonth = currentMonthIST();
+    const currentYear  = currentYearIST();
 
     if (bodyData.year < currentYear || (bodyData.year === currentYear && bodyData.month < currentMonth)) {
       return fail('Cannot modify past budgets.', 400);

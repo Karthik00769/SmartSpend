@@ -2,7 +2,7 @@ import { query } from '@/lib/db';
 import type { GoalDTO } from '@/types/api';
 import { Goals, Math as FinanceMath, Reports } from '@/lib/finance';
 import { ResultSetHeader } from 'mysql2';
-import { daysUntilIST, todayIST } from '@/lib/time/time.service';
+import { daysUntilIST, todayIST, formatDateIST } from '@/lib/time/time.service';
 
 // ─── Row shape from DB ────────────────────────────────────────────────────────
 interface GoalRow {
@@ -67,8 +67,7 @@ function toDTO(row: GoalRow): GoalDTO {
 const BASE_SELECT = `
   SELECT
     id, user_id, title, description, target_minor, saved_minor,
-    target_date, priority, status, goal_type, created_at,
-    DATEDIFF(target_date, CURDATE()) AS days_remaining
+    target_date, priority, status, goal_type, created_at
   FROM goals
   WHERE deleted_at IS NULL
 `;
@@ -216,19 +215,19 @@ export async function syncGoalStatuses(userId: string): Promise<void> {
      SET status = 'overdue'
      WHERE user_id = ?
        AND status = 'active'
-       AND target_date < CURDATE()
+       AND target_date < ?
        AND saved_minor < target_minor
        AND deleted_at IS NULL`,
-    [userId],
+    [userId, formatDateIST(todayIST())],
   );
 }
 
 export async function checkGoalUnlockStatus(userId: string): Promise<{ monthsOfData: number; longTermUnlocked: boolean }> {
   const [row] = await query<{ months_diff: number | null }[]>(`
-    SELECT TIMESTAMPDIFF(MONTH, MIN(expense_date), CURDATE()) AS months_diff
+    SELECT TIMESTAMPDIFF(MONTH, MIN(expense_date), ?) AS months_diff
     FROM expenses
     WHERE user_id = ? AND deleted_at IS NULL
-  `, [userId]);
+  `, [formatDateIST(todayIST()), userId]);
 
   const months = row?.months_diff ?? 0;
   return {

@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { AI_MODELS } from '@/lib/ai/models';
 
 export type DocumentClassification = 
   | 'Bank Statement' 
@@ -18,7 +19,7 @@ export async function classifyDocumentImage(buffer: Buffer, mimeType: string): P
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: 'gemini-3.1-flash-lite',
+      model: AI_MODELS.GEMINI_FLASH,
       generationConfig: {
         responseMimeType: 'application/json',
         responseSchema: {

@@ -6,6 +6,7 @@ import { runInsightsEngine } from '@/lib/insights-engine';
 import { buildInsightContext } from '@/services/insights.service';
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/authOptions";
+import { currentYearIST, currentMonthIST } from '@/lib/time/time.service';
 
 const EngineQuerySchema = z.object({
   year:   z.coerce.number().int().min(2000).max(2100).optional(),
@@ -22,8 +23,7 @@ export async function GET(req: NextRequest) {
   const parsed = parseQuery(req.nextUrl.searchParams, EngineQuerySchema);
   if (!parsed.success) return fail(parsed.message, 400, parsed.fieldErrors);
 
-  const now   = new Date();
-  const { year = now.getFullYear(), month = now.getMonth() + 1, months = 3 } = parsed.data;
+  const { year = currentYearIST(), month = currentMonthIST(), months = 3 } = parsed.data;
 
   try {
     // 1. Build the deterministic context (all math runs here in FinanceCore layer)

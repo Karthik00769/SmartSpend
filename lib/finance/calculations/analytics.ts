@@ -4,9 +4,11 @@
  */
 import * as Core from './core';
 
+import * as Budget from './budget';
+
 export const calculateSavings = Core.calculateSavings;
 export const calculateSavingsRate = Core.calculateSavingsRate;
-export const calculateBudgetUsedPct = Core.calculateBudgetUsage;
+export const calculateBudgetUsedPct = Budget.calculateBudgetProgress;
 export const calculateBudgetRemaining = (allocated: number, spent: number) => Math.max(0, allocated - spent);
 export const calculateGoalProgressPct = Core.calculateGoalProgress;
 export const calculateDailyAvgSpend = (spent: number, days: number) => Core.calculateAverageSpend(spent, days);

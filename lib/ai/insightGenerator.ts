@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { AI_MODELS } from '@/lib/ai/models';
 import { Analytics } from '@/lib/finance';
 
 // ─── Input Types ─────────────────────────────────────────────────────────────
@@ -6,8 +7,8 @@ import { Analytics } from '@/lib/finance';
 export interface UserFinancialData {
   monthlySpending: number;
   categoryDistribution: Record<string, number>;
-  budgetUsage: Array<{ category: string; limit: number; spent: number }>;
-  goalProgress: Array<{ title: string; target: number; current: number }>;
+  budgetUsage: Array<{ category: string; limit: number; spent: number; usedPct: number }>;
+  goalProgress: Array<{ title: string; target: number; current: number; progressPct: number }>;
   currencySymbol?: string; // e.g. '₹', '$', '£' — defaults to '₹'
   last3MonthsSpending?: number; // optional context for trend insights
   monthlyIncome?: number;
@@ -27,8 +28,7 @@ export interface GeneratedInsight {
 // Older SDK versions use generateContent via getGenerativeModel().
 // We try models in sequence and fall back gracefully if one 404s.
 const MODEL_CANDIDATES = [
-  'gemini-3.5-flash',
-  'gemini-3.1-flash-lite',
+  AI_MODELS.GEMINI_FLASH,
 ];
 
 
@@ -79,7 +79,7 @@ function generateFallbackInsights(data: UserFinancialData): GeneratedInsight[] {
     b => b.limit > 0 && b.spent <= b.limit && Analytics.calculateBudgetUsedPct(b.spent, b.limit) >= 80
   );
   for (const b of nearLimit.slice(0, 1)) {
-    const pct = Math.round(Analytics.calculateBudgetUsedPct(b.spent, b.limit));
+    const pct = Math.round(b.usedPct);
     insights.push({
       type: 'warning',
       content: `You're at ${pct}% of your ${b.category} budget (${sym}${b.spent.toFixed(0)} / ${sym}${b.limit.toFixed(0)}). Watch your spending to stay on track.`,
@@ -89,7 +89,7 @@ function generateFallbackInsights(data: UserFinancialData): GeneratedInsight[] {
   // 5. Goal progress
   for (const g of data.goalProgress.slice(0, 1)) {
     if (g.target > 0 && g.current >= 0) {
-      const pct = Math.round(Analytics.calculateGoalProgressPct(g.current, g.target));
+      const pct = Math.round(g.progressPct);
       insights.push({
         type: pct >= 75 ? 'opportunity' : 'trend',
         content: `Your "${g.title}" goal is ${pct}% complete (${sym}${g.current.toFixed(0)} of ${sym}${g.target.toFixed(0)} saved). ${pct >= 75 ? "Great work — you're almost there!" : 'Keep saving consistently to reach your target.'}`,

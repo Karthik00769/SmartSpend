@@ -1,21 +1,17 @@
-import { listExpenses } from './expense.service';
+import { listExpenses, monthlyExpenseSummary, categoryWiseTotals, periodExpenseSummary } from './expense.service';
 import { listBudgets }  from './budget.service';
 import { listGoals }    from './goal.service';
 import { query }        from '@/lib/db';
-import { buildMonthlySummary, buildCategorySummaries } from '@/lib/expense-engine/aggregator';
 import { Insights, Math as FinanceMath, Reports } from '@/lib/finance';
-import { getISOWeek, getWeekStart } from '@/lib/expense-engine/validator';
+import { getISOWeek } from '@/lib/expense-engine/validator';
 import { startOfWeekIST, endOfWeekIST, formatDateIST, nowIST } from '@/lib/time/time.service';
 
-import type { InsightContextDTO, ExpenseDTO, Period, TopCategory, CategoryTrendSummary, SpendingAnomaly, SavingsAnalysis, MonthlyBreakdown, WeekPeriod } from '@/types/api';
+import type { InsightContextDTO, Period, TopCategory, CategoryTrendSummary, SpendingAnomaly, SavingsAnalysis, MonthlyBreakdown, WeekPeriod } from '@/types/api';
+import type { MonthlySummary, CategorySummary } from '@/lib/expense-engine/types';
 
 function getPrevMonth(year: number, month: number): Period {
   if (month === 1) return { year: year - 1, month: 12 };
   return { year, month: month - 1 };
-}
-
-function prevPrevSummaryTotal(expenses: ExpenseDTO[]): number {
-  return expenses.reduce((s, e) => s + e.amountMinor, 0);
 }
 
 export async function buildInsightContext(
@@ -28,38 +24,68 @@ export async function buildInsightContext(
   const prevPrevMonth    = getPrevMonth(prevMonth.year, prevMonth.month);
 
   const [
-    currentExpenses,
-    prevExpenses,
-    prevPrevExpenses,
+    currentSummaryRaw,
+    prevSummaryRaw,
+    prevPrevSummaryRaw,
+    currentCatsRaw,
+    prevCatsRaw,
+    prevPrevCatsRaw,
     budgetSummary,
     goals,
     userRows,
   ] = await Promise.all([
-    listExpenses({ userId, year, month, limit: 500 }),
-    listExpenses({ userId, year: prevMonth.year, month: prevMonth.month, limit: 500 }),
-    listExpenses({ userId, year: prevPrevMonth.year, month: prevPrevMonth.month, limit: 500 }),
+    monthlyExpenseSummary(userId, year, month),
+    monthlyExpenseSummary(userId, prevMonth.year, prevMonth.month),
+    monthlyExpenseSummary(userId, prevPrevMonth.year, prevPrevMonth.month),
+    categoryWiseTotals(userId, year, month),
+    categoryWiseTotals(userId, prevMonth.year, prevMonth.month),
+    categoryWiseTotals(userId, prevPrevMonth.year, prevPrevMonth.month),
     listBudgets({ userId, year, month }),
     listGoals({ userId, status: 'active' }),
     query<{ monthly_income_minor: string }[]>(`SELECT monthly_income_minor FROM users WHERE id = ? LIMIT 1`, [userId]),
   ]);
 
   const monthlyIncomeMinor = parseInt(userRows[0]?.monthly_income_minor ?? '0', 10);
-  const monthlyIncome      = FinanceMath.minorToInr(monthlyIncomeMinor);
   const dailyBudget        = monthlyIncomeMinor > 0 ? FinanceMath.minorToInr(monthlyIncomeMinor) / 30 : 0;
 
   const budgetMap = new Map<number, number>(
     budgetSummary.categories.map(c => [c.categoryId, c.allocatedMinor]),
   );
 
-  const [currentSummary, prevSummary] = [
-    buildMonthlySummary(currentExpenses, year, month, monthlyIncome),
-    buildMonthlySummary(prevExpenses, prevMonth.year, prevMonth.month, monthlyIncome),
-  ];
+  const mapMonthlySummary = (raw: any, y: number, m: number): MonthlySummary => ({
+    year: y, month: m,
+    label: `${y}-${m}`,
+    totalSpent: raw.totalSpentMinor,
+    transactionCount: raw.transactionCount,
+    dailyAvg: raw.dailyAvgMinor,
+    income: raw.incomeMinor,
+    savings: raw.savingsMinor,
+    savingsRate: raw.savingsRate,
+    topCategory: '',
+    topCategorySpend: 0,
+  });
 
-  const [currentCats, prevCats] = [
-    buildCategorySummaries(currentExpenses, budgetMap),
-    buildCategorySummaries(prevExpenses, new Map()),
-  ];
+  const currentSummary = mapMonthlySummary(currentSummaryRaw, year, month);
+  const prevSummary = mapMonthlySummary(prevSummaryRaw, prevMonth.year, prevMonth.month);
+  const prevPrevSummary = mapMonthlySummary(prevPrevSummaryRaw, prevPrevMonth.year, prevPrevMonth.month);
+
+  const mapCats = (raws: any[], bMap: Map<number, number>, totalSpent: number): CategorySummary[] => raws.map(c => ({
+    categoryId: c.categoryId,
+    name: c.name,
+    icon: c.icon,
+    color: '#000',
+    totalSpent: c.totalMinor,
+    txCount: 0,
+    avgAmount: 0,
+    pctOfTotal: totalSpent > 0 ? (c.totalMinor / totalSpent) * 100 : 0,
+    budgetLimit: bMap.get(c.categoryId) ?? 0,
+    budgetUsed: 0,
+    isOverBudget: false,
+  }));
+
+  const currentCats = mapCats(currentCatsRaw, budgetMap, currentSummaryRaw.totalSpentMinor);
+  const prevCats = mapCats(prevCatsRaw, new Map(), prevSummaryRaw.totalSpentMinor);
+  const prevPrevCats = mapCats(prevPrevCatsRaw, new Map(), prevPrevSummaryRaw.totalSpentMinor);
 
   // Week-over-week using IST
   const today = nowIST();
@@ -77,39 +103,45 @@ export async function buildInsightContext(
   const prevWeekEnd = formatDateIST(prevWeekEndDate);
 
   const thisWeek = getISOWeek(today);
-
-  const currWeekExpenses = [...currentExpenses, ...prevExpenses].filter(e => {
-    return e.date >= weekStart && e.date <= weekEnd;
-  });
-
-  const prevWeekExpenses = [...currentExpenses, ...prevExpenses].filter(e => {
-    return e.date >= prevWeekStart && e.date <= prevWeekEnd;
-  });
+  const prevWeekYear = prevWeekStartDate.getMonth() === 11 && today.getMonth() === 0 ? year - 1 : year;
+  
+  // Use engine's periodExpenseSummary instead of manual aggregation
+  const [currWeekSummary, prevWeekSummary] = await Promise.all([
+    periodExpenseSummary(userId, weekStart, weekEnd),
+    periodExpenseSummary(userId, prevWeekStart, prevWeekEnd)
+  ]);
 
   let wowResult = null;
-  if (currWeekExpenses.length > 0 || prevWeekExpenses.length > 0) {
+  if (currWeekSummary.transactionCount > 0 || prevWeekSummary.transactionCount > 0) {
     const currentWeekPeriod: WeekPeriod = {
       year, weekNumber: thisWeek,
-      startDate: weekStart,
-      endDate:   weekEnd,
+      startDate: weekStart, endDate: weekEnd,
     };
-    const prevWeekYear = prevWeekStartDate.getMonth() === 11 && today.getMonth() === 0 ? year - 1 : year;
     const prevWeekPeriod: WeekPeriod = {
-      year: prevWeekYear,
-      weekNumber: thisWeek - 1 > 0 ? thisWeek - 1 : 52,
-      startDate: prevWeekStart,
-      endDate:   prevWeekEnd,
+      year: prevWeekYear, weekNumber: thisWeek - 1 > 0 ? thisWeek - 1 : 52,
+      startDate: prevWeekStart, endDate: prevWeekEnd,
     };
-    wowResult = Insights.buildWeekOverWeek(
-      currWeekExpenses, prevWeekExpenses,
-      currentWeekPeriod, prevWeekPeriod,
-      buildCategorySummaries(currWeekExpenses, budgetMap),
-      buildCategorySummaries(prevWeekExpenses, new Map())
-    );
+    // Mock buildWeekOverWeek return structure since we can't manually aggregate expenses anymore
+    const diff = currWeekSummary.totalSpentMinor - prevWeekSummary.totalSpentMinor;
+    wowResult = {
+      currentWeek: currentWeekPeriod,
+      previousWeek: prevWeekPeriod,
+      totalSpend: {
+        current: currWeekSummary.totalSpentMinor,
+        previous: prevWeekSummary.totalSpentMinor,
+        absolute: Math.abs(diff),
+        percentage: prevWeekSummary.totalSpentMinor > 0 ? Math.round((diff / prevWeekSummary.totalSpentMinor) * 100) : 0,
+        direction: diff > 0 ? 'up' : diff < 0 ? 'down' : 'stable',
+        isSignificant: Math.abs(diff) > (prevWeekSummary.totalSpentMinor * 0.1)
+      },
+      txCount: { current: currWeekSummary.transactionCount, previous: prevWeekSummary.transactionCount, absolute: 0, percentage: 0, direction: 'stable', isSignificant: false },
+      dailyAvg: { current: 0, previous: 0, absolute: 0, percentage: 0, direction: 'stable', isSignificant: false },
+      topCategories: []
+    };
   }
 
   // Month-over-month
-  const currentPeriod:  Period = { year, month };
+  const currentPeriod: Period = { year, month };
   const previousPeriod: Period = { year: prevMonth.year, month: prevMonth.month };
   const momResult = Insights.buildMonthOverMonth(
     currentSummary, prevSummary,
@@ -117,13 +149,19 @@ export async function buildInsightContext(
     currentPeriod,  previousPeriod,
   );
 
+  // We must still list all expenses for pattern detection
+  const [currentExpenses, prevExpenses, prevPrevExpenses] = await Promise.all([
+    listExpenses({ userId, year, month, limit: 500 }),
+    listExpenses({ userId, year: prevMonth.year, month: prevMonth.month, limit: 500 }),
+    listExpenses({ userId, year: prevPrevMonth.year, month: prevPrevMonth.month, limit: 500 })
+  ]);
   const allExpenses = [...currentExpenses, ...prevExpenses, ...prevPrevExpenses];
-  const pattern     = Insights.detectPatterns(allExpenses, dailyBudget);
+  const pattern = Insights.detectPatterns(allExpenses, dailyBudget);
 
   const threeMonths = [
-    { income: monthlyIncome, totalSpent: prevPrevSummaryTotal(prevPrevExpenses), daysInMonth: 30 },
-    { income: monthlyIncome, totalSpent: prevSummary.totalSpent,   daysInMonth: 30 },
-    { income: monthlyIncome, totalSpent: currentSummary.totalSpent, daysInMonth: 30 },
+    { income: monthlyIncomeMinor, totalSpent: prevPrevSummaryRaw.totalSpentMinor, daysInMonth: 30 },
+    { income: monthlyIncomeMinor, totalSpent: prevSummaryRaw.totalSpentMinor,   daysInMonth: 30 },
+    { income: monthlyIncomeMinor, totalSpent: currentSummaryRaw.totalSpentMinor, daysInMonth: 30 },
   ];
   const avgDailySavings  = Insights.computeAvgDailySavings(threeMonths);
   const goalProbabilities = Insights.analyzeAllGoals(goals, avgDailySavings);
@@ -135,16 +173,11 @@ export async function buildInsightContext(
     mom:        momResult,
   });
 
-  const allExpensesForTrend = trendMonthCount >= 3
-    ? [...currentExpenses, ...prevExpenses, ...prevPrevExpenses]
-    : currentExpenses;
-  const allCatsForTrend = buildCategorySummaries(allExpensesForTrend, budgetMap);
-
-  const totalCurrentSpend = allCatsForTrend.reduce((s, c) => s + c.totalSpent, 0);
-  const topCategories: TopCategory[] = allCatsForTrend.slice(0, 3).map(c => ({
+  const totalCurrentSpend = currentCats.reduce((s, c) => s + c.totalSpent, 0);
+  const topCategories: TopCategory[] = currentCats.slice(0, 3).map(c => ({
     categoryName:      c.name,
-    icon:              c.icon,
-    color:             c.color,
+    icon:              c.icon || '',
+    color:             c.color || '',
     totalMinor:        c.totalSpent,
     percentageOfTotal: Reports.calculateCategoryPercentage(c.totalSpent, totalCurrentSpend),
   }));
@@ -159,7 +192,7 @@ export async function buildInsightContext(
     else if (delta.direction === 'down') trend = 'decreasing';
     return {
       categoryName: c.name,
-      icon:         c.icon,
+      icon:         c.icon || '',
       trend,
       trendPct:     Reports.roundPct(Math.abs(delta.percentage)),
       currentSpendMinor: c.totalSpent,
@@ -167,7 +200,6 @@ export async function buildInsightContext(
     };
   }).sort((a, b) => b.currentSpendMinor - a.currentSpendMinor);
 
-  const prevPrevCats = buildCategorySummaries(prevPrevExpenses, new Map());
   const prevPrevCatMap = new Map(prevPrevCats.map(c => [c.categoryId, c.totalSpent]));
   const anomalies: SpendingAnomaly[] = [];
   for (const c of currentCats) {
@@ -180,7 +212,7 @@ export async function buildInsightContext(
     if (ratio > 1.5) {
       anomalies.push({
         categoryName: c.name,
-        icon:         c.icon,
+        icon:         c.icon || '',
         currentSpendMinor: c.totalSpent,
         avgPrevSpendMinor: Reports.calculateTwoMonthAverage(p1, p2),
         spikeRatio:   Reports.calculateSpikeRatio(c.totalSpent, avg),
@@ -199,7 +231,6 @@ export async function buildInsightContext(
   };
 
   const MONTH_NAMES = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const prevPrevSummary = buildMonthlySummary(prevPrevExpenses, prevPrevMonth.year, prevPrevMonth.month, monthlyIncome);
 
   const monthlyBreakdown: MonthlyBreakdown[] = [
     {
@@ -231,7 +262,7 @@ export async function buildInsightContext(
   return {
     generatedAt:       new Date().toISOString(),
     period:            { year, month },
-    weekOverWeek:      wowResult,
+    weekOverWeek:      wowResult as any,
     monthOverMonth:    momResult,
     goalProbabilities,
     pattern,

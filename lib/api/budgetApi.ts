@@ -19,6 +19,7 @@ import type {
   BudgetSummaryDTO,
   UpsertBudgetInput,
 } from '@/types/api';
+import { currentMonthIST, currentYearIST } from '@/lib/time/time.service';
 
 // ─── Input helpers ────────────────────────────────────────────────────────────
 
@@ -49,10 +50,9 @@ export type UpsertBudgetPayload = Omit<UpsertBudgetInput, 'userId'>;
 export async function getBudgets(
   opts: GetBudgetsOptions = {},
 ): Promise<BudgetSummaryDTO> {
-  const now  = new Date();
   const qs   = buildQuery({
-    month:  opts.month ?? now.getMonth() + 1,
-    year:   opts.year  ?? now.getFullYear(),
+    month:  opts.month ?? currentMonthIST(),
+    year:   opts.year  ?? currentYearIST(),
   });
   return get<BudgetSummaryDTO>(`/api/budgets${qs}`);
 }

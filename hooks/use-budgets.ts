@@ -7,8 +7,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { apiGet, apiPost, buildQuery, ApiRequestError } from '@/lib/api-client';
-import type { BudgetSummaryDTO } from '@/types/api';
+import { apiGet, apiPost, apiDelete, buildQuery, ApiRequestError } from '@/lib/api-client';
+import { currentMonthIST, currentYearIST } from '@/lib/time/time.service';
+import type { BudgetSummaryDTO, BudgetCategoryDTO } from '@/types/api';
 
 // ─── Payload for creating/updating a budget ───────────────────────────────────
 
@@ -38,9 +39,8 @@ export interface UseBudgetsReturn {
 }
 
 export function useBudgets(opts: UseBudgetsOptions = {}): UseBudgetsReturn {
-  const now    = new Date();
-  const year   = opts.year   ?? now.getFullYear();
-  const month  = opts.month  ?? now.getMonth() + 1;
+  const year   = opts.year   ?? currentYearIST();
+  const month  = opts.month  ?? currentMonthIST();
 
   const [budget,      setBudget]    = useState<BudgetSummaryDTO | null>(null);
   const [loading,     setLoading]   = useState(true);

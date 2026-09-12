@@ -72,7 +72,6 @@ async function main() {
       SELECT
         YEAR(e.expense_date)                                AS yr,
         MONTH(e.expense_date)                               AS mo,
-        DATE_FORMAT(e.expense_date, '%b %Y')                AS month_label,
         COALESCE(SUM(e.amount_minor), 0)                    AS total_spent_minor
       FROM expenses e
       WHERE
@@ -80,9 +79,8 @@ async function main() {
         AND e.deleted_at IS NULL
         AND e.expense_date >= DATE_FORMAT(DATE_SUB(NOW(), INTERVAL ? MONTH), '%Y-%m-01')
       GROUP BY
-        yr,
-        mo,
-        month_label
+        YEAR(e.expense_date),
+        MONTH(e.expense_date)
       ORDER BY
         yr ASC,
         mo ASC
@@ -94,12 +92,16 @@ async function main() {
     const [rows] = await conn.execute<any[]>(sql2, [userId, months]);
     
     console.log('\nDB Results (raw):');
-    console.table(rows.map((r: any) => ({
-      year: r.yr,
-      month: r.mo,
-      label: r.month_label,
-      total_spent_minor: r.total_spent_minor,
-    })));
+    console.table(rows.map((r: any) => {
+      const d = new Date(r.yr, r.mo - 1, 1);
+      const month_label = d.toLocaleString('en-US', { month: 'short' }) + ' ' + r.yr;
+      return {
+        year: r.yr,
+        month: r.mo,
+        label: month_label,
+        total_spent_minor: r.total_spent_minor,
+      };
+    }));
     console.log('\n');
 
     // STEP 3: Transform data (exactly as API does)
@@ -110,8 +112,11 @@ async function main() {
       const spentMinor   = parseInt(r.total_spent_minor, 10);
       const savingsMinor = calculateSavingsMinor(monthlyIncomeMinor, spentMinor);
       
+      const d = new Date(r.yr, r.mo - 1, 1);
+      const month_label = d.toLocaleString('en-US', { month: 'short' }) + ' ' + r.yr;
+
       return {
-        month:         r.month_label,
+        month:         month_label,
         // Minor values
         incomeMinor:   monthlyIncomeMinor,
         expensesMinor: spentMinor,

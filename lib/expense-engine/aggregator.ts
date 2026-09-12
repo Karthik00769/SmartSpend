@@ -41,6 +41,8 @@ export function buildMonthlySummary(
   year:          number,
   month:         number,
   monthlyIncome: number,
+  savings:       number = 0,
+  savingsRate:   number = 0,
 ): MonthlySummary {
   if (expenses.length === 0) {
     return {
@@ -62,8 +64,6 @@ export function buildMonthlySummary(
   // Days in the month for daily average calculation
   const daysInMonth = new Date(year, month, 0).getDate();
   const dailyAvg    = Analytics.calculateDailyAvgSpend(totalSpent, daysInMonth);
-  const savings     = Analytics.calculateSavings(monthlyIncome, totalSpent);
-  const savingsRate = Analytics.calculateSavingsRate(monthlyIncome, totalSpent);
 
   // Find top spending category
   const catTotals = new Map<string, number>();

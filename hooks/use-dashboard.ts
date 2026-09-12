@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { apiGet, buildQuery, ApiRequestError } from '@/lib/api-client';
+import { currentMonthIST, currentYearIST } from '@/lib/time/time.service';
 import type { MonthlySummary, ChartBundle, CategorySummary, WeeklySummary } from '@/lib/expense-engine/types';
 
 // ─── Response shape ───────────────────────────────────────────────────────────
@@ -41,9 +42,8 @@ export interface UseDashboardReturn {
 }
 
 export function useDashboard(opts: UseDashboardOptions = {}): UseDashboardReturn {
-  const now    = new Date();
-  const year   = opts.year   ?? now.getFullYear();
-  const month  = opts.month  ?? now.getMonth() + 1;
+  const year   = opts.year   ?? currentYearIST();
+  const month  = opts.month  ?? currentMonthIST();
 
   const [data,    setData]    = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);

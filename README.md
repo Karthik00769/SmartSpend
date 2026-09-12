@@ -81,7 +81,7 @@ Bank Statement → Extractor → Parser → Adapter → FinanceCore → Expense 
 | **Backend** | Next.js API Routes, Node.js |
 | **Database** | MySQL (via `mysql2`), Integer Currency Storage (Paise) |
 | **Testing** | Vitest 4.1 |
-| **AI** | Google Generative AI (`gemini-1.5-flash-latest`) |
+| **AI** | Google Generative AI (`gemini-3.6-flash`) |
 | **Validation** | Zod 3.24 |
 | **Charts** | Recharts 2.15 |
 | **Language** | TypeScript 5.7 |

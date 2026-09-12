@@ -1,25 +1,10 @@
 import { NextRequest } from 'next/server';
-import { query } from '@/lib/db';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth/authOptions';
 import { ok, fail } from '@/lib/api-response';
-import { Analytics, Budget, Math as FinanceMath } from '@/lib/finance';
-import { getMonthBoundariesIST } from '@/lib/time/time.service';
-
-interface MonthlyStats {
-  total_transactions: string;
-  total_spent: string;
-}
-
-interface UserRow {
-  monthly_income_minor: string;
-}
-
-interface CategoryRow {
-  category: string;
-  total_spent: string;
-  limit_amount: string;
-}
+import { getDashboardSummary } from '@/services/dashboard.service';
+import { Math as FinanceMath, Analytics } from '@/lib/finance';
+import { daysInMonthIST } from '@/lib/time/time.service';
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -28,105 +13,49 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const userId = (session.user as any).id as string;
-    const now    = new Date();
-    const year   = Math.max(2000, Number(searchParams.get('year')  ?? now.getFullYear()));
-    const month  = Math.min(12, Math.max(1, Number(searchParams.get('month') ?? now.getMonth() + 1)));
+    
+    // Use the central dashboard summary service for single source of truth
+    const summary = await getDashboardSummary(userId);
 
-    if (isNaN(year) || isNaN(month)) {
-      return fail('Invalid year or month format', 400);
-    }
+    const totalIncome  = FinanceMath.minorToInr(summary.totalIncomeMinor);
+    const totalSpent   = FinanceMath.minorToInr(summary.totalSpentMinor);
+    const savings      = FinanceMath.minorToInr(summary.savingsMinor);
+    const totalBudget  = FinanceMath.minorToInr(summary.totalBudgetMinor);
+    const budgetRemaining = FinanceMath.minorToInr(summary.budgetRemainingMinor);
 
-    // Use IST month boundaries for filtering
-    const { startStr: monthStart, endStr: monthEnd } = getMonthBoundariesIST(year, month);
-
-    const [statsRow] = await query<MonthlyStats[]>(`
-      SELECT
-        COUNT(e.id)                                                         AS total_transactions,
-        COALESCE(SUM(e.amount_minor), 0)                                    AS total_spent
-
-      FROM users u
-      LEFT JOIN expenses e
-        ON e.user_id = u.id
-       AND e.expense_date >= ?
-       AND e.expense_date < ?
-       AND e.deleted_at IS NULL
-      WHERE u.id = ?
-      GROUP BY u.id, u.monthly_income_minor
-    `, [monthStart, monthEnd, userId]);
-
-    const [userRow] = await query<UserRow[]>(
-      `SELECT monthly_income_minor FROM users WHERE id = ?`,
-      [userId]
-    );
-
-    const totalIncome  = parseFloat(userRow?.monthly_income_minor ?? '0');
-    const totalSpent   = parseFloat(statsRow?.total_spent ?? '0');
-    const savings      = Analytics.calculateSavings(totalIncome, totalSpent);
-
-    const categories = await query<CategoryRow[]>(`
-      SELECT
-        COALESCE(c.name, bc.name)                        AS category,
-        COALESCE(SUM(e.amount_minor), 0)                 AS total_spent,
-        COALESCE(b.limit_minor, 0)                       AS limit_amount
-      FROM (
-        SELECT DISTINCT category_id FROM expenses WHERE user_id = ? AND expense_date >= ? AND expense_date < ? AND deleted_at IS NULL
-        UNION
-        SELECT DISTINCT category_id FROM budgets WHERE user_id = ? AND year = ? AND month = ? AND deleted_at IS NULL
-      ) as cats
-      LEFT JOIN expenses e ON e.category_id = cats.category_id AND e.user_id = ? AND e.expense_date >= ? AND e.expense_date < ? AND e.deleted_at IS NULL
-      LEFT JOIN budgets b ON b.category_id = cats.category_id AND b.user_id = ? AND b.year = ? AND b.month = ? AND b.deleted_at IS NULL
-      LEFT JOIN categories c ON e.category_id = c.id
-      LEFT JOIN categories bc ON b.category_id = bc.id
-      GROUP BY COALESCE(c.name, bc.name), b.limit_minor
-      ORDER BY total_spent DESC
-    `, [userId, monthStart, monthEnd, userId, year, month, userId, monthStart, monthEnd, userId, year, month]);
-
-    let totalBudget = 0;
-    for (const c of categories) {
-      totalBudget += parseFloat(c.limit_amount);
-    }
+    const now = new Date();
 
     return ok({
       stats: {
         totalIncome,
         totalExpenses:   totalSpent,
-        savings:         savings < 0 ? 0 : savings,
-        budgetRemaining: totalBudget - totalSpent,
-        currentMonth:    new Date(year, month - 1).toLocaleString('default', { month: 'long', year: 'numeric' }),
-        totalTransactions: Number(statsRow?.total_transactions ?? 0),
-        dailyAvgSpend:   Analytics.calculateDailyAvgSpend(totalSpent, new Date(year, month, 0).getDate()),
-        incomeSpentPct:  Analytics.calculateCategoryPct(totalSpent, totalIncome),
+        savings,
+        budgetRemaining,
+        currentMonth:    new Date(now.getFullYear(), now.getMonth(), 1).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }),
+        totalTransactions: 0, // Not provided directly in DashboardSummaryDTO, frontend usually ignores this
+        dailyAvgSpend:   FinanceMath.minorToInr(summary.dailyAvgSpendMinor),
+        incomeSpentPct:  summary.incomeSpentPct,
       },
-      chartData: categories.map(c => ({
+      chartData: summary.topCategories.map(c => ({
         name:       c.category,
-        value:      parseFloat(c.total_spent),
-        percentage: Math.round(Analytics.calculateCategoryPct(parseFloat(c.total_spent), totalSpent)),
-        color: '#6B7280',
-        icon:  '📌',
+        value:      FinanceMath.minorToInr(c.spentMinor),
+        percentage: c.usedPct ?? 0,
+        color:      c.color || '#6B7280',
+        icon:       c.icon || '📌',
       })),
-      budgetCategories: categories.map(c => {
-        const allocatedMinor = parseFloat(c.limit_amount);
-        const spentMinor     = parseFloat(c.total_spent);
-        
-        const allocated = FinanceMath.minorToInr(allocatedMinor);
-        const spent     = FinanceMath.minorToInr(spentMinor);
-        
-        const usedPct = allocatedMinor > 0 ? Budget.calculateBudgetProgress(spentMinor, allocatedMinor) : null;
-        
-        return {
-          category:    c.category,
-          icon:        '📌',
-          allocated,
-          spent,
-          usedPct:     usedPct ? Math.round(usedPct * 100) / 100 : null,
-          isOverBudget: Budget.isBudgetExceeded(spentMinor, allocatedMinor),
-          status:      Budget.calculateBudgetStatus(spentMinor, allocatedMinor),
-          needsAlert:  Budget.needsBudgetAlert(spentMinor, allocatedMinor),
-          remaining:   FinanceMath.minorToInr(Budget.calculateRemainingBudget(spentMinor, allocatedMinor)),
-          month,
-          year,
-        };
-      }),
+      budgetCategories: summary.topCategories.map(c => ({
+        category:    c.category,
+        icon:        c.icon || '📌',
+        allocated:   FinanceMath.minorToInr(c.allocatedMinor),
+        spent:       FinanceMath.minorToInr(c.spentMinor),
+        usedPct:     c.usedPct,
+        isOverBudget: c.isOverBudget,
+        status:      c.status,
+        needsAlert:  c.needsAlert,
+        remaining:   FinanceMath.minorToInr(c.remainingMinor),
+        month:       c.month,
+        year:        c.year,
+      })),
     });
   } catch (err) {
     console.error('[GET /api/dashboard]', err);

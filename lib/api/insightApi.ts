@@ -19,6 +19,7 @@
 import { get, post, patch, buildQuery } from './apiClient';
 import type { InsightsSummaryDTO } from '@/types/api';
 import type { InsightsEngineOutput } from '@/types/engine';
+import { currentMonthIST, currentYearIST } from '@/lib/time/time.service';
 
 // ─── Response shapes ──────────────────────────────────────────────────────────
 
@@ -85,10 +86,9 @@ export async function getInsights(
 export async function getInsightsEngine(
   opts: GetEngineOptions = {},
 ): Promise<InsightsEngineOutput> {
-  const now = new Date();
   const qs  = buildQuery({
-    month:  opts.month ?? now.getMonth() + 1,
-    year:   opts.year  ?? now.getFullYear(),
+    month:  opts.month ?? currentMonthIST(),
+    year:   opts.year  ?? currentYearIST(),
   });
   return get<InsightsEngineOutput>(`/api/insights/engine${qs}`);
 }

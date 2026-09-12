@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ListSkeleton } from '@/components/ui/LoadingSkeleton';
-import { apiGet, apiPatch, apiDelete, buildQuery, ApiRequestError } from '@/lib/api-client';
+import { apiGet, apiPost, apiPatch, apiDelete, buildQuery, ApiRequestError } from '@/lib/api-client';
 import { formatDateIST, formatIST, nowIST } from '@/lib/time/time.service';
 import type { ExpenseDTO } from '@/types/api';
 import * as FinanceCore from '@/lib/finance';
@@ -301,7 +301,7 @@ export default function ExpensesHistoryPage() {
   const handleRestore = async (id: string) => {
     setRestoringId(id);
     try {
-      await apiGet(`/api/expenses/${id}/restore`, { method: 'POST' });
+      await apiPost(`/api/expenses/${id}/restore`, {});
       setRestoreConfirmId(null);
       fetchDeletedExpenses();
       fetchExpenses();
@@ -319,41 +319,19 @@ export default function ExpensesHistoryPage() {
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
-  // Calculate summary statistics for print
+  // Page-level total for the current result set
   const totalAmount = expenses.reduce((sum, exp) => sum + exp.amountMinor, 0);
-  const categoryBreakdown = expenses.reduce((acc, exp) => {
-    if (!acc[exp.categoryName]) {
-      acc[exp.categoryName] = { icon: exp.categoryIcon, amount: 0, count: 0 };
-    }
-    acc[exp.categoryName].amount += exp.amountMinor;
-    acc[exp.categoryName].count += 1;
-    return acc;
-  }, {} as Record<string, { icon: string; amount: number; count: number }>);
-
-  const filtersApplied = [
-    search && `Search: "${search}"`,
-    startDate && `From: ${startDate}`,
-    endDate && `To: ${endDate}`,
-    minAmount && `Min: ${fmt(FinanceCore.Math.inrToMinor(parseFloat(minAmount)))}`,
-    maxAmount && `Max: ${fmt(FinanceCore.Math.inrToMinor(parseFloat(maxAmount)))}`,
-    source && `Source: ${SOURCE_META[source]?.label || source}`,
-    catFilter && `Category: ${categories.find(c => String(c.id) === catFilter)?.label || catFilter}`,
-  ].filter(Boolean);
 
   return (
     <div className="space-y-6">
-
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-foreground mb-1">Expense History</h1>
           <p className="text-muted-foreground text-sm">{total} transaction{total !== 1 ? 's' : ''}</p>
         </div>
-        <Button variant="outline" onClick={() => window.print()} className="gap-2 no-print">
-          🖨️ Print
-        </Button>
       </div>
 
-      <Card className="p-5 no-print">
+      <Card className="p-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="relative lg:col-span-2">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">🔍</span>
@@ -420,7 +398,7 @@ export default function ExpensesHistoryPage() {
                 <TableHead className="w-[100px]">Date</TableHead>
                 <TableHead className="w-[100px]">Source</TableHead>
                 <TableHead className="text-right w-[100px]">Amount</TableHead>
-                <TableHead className="w-[90px] no-print" />
+                <TableHead className="w-[90px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -488,7 +466,7 @@ export default function ExpensesHistoryPage() {
                     <TableCell className="text-right font-bold tabular-nums amount">
                       {fmt(exp.amountMinor)}
                     </TableCell>
-                    <TableCell className="no-print">
+                    <TableCell>
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
                         <button onClick={() => setEditingId(exp.id)}
                           className="text-xs px-2 py-1 rounded bg-muted hover:bg-primary/10 hover:text-primary transition-colors"
@@ -506,7 +484,7 @@ export default function ExpensesHistoryPage() {
                 <TableRow className="totals-row">
                   <TableCell colSpan={5} className="text-right font-bold">Total (Current Page):</TableCell>
                   <TableCell className="text-right font-bold tabular-nums amount">{fmt(totalAmount)}</TableCell>
-                  <TableCell className="no-print" />
+                  <TableCell />
                 </TableRow>
               )}
             </TableBody>
@@ -585,7 +563,7 @@ export default function ExpensesHistoryPage() {
         </div>
 
         {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t bg-muted/20 no-print">
+          <div className="flex items-center justify-between px-4 py-3 border-t bg-muted/20">
             <span className="text-xs text-muted-foreground">
               {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
             </span>
@@ -601,7 +579,7 @@ export default function ExpensesHistoryPage() {
       </Card>
 
       {/* Deleted Expenses Section */}
-      <div className="no-print">
+      <div>
         <div className="flex items-center justify-between mb-4">
           <Button
             variant="outline"
@@ -731,7 +709,7 @@ export default function ExpensesHistoryPage() {
 
       {/* Restore Confirmation Modal */}
       {restoreConfirmId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 no-print"
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
           onClick={() => setRestoreConfirmId(null)}>
           <Card className="max-w-md w-full p-6 animate-in zoom-in-95 fade-in duration-200"
             onClick={e => e.stopPropagation()}>

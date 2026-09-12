@@ -32,10 +32,7 @@ export function calculateCategoryPercentage(categoryMinor: number, totalMinor: n
   return Math.round((categoryMinor / totalMinor) * 100);
 }
 
-export function calculateBudgetUsage(spentMinor: number, allocatedMinor: number): number {
-  if (allocatedMinor <= 0) return 0;
-  return Math.round((spentMinor / allocatedMinor) * 100);
-}
+
 
 // ─── Goal Formulas ─────────────────────────────────────────────────────────
 

@@ -13,8 +13,8 @@ import { listBudgets } from '@/services/budget.service';
 import { listGoals } from '@/services/goal.service';
 import { ok, fail } from '@/lib/api-response';
 import { Math as FinanceMath, Reports } from '@/lib/finance';
-import { computeHealthScore, buildMonthOverMonth } from '@/lib/finance/calculations/insights';
-import { monthlyExpenseSummary } from '@/services/expense.service';
+import { computeHealthScore, buildMonthOverMonth, analyzeGoal } from '@/lib/finance/calculations/insights';
+import { monthlyExpenseSummary, getMonthlyTrends } from '@/services/expense.service';
 import { getMonthBoundariesIST, currentMonthIST, currentYearIST } from '@/lib/time/time.service';
 
 interface MonthlyRow {
@@ -38,45 +38,16 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const months = Reports.clamp(Number(searchParams.get('months') ?? 6), 1, 24);
 
-    // Get user income (minor units)
-    const userRows = await query<UserRow[]>(
-      `SELECT monthly_income_minor FROM users WHERE id = ?`,
-      [userId]
-    );
-    const monthlyIncomeMinor = parseInt(userRows[0]?.monthly_income_minor ?? '0', 10);
-
     // Use IST month boundaries for consistency
     const currentMonth = currentMonthIST();
     const currentYear = currentYearIST();
     
-    // Monthly totals for the past N months using IST boundaries
-    const rows = await query<MonthlyRow[]>(`
-      SELECT
-        YEAR(e.expense_date)                                AS yr,
-        MONTH(e.expense_date)                               AS mo,
-        DATE_FORMAT(e.expense_date, '%b %Y')                AS month_label,
-        COALESCE(SUM(e.amount_minor), 0)                    AS total_spent_minor
-      FROM expenses e
-      WHERE
-        e.user_id = ?
-        AND e.deleted_at IS NULL
-        AND e.expense_date >= DATE_FORMAT(DATE_SUB(NOW(), INTERVAL ? MONTH), '%Y-%m-01')
-      GROUP BY
-        yr,
-        mo,
-        month_label
-      ORDER BY
-        yr ASC,
-        mo ASC
-    `, [userId, months]);
+    // Monthly totals for the past N months using centralized engine
+    const rows = await getMonthlyTrends(userId, months);
 
     console.log('[VALIDATION: REPORTS SQL TOTALS]', rows.map(r => ({ month: r.month_label, total_minor: r.total_spent_minor })));
 
-
     // Current month context for Health Score
-
-    const latestMonth = rows.find(r => r.mo === currentMonth && r.yr === currentYear);
-    const totalSpentMinor = latestMonth ? parseInt(latestMonth.total_spent_minor, 10) : 0;
 
     const [budgets, goals, currentSummary] = await Promise.all([
       listBudgets({ userId, month: currentMonth, year: currentYear }),
@@ -84,66 +55,62 @@ export async function GET(req: NextRequest) {
       monthlyExpenseSummary(userId, currentYear, currentMonth)
     ]);
 
-    // Convert goals to probability results for health score
-    const goalProbResults = goals.map(g => ({
-      goalId: g.id,
-      title: g.title,
-      targetAmountMinor: g.targetAmountMinor,
-      savedAmountMinor: g.savedAmountMinor,
-      targetDate: g.deadline,
-      daysRemaining: 0,
-      requiredDailyAmountMinor: 0,
-      actualDailyRateMinor: 0,
-      projectedAmountMinor: g.savedAmountMinor,
-      achievementPct: g.progressPct,
-      probability: g.progressPct >= 70 ? 80 : g.progressPct >= 40 ? 50 : 20,
-      risk: 'on_track' as const,
-      weeksNeeded: 0,
-      recommendation: '',
-      milestones: []
-    }));
+    const goalProbResults = goals.map(g => analyzeGoal(g, Math.max(0, currentSummary.savingsMinor) / 30));
+
+    const mappedCurrentSummary = {
+      year: currentYear,
+      month: currentMonth,
+      label: `${currentYear}-${currentMonth}`,
+      totalSpent: currentSummary.totalSpentMinor,
+      transactionCount: currentSummary.transactionCount,
+      dailyAvg: currentSummary.dailyAvgMinor,
+      income: currentSummary.incomeMinor,
+      savings: currentSummary.savingsMinor,
+      savingsRate: currentSummary.savingsRate,
+      topCategory: '',
+      topCategorySpend: 0
+    };
 
     // Build MoM with empty previous for consistency
     const emptyPrevious = {
       year: currentYear,
       month: currentMonth - 1 || 12,
+      label: `${currentYear}-${currentMonth - 1 || 12}`,
       totalSpent: 0,
       transactionCount: 0,
       dailyAvg: 0,
+      income: 0,
       savings: 0,
       savingsRate: 0,
-      daysInMonth: 30
+      topCategory: '',
+      topCategorySpend: 0
     };
+    const mappedCategories = budgets.categories.map(c => ({
+      categoryId: c.categoryId ?? 0,
+      name: c.category,
+      icon: c.icon || '',
+      color: c.color || '#000',
+      totalSpent: c.spentMinor,
+      txCount: 0,
+      avgAmount: 0,
+      pctOfTotal: c.pctOfTotal ?? 0,
+      budgetLimit: c.allocatedMinor,
+      budgetUsed: c.usedPct ?? 0,
+      isOverBudget: c.isOverBudget,
+    }));
+
     const mom = buildMonthOverMonth(
-      currentSummary,
+      mappedCurrentSummary,
       emptyPrevious,
-      budgets.categories.map(c => ({
-        categoryId: c.categoryId ?? 0,
-        categoryName: c.category,
-        totalSpent: c.spentMinor,
-        transactionCount: 0,
-        budgetLimit: c.allocatedMinor,
-        budgetUsed: c.usedPct ?? 0,
-        isOverBudget: c.isOverBudget,
-        averageTransaction: 0
-      })),
+      mappedCategories,
       [],
       { year: currentYear, month: currentMonth },
       { year: currentYear, month: currentMonth - 1 || 12 }
     );
 
     const healthScore = computeHealthScore({
-      summary: currentSummary,
-      categories: budgets.categories.map(c => ({
-        categoryId: c.categoryId ?? 0,
-        categoryName: c.category,
-        totalSpent: c.spentMinor,
-        transactionCount: 0,
-        budgetLimit: c.allocatedMinor,
-        budgetUsed: c.usedPct ?? 0,
-        isOverBudget: c.isOverBudget,
-        averageTransaction: 0
-      })),
+      summary: mappedCurrentSummary,
+      categories: mappedCategories,
       goals: goalProbResults,
       mom
     });
@@ -183,10 +150,10 @@ export async function GET(req: NextRequest) {
     return ok({
       monthlyData: rows.map(r => {
         const spentMinor   = parseInt(r.total_spent_minor, 10);
-        const savingsMinor = Reports.calculateSavingsMinor(monthlyIncomeMinor, spentMinor);
+        const savingsMinor = Reports.calculateSavingsMinor(currentSummary.incomeMinor, spentMinor);
         return {
           month:         r.month_label,
-          incomeMinor:   monthlyIncomeMinor,
+          incomeMinor:   currentSummary.incomeMinor,
           expensesMinor: spentMinor,
           savingsMinor,
           // REMOVED: Duplicate INR conversion (fmt() handles this)

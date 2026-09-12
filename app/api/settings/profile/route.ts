@@ -5,7 +5,7 @@ import { NextRequest } from 'next/server';
 import { ok, fail } from '@/lib/api-response';
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/authOptions";
-import { getUserProfile, updateUserProfile } from '@/services/user.service';
+import { getUserProfile, updateUserProfile, resetSessionVersion } from '@/services/user.service';
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit';
 import { z } from 'zod';
 import { parseBody } from '@/lib/validate';

@@ -1,4 +1,5 @@
 import type { InsightContextDTO, InsightsEngineOutput, TextAdvice } from '@/types/api';
+import { AI_MODELS } from '@/lib/ai/models';
 
 /**
  * runInsightsEngine
@@ -23,9 +24,16 @@ export async function runInsightsEngine(context: InsightContextDTO): Promise<Ins
 
     // AI suggestions prompt (general recommendations)
     const prompt = [
-      `Analyze this user's spending behavior and suggest realistic improvements.`,
-      `Do not force decisions. Give 2-3 optional, actionable suggestions.`,
-      `Be concise (max 120 words). Use plain language, no markdown.`,
+      `Analyze this user's spending behavior and provide a highly structured, actionable Executive Summary.`,
+      `Your response must strictly include these exactly named sections:`,
+      `1. Spending Analysis`,
+      `2. Savings Analysis`,
+      `3. Goal Analysis`,
+      `4. Unusual Spending`,
+      `5. One Action Recommendation`,
+      ``,
+      `Use plain text with clear spacing, NO markdown hashes or bold text.`,
+      `Use INR (₹) formatting for all currency values, dividing minor units by 100 first.`,
       ``,
       `Income: ${context.savingsAnalysis.incomeMinor}`,
       `Total spent: ${context.savingsAnalysis.totalSpentMinor}`,
@@ -39,16 +47,20 @@ export async function runInsightsEngine(context: InsightContextDTO): Promise<Ins
       anomalies.length > 0
         ? `Anomalies: ${anomalies.map(a => a.message).join('; ')}`
         : `No spending anomalies detected.`,
+      ``,
+      context.goalProbabilities && context.goalProbabilities.length > 0
+        ? `Goals: ${context.goalProbabilities.map(g => `${g.title}: ${g.risk} (${g.recommendation})`).join(' | ')}`
+        : `No goals tracked.`
     ].join('\n');
 
     const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${AI_MODELS.GEMINI_FLASH}:generateContent?key=${geminiKey}`,
       {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 200, temperature: 0.4 },
+          generationConfig: { maxOutputTokens: 800, temperature: 0.2 },
         }),
         signal: AbortSignal.timeout(8000),
       }

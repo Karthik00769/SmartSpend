@@ -69,6 +69,7 @@ describe('Dashboard Service Aggregation', () => {
     vi.spyOn(budgetService, 'listBudgets').mockResolvedValue({
       totalBudgetMinor: 3000000,
       totalSpentMinor: 1000000,
+      totalRemainingMinor: 2000000,
       categories: [
         {
           id: 1,

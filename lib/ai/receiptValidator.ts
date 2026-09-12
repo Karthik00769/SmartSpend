@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
+import { AI_MODELS } from '@/lib/ai/models';
 
 export interface ValidationResult {
   merchant?: string;
@@ -7,9 +8,7 @@ export interface ValidationResult {
 }
 
 const MODEL_CANDIDATES = [
-  'gemini-2.0-flash',
-  'gemini-1.5-flash',
-  'gemini-1.5-flash-8b',
+  AI_MODELS.GEMINI_FLASH,
 ];
 
 export async function validateOCRWithGemini(

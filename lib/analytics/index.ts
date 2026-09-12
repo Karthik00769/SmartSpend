@@ -95,18 +95,6 @@ export function computeChange(current: number, previous: number): ValueChange {
 
 // ─── KPI derivation ───────────────────────────────────────────────────────────
 
-/**
- * Derive savings and rate from income + spent.
- * Returns 0 for savings if income is unknown.
- */
-export function deriveSavings(
-  income: number,
-  spent: number,
-): { savings: number; savingsRate: number } {
-  const savings     = Reports.clamp(Analytics.calculateSavings(income, spent), 0, Infinity);
-  const savingsRate = Analytics.calculateSavingsRate(income, spent);
-  return { savings, savingsRate };
-}
 
 /**
  * Colour bucket for a spending percentage of budget.

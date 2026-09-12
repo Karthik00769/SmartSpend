@@ -3,6 +3,7 @@ import { parseRawReceipt } from './parser/receipt';
 import { calculateConfidence } from './confidence/scorer';
 import { OCRResult } from './types';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { AI_MODELS } from '@/lib/ai/models';
 
 /**
  * processReceiptImage
@@ -15,7 +16,7 @@ export async function processReceiptImage(imageBuffer: Buffer, mimeType: string 
   if (apiKey) {
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
-      const modelCandidates = ['gemini-3.5-flash', 'gemini-3.1-flash-lite'];
+      const modelCandidates = [AI_MODELS.GEMINI_FLASH];
       let jsonStr = '';
 
       for (const modelName of modelCandidates) {

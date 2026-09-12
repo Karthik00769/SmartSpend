@@ -17,6 +17,7 @@
 
 import { get, buildQuery } from './apiClient';
 import type { MonthlySummary, WeeklySummary, CategorySummary, ChartBundle } from '@/types/engine';
+import { currentMonthIST, currentYearIST } from '@/lib/time/time.service';
 
 // ─── Response shape ───────────────────────────────────────────────────────────
 
@@ -58,10 +59,9 @@ export interface GetAnalyticsOptions {
 export async function getAnalytics(
   opts: GetAnalyticsOptions = {},
 ): Promise<AnalyticsBundle> {
-  const now = new Date();
   const qs  = buildQuery({
-    month:  opts.month ?? now.getMonth() + 1,
-    year:   opts.year  ?? now.getFullYear(),
+    month:  opts.month ?? currentMonthIST(),
+    year:   opts.year  ?? currentYearIST(),
   });
   return get<AnalyticsBundle>(`/api/analytics${qs}`);
 }

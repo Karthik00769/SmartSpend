@@ -21,6 +21,7 @@ import { getCategoryBudgetStatus } from '@/services/budget.service';
 import { getActiveGoalsProgress } from '@/services/goal.service';
 
 import * as FinanceCore from '@/lib/finance';
+import { parseDateIST } from '@/lib/time/time.service';
 
 const IntakeAdapterSchema = z.object({
   userId: z.union([z.string(), z.number()]).transform(String).optional(),
@@ -126,13 +127,13 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 3. Check Budget & Goal Impact ─────────────────────────────────────────
-    const expenseDate = new Date(parsed.data.date);
+    const expenseDateIST = parseDateIST(parsed.data.date);
     const [budgetStatus, goalStatus] = await Promise.all([
       getCategoryBudgetStatus(
         userId,
         result.categorization.categoryId,
-        expenseDate.getMonth() + 1,
-        expenseDate.getFullYear()
+        expenseDateIST.getMonth() + 1,
+        expenseDateIST.getFullYear()
       ),
       getActiveGoalsProgress(userId)
     ]);

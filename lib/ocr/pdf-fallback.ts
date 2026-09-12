@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { AI_MODELS } from '@/lib/ai/models';
 
 /**
  * extractTextFromPDFOCR
@@ -14,7 +15,7 @@ export async function extractTextFromPDFOCR(pdfBuffer: Buffer, password?: string
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: 'gemini-3.1-pro',
+      model: AI_MODELS.GEMINI_FLASH,
       // We don't use JSON schema here because we just want the raw text
     });
 

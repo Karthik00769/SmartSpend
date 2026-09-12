@@ -5,8 +5,9 @@ import type {
   InsightsSummaryDTO,
   InsightType,
 } from '@/types/api';
-import { Analytics } from '@/lib/finance';
+import { Analytics, Math as FinanceMath } from '@/lib/finance';
 import { getMonthBoundariesIST } from '@/lib/time/time.service';
+import { monthlyExpenseSummary, categoryWiseTotals } from './expense.service';
 
 interface InsightRow {
   id:                   number;
@@ -94,31 +95,20 @@ export async function generateMonthlyInsights(
   const prevYear = month === 1 ? year - 1 : year;
   const { startStr: prevMonthStart, endStr: prevMonthEnd } = getMonthBoundariesIST(prevYear, prevMonth);
 
-  const [spendRows, catRows, incRows] = await Promise.all([
-    // Current vs previous month spend
-    query<SpendRow[]>(`
-      SELECT
-        COALESCE(SUM(CASE WHEN expense_date >= ? AND expense_date < ? THEN amount_minor END), 0) AS total_spent,
-        COALESCE(SUM(CASE WHEN expense_date >= ? AND expense_date < ? THEN amount_minor END), 0) AS prev_spent
-      FROM expenses
-      WHERE user_id = ? AND deleted_at IS NULL
-    `, [currentMonthStart, currentMonthEnd, prevMonthStart, prevMonthEnd, userId]),
-    // Top category this month
-    query<CatRow[]>(`
-      SELECT c.name, SUM(e.amount_minor) AS total
-      FROM expenses e
-      LEFT JOIN categories c ON e.category_id = c.id
-      WHERE e.user_id = ? AND e.expense_date >= ? AND e.expense_date < ? AND e.deleted_at IS NULL
-      GROUP BY c.name ORDER BY total DESC LIMIT 1
-    `, [userId, currentMonthStart, currentMonthEnd]),
-    query<IncRow[]>(`SELECT monthly_income_minor FROM users WHERE id = ? LIMIT 1`, [userId]),
-  ]);
+  const currentSummary = await monthlyExpenseSummary(userId, year, month);
+  const prevSummary = await monthlyExpenseSummary(userId, prevYear, prevMonth);
+  const categories = await categoryWiseTotals(userId, year, month);
 
-  const totalSpentMinor = Number(spendRows[0]?.total_spent ?? 0);
-  const prevSpentMinor  = Number(spendRows[0]?.prev_spent  ?? 0);
+  const incRows = await query<{ monthly_income_minor: string }[]>(
+    `SELECT monthly_income_minor FROM users WHERE id = ? LIMIT 1`,
+    [userId]
+  );
+
+  const totalSpentMinor = currentSummary.totalSpentMinor;
+  const prevSpentMinor  = prevSummary.totalSpentMinor;
   const incomeMinor     = Number(incRows[0]?.monthly_income_minor ?? 0);
-  const topCat          = catRows[0]?.name ?? null;
-  const topCatAmtMinor  = Number(catRows[0]?.total ?? 0);
+  const topCat          = categories.length > 0 ? categories[0].name : null;
+  const topCatAmtMinor  = categories.length > 0 ? categories[0].totalMinor : 0;
 
   const insights: { type: string; content: string }[] = [];
 
@@ -148,7 +138,7 @@ export async function generateMonthlyInsights(
 
   // 3. Savings rate
   if (incomeMinor > 0 && totalSpentMinor > 0) {
-    const savingsRate = Math.round(Analytics.calculateSavingsRate(incomeMinor, totalSpentMinor));
+    const savingsRate = Math.round(currentSummary.savingsRate);
     if (savingsRate >= 20) {
       insights.push({
         type:    'savings_opportunity',

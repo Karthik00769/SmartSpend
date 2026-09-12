@@ -379,18 +379,18 @@ function buildRecommendation(
   actual:       number,
   daysLeft:     number,
 ): string {
-  const $n = (n: number) => `$${Math.abs(n).toFixed(2)}`;
+  const formatAmt = (n: number) => `₹${(Math.abs(n) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
   const gap = required - actual;
 
   switch (risk) {
     case 'completed':
       return `"${title}" is complete! Consider setting a new, more ambitious goal.`;
     case 'on_track':
-      return `You're on pace to hit "${title}" on time. Save at least ${$n(required)}/day to stay on track.`;
+      return `You're on pace to hit "${title}" on time. Save at least ${formatAmt(required)}/day to stay on track.`;
     case 'at_risk':
-      return `"${title}" is at risk. You need ${$n(required)}/day but are saving ${$n(actual)}/day. Boost savings by ${$n(gap)}/day or extend your deadline.`;
+      return `"${title}" is at risk. You need ${formatAmt(required)}/day but are saving ${formatAmt(actual)}/day. Boost savings by ${formatAmt(gap)}/day or extend your deadline.`;
     case 'behind':
-      return `"${title}" is unlikely at the current pace. You need ${$n(required)}/day (${daysLeft} days left) but saving ${$n(actual)}/day. Consider a revised target or deadline.`;
+      return `"${title}" is unlikely at the current pace. You need ${formatAmt(required)}/day (${daysLeft} days left) but saving ${formatAmt(actual)}/day. Consider a revised target or deadline.`;
   }
 }
 

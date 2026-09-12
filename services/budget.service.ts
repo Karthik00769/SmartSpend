@@ -1,11 +1,12 @@
 import { query } from '@/lib/db';
-import type {
+import {
   GetBudgetsQuery,
   BudgetSummaryDTO,
   BudgetCategoryDTO,
 } from '@/types/api';
 import { Analytics, Budget, Math as FinanceMath } from '../lib/finance';
-import { getMonthBoundariesIST } from '@/lib/time/time.service';
+import { getMonthBoundariesIST, currentMonthIST, currentYearIST } from '@/lib/time/time.service';
+import { getCategorySpend, categoryWiseTotals } from '@/services/expense.service';
 
 // ─── DB row shape ──────────────────────────────────────────────────────────────
 interface BudgetRow {
@@ -60,42 +61,48 @@ export async function deleteBudget(id: number, userId: string): Promise<void> {
 }
 
 export async function listBudgets(params: GetBudgetsQuery): Promise<BudgetSummaryDTO> {
-  const now  = new Date();
-  const { userId, month = now.getMonth() + 1, year = now.getFullYear() } = params;
+  const { userId, month = currentMonthIST(), year = currentYearIST() } = params;
 
-  // Use IST month boundaries for expense filtering
-  const { startStr: monthStart, endStr: monthEnd } = getMonthBoundariesIST(year, month);
-
-  const rows = await query<BudgetRow[]>(
-    `SELECT
-       b.id, b.user_id, b.category_id, b.limit_minor,
-       b.month, b.year,
-       c.name AS category, c.icon, c.color_hex,
-       COALESCE(SUM(e.amount_minor), 0) AS total_spent
+  // 1. Fetch budgets for the user
+  const budgetRows = await query<any[]>(
+    `SELECT b.id, b.user_id, b.category_id, b.limit_minor, b.month, b.year, c.name AS category, c.icon, c.color_hex
      FROM budgets b
      JOIN categories c ON b.category_id = c.id
-     LEFT JOIN expenses e
-       ON  e.category_id = b.category_id
-       AND e.user_id     = b.user_id
-       AND e.expense_date >= ?
-       AND e.expense_date < ?
-       AND e.deleted_at IS NULL
-     WHERE b.user_id    = ?
-       AND b.year       = ?
-       AND b.month      = ?
-       AND b.deleted_at IS NULL
-     GROUP BY
-       b.id, b.user_id, b.category_id, b.limit_minor, b.month, b.year,
-       c.name, c.icon, c.color_hex
-     ORDER BY total_spent DESC`,
-    [monthStart, monthEnd, userId, year, month],
+     WHERE b.user_id = ? AND b.year = ? AND b.month = ? AND b.deleted_at IS NULL`,
+    [userId, year, month]
   );
 
-  const categories     = rows.map(toDTO);
+  // 2. Fetch category-wise totals from expense service
+  const categoriesSpent = await categoryWiseTotals(userId, year, month);
+  const spentMap = new Map(categoriesSpent.map(c => [c.categoryId, c.totalMinor]));
+
+  // 3. Merge
+  const categories = budgetRows.map(b => {
+    const spentMinor = spentMap.get(b.category_id) || 0;
+    const limitMinor = Number(b.limit_minor);
+    return {
+      id: b.id,
+      categoryId: b.category_id,
+      category: b.category,
+      icon: b.icon || '📌',
+      color: b.color_hex || '#6B7280',
+      allocatedMinor: limitMinor,
+      spentMinor,
+      month: b.month,
+      year: b.year,
+      usedPct: limitMinor > 0 ? Budget.calculateBudgetProgress(spentMinor, limitMinor) : null,
+      isOverBudget: Budget.isBudgetExceeded(spentMinor, limitMinor),
+      status: Budget.calculateBudgetStatus(spentMinor, limitMinor),
+      needsAlert: Budget.needsBudgetAlert(spentMinor, limitMinor),
+      remainingMinor: Budget.calculateRemainingBudget(spentMinor, limitMinor),
+    };
+  }).sort((a, b) => b.spentMinor - a.spentMinor);
+
   const totalBudgetMinor = categories.reduce((s, c) => s + c.allocatedMinor, 0);
   const totalSpentMinor  = categories.reduce((s, c) => s + c.spentMinor,     0);
+  const totalRemainingMinor = Budget.calculateRemainingBudget(totalSpentMinor, totalBudgetMinor);
 
-  return { totalBudgetMinor, totalSpentMinor, categories };
+  return { totalBudgetMinor, totalSpentMinor, totalRemainingMinor, categories };
 }
 
 export async function upsertBudget(input: any): Promise<BudgetSummaryDTO> {
@@ -144,33 +151,16 @@ export async function getCategoryBudgetStatus(
   month:      number,
   year:       number,
 ): Promise<{ limitMinor: number; spentMinor: number; percent: number; status: 'under' | 'near' | 'over' } | null> {
-  // Use IST month boundaries for expense filtering
-  const { startStr: monthStart, endStr: monthEnd } = getMonthBoundariesIST(year, month);
-
-  const [row] = await query<any[]>(
-    `SELECT
-       b.limit_minor,
-       COALESCE(SUM(e.amount_minor), 0) AS total_spent
-     FROM budgets b
-     LEFT JOIN expenses e
-       ON e.category_id = b.category_id
-       AND e.user_id    = b.user_id
-       AND e.expense_date >= ?
-       AND e.expense_date < ?
-       AND e.deleted_at IS NULL
-     WHERE b.user_id    = ?
-       AND b.category_id = ?
-       AND b.month      = ?
-       AND b.year       = ?
-       AND b.deleted_at IS NULL
-     GROUP BY b.id`,
-    [monthStart, monthEnd, userId, categoryId, month, year],
+  const [bRow] = await query<any[]>(
+    `SELECT limit_minor FROM budgets 
+     WHERE user_id = ? AND category_id = ? AND month = ? AND year = ? AND deleted_at IS NULL`,
+    [userId, categoryId, month, year]
   );
 
-  if (!row) return null;
+  if (!bRow) return null;
 
-  const limitMinor = Number(row.limit_minor);
-  const spentMinor = Number(row.total_spent);
+  const limitMinor = Number(bRow.limit_minor);
+  const spentMinor = await getCategorySpend(userId, categoryId, year, month);
 
   const percent    = Budget.calculateBudgetProgress(spentMinor, limitMinor);
   const coreStatus = Budget.calculateBudgetStatus(spentMinor, limitMinor);

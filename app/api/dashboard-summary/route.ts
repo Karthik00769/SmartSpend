@@ -18,15 +18,16 @@ import { authOptions } from '@/lib/auth/authOptions';
 import { getDashboardSummary } from '@/services/dashboard.service';
 import { query } from '@/lib/db';
 import { generateBehavioralAdvice } from '@/lib/ai/behavioralCoach';
+import { currentMonthIST, currentYearIST } from '@/lib/time/time.service';
+import { Math as FinanceMath } from '@/lib/finance';
 
 export async function GET(_req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return fail('Unauthorized', 401);
 
   const userId = (session.user as any).id as string;
-  const now = new Date();
-  const currentMonth = now.getMonth() + 1;
-  const currentYear  = now.getFullYear();
+  const currentMonth = currentMonthIST();
+  const currentYear  = currentYearIST();
 
   try {
     const summary = await getDashboardSummary(userId);

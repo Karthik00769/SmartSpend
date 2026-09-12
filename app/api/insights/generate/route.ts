@@ -14,6 +14,7 @@ import { ok, fail } from '@/lib/api-response';
 import { generateMonthlyInsights } from '@/services/insight.service';
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/authOptions";
+import { currentMonthIST, currentYearIST } from '@/lib/time/time.service';
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -21,9 +22,8 @@ export async function POST(req: NextRequest) {
 
   const userId = (session.user as any).id as string;
 
-  const now   = new Date();
-  const month = now.getMonth() + 1;
-  const year  = now.getFullYear();
+  const month = currentMonthIST();
+  const year  = currentYearIST();
 
   try {
     const created = await generateMonthlyInsights(userId, month, year);

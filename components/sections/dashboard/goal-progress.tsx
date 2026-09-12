@@ -1,10 +1,10 @@
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Analytics } from '@/lib/finance';
-import { Goal } from '@/types';
+import { GoalDTO } from '@/types/api';
 
 interface GoalProgressProps {
-  goals: Goal[];
+  goals: GoalDTO[];
   /** Currency formatter — e.g. fmt from useSmartSpend(). */
   fmt?: (amount: number) => string;
 }
@@ -12,8 +12,8 @@ interface GoalProgressProps {
 export function GoalProgress({ goals, fmt }: GoalProgressProps) {
   const format = fmt ?? ((n: number) => `$${n.toFixed(2)}`);
 
-  const getGoalPercentage = (goal: Goal) => {
-    return Analytics.calculateGoalProgressPct(goal.savedAmount, goal.targetAmount);
+  const getGoalPercentage = (goal: GoalDTO) => {
+    return goal.progressPct ?? 0;
   };
 
   const getPriorityColor = (priority: string) => {
@@ -35,7 +35,7 @@ export function GoalProgress({ goals, fmt }: GoalProgressProps) {
       <div className="space-y-6">
         {goals.map((goal) => {
           const percentage = getGoalPercentage(goal);
-          const remaining = goal.targetAmount - goal.savedAmount;
+          const remaining = goal.targetAmountMinor - goal.savedAmountMinor;
           const daysRemaining = Math.ceil(
             (new Date(goal.deadline).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
           );
@@ -55,13 +55,17 @@ export function GoalProgress({ goals, fmt }: GoalProgressProps) {
               </div>
               <div className="flex items-center justify-between mb-2 text-sm">
                 <span className="text-muted-foreground">
-                  {format(goal.savedAmount)} / {format(goal.targetAmount)}
+                  {format(goal.savedAmountMinor / 100)} of {format(goal.targetAmountMinor / 100)}
                 </span>
                 <span className="font-medium text-foreground">
                   {percentage.toFixed(0)}%
                 </span>
               </div>
-              <Progress value={percentage} className="h-2 mb-2" />
+              <Progress
+                value={percentage}
+                className="h-2 mb-2"
+                aria-label={`${Math.round(getGoalPercentage(goal))}% of ${format(goal.targetAmountMinor / 100)} goal saved (${format(goal.savedAmountMinor / 100)} total)`}
+              />
               <p className="text-xs text-muted-foreground">
                 {daysRemaining > 0
                   ? `${daysRemaining} days remaining`

@@ -21,6 +21,8 @@ import { query } from '@/lib/db';
 import { generateSummaries } from '@/lib/expense-engine';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth/authOptions';
+import { getDailyTrends } from '@/services/expense.service';
+import { currentYearIST, currentMonthIST } from '@/lib/time/time.service';
 
 // ── Query schema ──────────────────────────────────────────────────────────────
 
@@ -41,8 +43,7 @@ export async function GET(req: NextRequest) {
   const parsed = parseQuery(req.nextUrl.searchParams, AnalyticsQuerySchema);
   if (!parsed.success) return fail(parsed.message, 400, parsed.fieldErrors);
 
-  const now = new Date();
-  const { year = now.getFullYear(), month = now.getMonth() + 1 } = parsed.data;
+  const { year = currentYearIST(), month = currentMonthIST() } = parsed.data;
 
   try {
     // ── 1. Fetch user's monthly income ────────────────────────────────────────
@@ -60,16 +61,7 @@ export async function GET(req: NextRequest) {
     // Used by the spending trend line/bar chart on the analytics page.
     // ── 3. Date-wise daily totals for the full spending history ────────────────
     // [RULE] Fix SQL to allow historical trend rendering
-    const dailyRows = await query<DailyRow[]>(
-      `SELECT 
-         DATE_FORMAT(expense_date, '%Y-%m-%d') AS date, 
-         SUM(amount_minor) AS total
-       FROM expenses
-       WHERE user_id = ? AND deleted_at IS NULL
-       GROUP BY DATE_FORMAT(expense_date, '%Y-%m-%d')
-       ORDER BY date ASC`,
-      [userId],
-    );
+    const dailyRows = await getDailyTrends(userId);
 
     // Normalise to standard labels/values format for the chart component
     const daily = {

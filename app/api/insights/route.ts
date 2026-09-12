@@ -24,6 +24,7 @@ import {
 import { fetchInsights, markAllRead } from '@/services/insight.service';
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/authOptions";
+import { currentMonthIST, currentYearIST } from '@/lib/time/time.service';
 
 import { monthlyExpenseSummary, categoryWiseTotals } from '@/services/expense.service';
 import { listBudgets } from '@/services/budget.service';
@@ -43,9 +44,8 @@ export async function GET(req: NextRequest) {
     queryData.userId = (session.user as any).id;
     let result = await fetchInsights(queryData);
 
-    const now = new Date();
-    const currentMonth = now.getMonth() + 1;
-    const currentYear = now.getFullYear();
+    const currentMonth = currentMonthIST();
+    const currentYear = currentYearIST();
     const hasCurrentMonthInsights = result.insights.some(i => i.month === currentMonth && i.year === currentYear);
 
     if (!hasCurrentMonthInsights) {

@@ -12,6 +12,7 @@
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { AI_MODELS } from '@/lib/ai/models';
 
 // ─── Exported result type ─────────────────────────────────────────────────────
 
@@ -172,7 +173,7 @@ export async function scanWithGemini(
 
   const genAI = new GoogleGenerativeAI(apiKey);
   // Use flash for speed — Pro is for complex reasoning
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const model = genAI.getGenerativeModel({ model: AI_MODELS.GEMINI_FLASH });
 
   // Prompt asks for raw text representation — NOT for structured extraction
   // This prevents Gemini from inventing numbers.

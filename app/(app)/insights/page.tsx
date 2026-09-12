@@ -14,41 +14,40 @@ import {
 } from 'recharts';
 import type { TextAdvice, GoalProbabilityResult } from '@/types/api';
 import * as FinanceCore from '@/lib/finance';
+import { currentMonthIST, currentYearIST } from '@/lib/time/time.service';
 
 type PeriodKey = 'this' | 'last' | '3m';
 
 function getPeriod(key: PeriodKey): { year: number; month: number; label: string; months?: number } {
-  const now = new Date();
-  if (key === 'this') return { year: now.getFullYear(), month: now.getMonth() + 1, label: 'This Month' };
+  const currentYear = currentYearIST();
+  const currentMonth = currentMonthIST();
+
+  if (key === 'this') return { year: currentYear, month: currentMonth, label: 'This Month' };
   if (key === 'last') {
-    const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const d = new Date(currentYear, currentMonth - 1 - 1, 1);
     return { year: d.getFullYear(), month: d.getMonth() + 1, label: 'Last Month' };
   }
-  return { year: now.getFullYear(), month: now.getMonth() + 1, label: 'Last 3 Months', months: 3 };
+  return { year: currentYear, month: currentMonth, label: 'Last 3 Months', months: 3 };
 }
 
 const SECTIONS = [
   {
     key: 'critical' as const, label: '🔴 Alerts', sublabel: 'Needs immediate attention',
-    empty: "No critical alerts — you're in good shape.",
     bg: 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800',
     badge: 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400',
   },
   {
     key: 'warning' as const, label: '🟡 Warnings', sublabel: 'Worth keeping an eye on',
-    empty: 'No warnings this period.',
     bg: 'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800',
     badge: 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-400',
   },
   {
     key: 'positive' as const, label: '🟢 Good Habits', sublabel: 'Keep it up',
-    empty: 'Add more expenses to track positive habits.',
     bg: 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800',
     badge: 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-400',
   },
   {
     key: 'info' as const, label: '📊 Summary', sublabel: 'Observations about your spending',
-    empty: 'No summary data yet.',
     bg: 'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800',
     badge: 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-400',
   },
@@ -71,43 +70,6 @@ function InsightCard({ card, badge, bg }: { card: TextAdvice; badge: string; bg:
         </div>
       </div>
     </div>
-  );
-}
-
-function SummaryCard({ data, fmt }: { data: any; fmt: (n: number) => string }) {
-  const mom = data.monthOverMonth;
-  const totalSpent = mom.totalSpend.current;
-  const savings    = mom.savings.current;
-  const topCat     = mom.categories[0]?.categoryName ?? '—';
-  const trend      = mom.totalSpend.direction;
-  const trendIcon  = trend === 'up' ? '↑' : trend === 'down' ? '↓' : '→';
-  const trendCls   = trend === 'up' ? 'text-red-600 dark:text-red-400'
-    : trend === 'down' ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground';
-  return (
-    <Card className="p-5">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div>
-          <p className="text-xs text-muted-foreground mb-1">Total Spent</p>
-          <p className="text-lg font-semibold text-foreground tabular-nums">{fmt(totalSpent)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground mb-1">Saved</p>
-          <p className={`text-lg font-semibold tabular-nums ${savings >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-            {fmt(Math.abs(savings))}
-          </p>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground mb-1">Top Category</p>
-          <p className="text-sm font-semibold text-foreground truncate">{topCat}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground mb-1">Spending Trend</p>
-          <span className={`font-semibold text-foreground mr-1 ${trendCls}`}>
-            {trendIcon} {mom.totalSpend.isSignificant ? `${FinanceCore.Math.abs(mom.totalSpend.percentage)}%` : 'Stable'}
-          </span>
-        </div>
-      </div>
-    </Card>
   );
 }
 
@@ -140,28 +102,38 @@ function CategoryPie({ data, fmt }: { data: { name: string; value: number; fill:
   );
 }
 
-function GoalCard({ goal, fmt }: { goal: GoalProbabilityResult; fmt: (n: number) => string }) {
+function GoalCard({ goal, fmt }: { goal: GoalProbabilityResult & { savedAmountMinor?: number; targetAmountMinor?: number }; fmt: (n: number) => string }) {
   const riskCls: Record<string, string> = {
     completed: 'text-green-600 dark:text-green-400',
     on_track:  'text-blue-600 dark:text-blue-400',
     at_risk:   'text-yellow-600 dark:text-yellow-400',
     behind:    'text-red-600 dark:text-red-400',
   };
+  
+  const saved = goal.savedAmountMinor;
+  const target = goal.targetAmountMinor;
+  const progressPct = target > 0 ? Math.min(100, Math.round((saved / target) * 100)) : 0;
+  const remaining = Math.max(0, target - saved);
+  
   return (
     <div className="p-4 rounded-xl border border-border bg-muted/20">
       <div className="flex justify-between items-start mb-2">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-foreground truncate">{goal.title}</p>
-          <p className="text-xs text-muted-foreground">{fmt(goal.savedAmountMinor)} / {fmt(goal.targetAmountMinor)}</p>
+          <p className="text-xs text-muted-foreground">{fmt(saved)} / {fmt(target)}</p>
         </div>
-        <span className={`text-base font-bold shrink-0 ml-2 ${riskCls[goal.risk]}`}>{goal.probability}%</span>
+        <span className={`text-base font-bold shrink-0 ml-2 ${riskCls[goal.risk]}`}>{progressPct}%</span>
       </div>
-      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+      <div className="h-1.5 rounded-full bg-muted overflow-hidden mb-3">
         <div className={`h-full rounded-full transition-all duration-500 ${
-          goal.probability >= 70 ? 'bg-blue-500' : goal.probability >= 40 ? 'bg-yellow-500' : 'bg-red-500'
-        }`} style={{ width: `${goal.probability}%` }} />
+          progressPct >= 70 ? 'bg-blue-500' : progressPct >= 40 ? 'bg-yellow-500' : 'bg-red-500'
+        }`} style={{ width: `${progressPct}%` }} />
       </div>
-      <p className="text-xs text-muted-foreground mt-1.5">{goal.recommendation}</p>
+      <div className="flex justify-between text-xs text-muted-foreground mb-2">
+        <span>Amount Remaining: {fmt(remaining)}</span>
+        <span>Req. Daily: {fmt(goal.requiredDailyAmountMinor || 0)}</span>
+      </div>
+      <p className="text-xs font-medium text-foreground mt-1.5 border-t border-border/50 pt-2">{goal.recommendation}</p>
     </div>
   );
 }
@@ -211,19 +183,22 @@ export default function InsightsPage() {
     );
   }
 
-  const { advice, goalProbabilities, monthOverMonth, topCategories, categoryTrends, anomalies, savingsAnalysis, aiSuggestions, monthlyBreakdown } = data;
+  const { advice, goalProbabilities, topCategories, categoryTrends, anomalies, savingsAnalysis, aiSuggestions, monthlyBreakdown } = data;
 
   // ── Build category→description map from raw expenses ─────────────────────
-  // Groups all descriptions per category so we can show "Food (Swiggy)", "Food (Zomato)" etc.
   const catDescMap = new Map<string, string[]>();
+  let biggestTx = expenses[0];
   for (const e of expenses) {
     if (!catDescMap.has(e.categoryName)) catDescMap.set(e.categoryName, []);
     const descs = catDescMap.get(e.categoryName)!;
     const d = e.description?.trim();
     if (d && !descs.includes(d)) descs.push(d);
+    
+    if (!biggestTx || e.amountMinor > biggestTx.amountMinor) {
+      biggestTx = e;
+    }
   }
 
-  // Helper: label for a category — appends "(desc)" only when category repeats with different descriptions
   const catLabel = (categoryName: string, description?: string | null): string => {
     const descs = catDescMap.get(categoryName) ?? [];
     if (descs.length <= 1 && !description) return categoryName;
@@ -231,16 +206,9 @@ export default function InsightsPage() {
     return d ? `${categoryName} (${d})` : categoryName;
   };
 
-  // Per-transaction labels for recent list
-  const recentTxWithLabels = expenses.slice(0, 10).map(e => ({
-    ...e,
-    label: catLabel(e.categoryName, e.description),
-  }));
-
-  // Transaction-level pie: group by "category (description)" key
   const COLORS = ['#6366f1','#f97316','#22c55e','#ef4444','#a855f7','#ec4899','#eab308','#0891b2','#6b7280','#14b8a6'];
   const txPieMap = new Map<string, { name: string; value: number; fill: string; icon: string }>();
-  expenses.forEach((e, idx) => {
+  expenses.forEach((e) => {
     const key = catLabel(e.categoryName, e.description);
     if (txPieMap.has(key)) {
       txPieMap.get(key)!.value += e.amountMinor;
@@ -257,7 +225,7 @@ export default function InsightsPage() {
     .sort((a, b) => b.value - a.value)
     .slice(0, 8);
 
-  const hasAnyData = monthOverMonth.totalSpend.current > 0 || advice.length > 0;
+  const hasAnyData = expenses.length > 0 || advice.length > 0;
 
   if (!hasAnyData) {
     return (
@@ -269,7 +237,7 @@ export default function InsightsPage() {
           icon="🔍"
           action={{
             label: "Add your first expense",
-            onClick: () => router.push('/dashboard') // Route user to dashboard as there is no /add-expense page yet
+            onClick: () => router.push('/dashboard')
           }}
           className="border-dashed"
         />
@@ -278,10 +246,10 @@ export default function InsightsPage() {
   }
 
   const bySection = {
-    critical: advice.filter(a => a.severity === 'critical').slice(0, 5),
-    warning:  advice.filter(a => a.severity === 'warning').slice(0, 5),
-    positive: advice.filter(a => a.severity === 'positive').slice(0, 5),
-    info:     advice.filter(a => a.severity === 'info').slice(0, 5),
+    critical: advice.filter(a => a.severity === 'critical'),
+    warning:  advice.filter(a => a.severity === 'warning'),
+    positive: advice.filter(a => a.severity === 'positive'),
+    info:     advice.filter(a => a.severity === 'info'),
   };
   const totalAlerts = bySection.critical.length + bySection.warning.length;
 
@@ -297,9 +265,21 @@ export default function InsightsPage() {
     savingsAnalysis.classification === 'moderate' ? 'text-yellow-600 dark:text-yellow-400' :
     'text-red-600 dark:text-red-400';
 
-  return (
-    <div className="space-y-6">
+  const largestCat = topCategories[0]?.categoryName || 'None';
+  const closestGoal = goalProbabilities && goalProbabilities.length > 0 
+    ? [...goalProbabilities].sort((a, b) => {
+        const aTarget = a.targetAmountMinor;
+        const aSaved = a.savedAmountMinor;
+        const bTarget = b.targetAmountMinor;
+        const bSaved = b.savedAmountMinor;
+        const aRem = Math.max(0, aTarget - aSaved);
+        const bRem = Math.max(0, bTarget - bSaved);
+        return aRem - bRem;
+      })[0] 
+    : null;
 
+  return (
+    <div className="space-y-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
@@ -322,225 +302,185 @@ export default function InsightsPage() {
         </div>
       </div>
 
-      {/* Summary card */}
-      <SummaryCard data={data} fmt={fmt} />
-
-      {/* ── Spending Overview ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="p-4">
-          <p className="text-xs text-muted-foreground mb-1">Total Spent</p>
-          <p className="text-xl font-bold text-foreground tabular-nums">{fmt(savingsAnalysis.totalSpentMinor)}</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs text-muted-foreground mb-1">Savings</p>
-          <p className={`text-xl font-bold tabular-nums ${savingsCls}`}>{fmt(savingsAnalysis.savingsMinor)}</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs text-muted-foreground mb-1">Savings Rate</p>
-          <p className={`text-xl font-bold tabular-nums ${savingsCls}`}>
-            {FinanceCore.Math.abs(savingsAnalysis.savingsRate)}%
-            <span className="text-xs font-normal text-muted-foreground ml-1.5">({savingsAnalysis.classification})</span>
-          </p>
-        </Card>
-      </div>
-
-      {/* ── Monthly Breakdown ── */}
-      {monthlyBreakdown && monthlyBreakdown.some(m => m.totalSpentMinor > 0) && (() => {
-        const mappedBreakdown = monthlyBreakdown.map(m => ({
-          ...m,
-          totalSpent: m.totalSpentMinor,
-          savings: m.savingsMinor
-        }));
-        return (
-        <div>
-          <h2 className="text-sm font-semibold text-foreground mb-3">📅 Monthly Spending</h2>
+      {/* 1. Executive Summary */}
+      <section>
+        <h2 className="text-sm font-semibold text-foreground mb-3 uppercase tracking-wider">1. Executive Summary</h2>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <Card className="p-4">
-            <div className="h-44">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={mappedBreakdown} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.1} vertical={false} />
-                  <XAxis dataKey="label" stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} width={60}
-                    tickFormatter={(v) => fmt(v)} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px', color: '#fff', fontSize: '11px' }}
-                    formatter={(v: number, name: string) => [fmt(v), name]}
-                  />
-                  <Bar dataKey="totalSpent" name="Spent" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="savings" name="Saved" fill="#10b981" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-border/40">
-              {mappedBreakdown.map((m, i) => (
-                <div key={i} className="text-center">
-                  <p className="text-xs font-medium text-foreground">{m.label}</p>
-                  <p className="text-sm font-bold text-foreground tabular-nums">{fmt(m.totalSpent)}</p>
-                  <p className="text-[10px] text-muted-foreground">{m.savingsRate}% saved</p>
-                </div>
-              ))}
-            </div>
+            <p className="text-xs text-muted-foreground mb-1 truncate">Total Spent</p>
+            <p className="text-lg font-bold text-foreground tabular-nums">{fmt(savingsAnalysis.totalSpentMinor)}</p>
+          </Card>
+          <Card className="p-4">
+            <p className="text-xs text-muted-foreground mb-1 truncate">Savings Rate</p>
+            <p className={`text-lg font-bold tabular-nums ${savingsCls}`}>
+              {FinanceCore.Math.abs(savingsAnalysis.savingsRate)}%
+            </p>
+          </Card>
+          <Card className="p-4">
+            <p className="text-xs text-muted-foreground mb-1 truncate">Largest Category</p>
+            <p className="text-sm font-bold text-foreground truncate mt-1">{largestCat}</p>
+          </Card>
+          <Card className="p-4">
+            <p className="text-xs text-muted-foreground mb-1 truncate">Biggest Transaction</p>
+            <p className="text-sm font-bold text-foreground truncate mt-1">{biggestTx ? biggestTx.categoryName : 'None'}</p>
+            {biggestTx && <p className="text-xs text-muted-foreground">{fmt(biggestTx.amountMinor)}</p>}
+          </Card>
+          <Card className="p-4">
+            <p className="text-xs text-muted-foreground mb-1 truncate">Closest Goal</p>
+            <p className="text-sm font-bold text-foreground truncate mt-1">{closestGoal ? closestGoal.title : 'None'}</p>
           </Card>
         </div>
-        );
-      })()}
+      </section>
 
-      {/* ── Recent Transactions (category + description) ── */}
-      {recentTxWithLabels.length > 0 && (
-        <div>
-          <h2 className="text-sm font-semibold text-foreground mb-3">🧾 Recent Transactions</h2>
-          <Card className="p-4">
-            <div className="space-y-0">
-              {recentTxWithLabels.map((tx, i) => (
-                <div key={tx.id} className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-base shrink-0">{tx.categoryIcon}</span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">{tx.label}</p>
-                      <p className="text-[10px] text-muted-foreground">{tx.date}</p>
+      {/* 2. Spending Analysis */}
+      <section>
+        <h2 className="text-sm font-semibold text-foreground mb-3 uppercase tracking-wider">2. Spending Analysis</h2>
+        
+        {monthlyBreakdown && monthlyBreakdown.some(m => m.totalSpentMinor > 0) && (() => {
+          const mappedBreakdown = monthlyBreakdown.map(m => ({
+            ...m,
+            totalSpent: m.totalSpentMinor,
+            savings: m.savingsMinor
+          }));
+          return (
+            <div className="mb-5">
+              <Card className="p-4">
+                <div className="h-44">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={mappedBreakdown} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.1} vertical={false} />
+                      <XAxis dataKey="label" stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} />
+                      <YAxis stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} width={60}
+                        tickFormatter={(v) => fmt(v)} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px', color: '#fff', fontSize: '11px' }}
+                        formatter={(v: number, name: string) => [fmt(v), name]}
+                      />
+                      <Bar dataKey="totalSpent" name="Spent" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="savings" name="Saved" fill="#10b981" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-border/40">
+                  {mappedBreakdown.map((m, i) => (
+                    <div key={i} className="text-center">
+                      <p className="text-xs font-medium text-foreground">{m.label}</p>
+                      <p className="text-sm font-bold text-foreground tabular-nums">{fmt(m.totalSpent)}</p>
+                      <p className="text-[10px] text-muted-foreground">{m.savingsRate}% saved</p>
                     </div>
-                  </div>
-                  <span className="text-sm font-semibold tabular-nums shrink-0 ml-3">{fmt(tx.amountMinor)}</span>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </Card>
-        </div>
-      )}
-
-                  {/* ── Top Categories ── */}
-      {topCategories.length > 0 && (
-        <div>
-          <h2 className="text-sm font-semibold text-foreground mb-3">🏆 Top Categories</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {topCategories.map((c, i) => {
-              // Find the top description for this category by amount
-              const topDesc = expenses
-                .filter(e => e.categoryName === c.categoryName && e.description?.trim())
-                .sort((a, b) => b.amountMinor - a.amountMinor)[0]?.description;
-              const label = catLabel(c.categoryName, topDesc);
-              return (
-              <Card key={`top-cat-${i}`} className="p-4 flex items-center gap-3">
-                <span className="text-2xl shrink-0">{c.icon}</span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-foreground truncate">{label}</p>
-                  <p className="text-xs text-muted-foreground">{fmt(c.totalMinor)}</p>
-                </div>
-                <span className="text-sm font-bold text-primary shrink-0">{c.percentageOfTotal}%</span>
               </Card>
-              );
-            })}
-          </div>
-        </div>
-      )}
+            </div>
+          );
+        })()}
 
-      {/* ── Trends ── */}
-      {categoryTrends.length > 0 && (
-        <div>
-          <h2 className="text-sm font-semibold text-foreground mb-3">📈 Trends vs Last Month</h2>
-          <Card className="p-4">
-            <div className="space-y-2">
-              {categoryTrends.slice(0, 6).map((t, i) => {
-                // Find the most recent transaction description for this category
-                const topTx = expenses.find(e => e.categoryName === t.categoryName && e.description);
-                const label = topTx?.description ? `${t.categoryName} (${topTx.description})` : t.categoryName;
-                return (
-                <div key={`trend-${i}`} className="flex items-center justify-between py-1.5 border-b border-border/40 last:border-0">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-base shrink-0">{t.icon}</span>
-                    <span className="text-sm text-foreground truncate">{label}</span>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-xs text-muted-foreground tabular-nums">{fmt(t.currentSpendMinor)}</span>
-                    <span className={`text-sm font-bold ${trendCls(t.trend)}`}>
-                      {trendIcon(t.trend)} {t.trend !== 'stable' && t.trend !== 'new' ? `${t.trendPct}%` : t.trend}
-                    </span>
-                  </div>
-                </div>
-                );
-              })}
+        {txPieData.length > 0 && <CategoryPie data={txPieData} fmt={fmt} />}
+      </section>
+
+      {/* 3. Goal Analysis */}
+      {goalProbabilities && goalProbabilities.length > 0 && (
+        <section>
+          <h2 className="text-sm font-semibold text-foreground mb-3 uppercase tracking-wider">3. Goal Analysis</h2>
+          <Card className="p-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {goalProbabilities.map(g => <GoalCard key={g.goalId} goal={g} fmt={fmt} />)}
             </div>
           </Card>
-        </div>
+        </section>
       )}
 
-      {/* ── Anomalies ── */}
-      {anomalies.length > 0 && (
-        <div>
-          <h2 className="text-sm font-semibold text-foreground mb-3">⚡ Unusual Spending</h2>
-          <div className="space-y-2">
-            {anomalies.map((a, i) => {
-              const topDesc = expenses
-                .filter(e => e.categoryName === a.categoryName && e.description?.trim())
-                .sort((a2, b) => b.amountMinor - a2.amountMinor)[0]?.description;
-              const label = catLabel(a.categoryName, topDesc);
-              return (
-              <div key={`anomaly-${i}`} className="p-4 rounded-xl border bg-orange-50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800 flex gap-3">
-                <span className="text-xl shrink-0">{a.icon}</span>
-                <div>
-                  <p className="text-sm font-semibold text-foreground">{label} — {a.spikeRatio}× spike</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{a.message}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    This month: {fmt(a.currentSpendMinor)} · Recent avg: {fmt(a.avgPrevSpendMinor)}
-                  </p>
-                </div>
-              </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ── Rule-based advice sections ── */}
-      {SECTIONS.map(section => {
-        const cards = bySection[section.key];
-        return (
-          <div key={section.key}>
-            <div className="flex items-center gap-2 mb-3">
-              <h2 className="text-sm font-semibold text-foreground">{section.label}</h2>
-              {cards.length > 0 && (
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${section.badge}`}>{cards.length}</span>
-              )}
-              <span className="text-xs text-muted-foreground">{section.sublabel}</span>
-            </div>
-            {cards.length === 0 ? (
-              <p className="text-xs text-muted-foreground pl-1">{section.empty}</p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {cards.map(card => <InsightCard key={card.id} card={card} badge={section.badge} bg={section.bg} />)}
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      {/* ── AI Suggestions ── */}
+      {/* 4. AI Recommendations */}
       {aiSuggestions && (
-        <div>
-          <h2 className="text-sm font-semibold text-foreground mb-3">🤖 AI Suggestions</h2>
-          <Card className="p-5 border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/20">
-            <div className="flex gap-3">
-              <span className="text-xl shrink-0">✨</span>
-              <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{aiSuggestions}</p>
+        <section>
+          <h2 className="text-sm font-semibold text-foreground mb-3 uppercase tracking-wider">4. AI Recommendations</h2>
+          <Card className="p-6 border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/20">
+            <div className="flex gap-4">
+              <span className="text-3xl shrink-0 mt-1">✨</span>
+              <div className="text-sm text-foreground leading-relaxed whitespace-pre-line space-y-2">
+                {aiSuggestions}
+              </div>
             </div>
           </Card>
-        </div>
+        </section>
       )}
 
-      {/* ── Category chart + Goals ── */}
-      {(txPieData.length > 0 || goalProbabilities.length > 0) && (
+      {/* 5. Trends */}
+      <section>
+        <h2 className="text-sm font-semibold text-foreground mb-3 uppercase tracking-wider">5. Trends</h2>
+        
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {txPieData.length > 0 && <CategoryPie data={txPieData} fmt={fmt} />}
-          {goalProbabilities.length > 0 && (
-            <Card className="p-5">
-              <h3 className="text-sm font-semibold text-foreground mb-3">Goal Progress</h3>
-              <div className="space-y-3">
-                {goalProbabilities.slice(0, 4).map(g => <GoalCard key={g.goalId} goal={g} fmt={fmt} />)}
+          {categoryTrends.length > 0 && (
+            <Card className="p-4">
+              <h3 className="text-xs font-semibold text-muted-foreground mb-3 uppercase">Category Trends</h3>
+              <div className="space-y-2">
+                {categoryTrends.slice(0, 6).map((t, i) => {
+                  const topTx = expenses.find(e => e.categoryName === t.categoryName && e.description);
+                  const label = topTx?.description ? `${t.categoryName} (${topTx.description})` : t.categoryName;
+                  return (
+                    <div key={`trend-${i}`} className="flex items-center justify-between py-1.5 border-b border-border/40 last:border-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-base shrink-0">{t.icon}</span>
+                        <span className="text-sm text-foreground truncate">{label}</span>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-xs text-muted-foreground tabular-nums">{fmt(t.currentSpendMinor)}</span>
+                        <span className={`text-sm font-bold ${trendCls(t.trend)}`}>
+                          {trendIcon(t.trend)} {t.trend !== 'stable' && t.trend !== 'new' ? `${t.trendPct}%` : t.trend}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </Card>
           )}
+
+          {anomalies.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-xs font-semibold text-muted-foreground mb-1 uppercase pl-1">Unusual Spending</h3>
+              {anomalies.map((a, i) => {
+                const topDesc = expenses
+                  .filter(e => e.categoryName === a.categoryName && e.description?.trim())
+                  .sort((a2, b) => b.amountMinor - a2.amountMinor)[0]?.description;
+                const label = catLabel(a.categoryName, topDesc);
+                return (
+                  <div key={`anomaly-${i}`} className="p-4 rounded-xl border bg-orange-50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800 flex gap-3">
+                    <span className="text-xl shrink-0">{a.icon}</span>
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{label} — {a.spikeRatio}× spike</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{a.message}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        This month: {fmt(a.currentSpendMinor)} · Recent avg: {fmt(a.avgPrevSpendMinor)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
-      )}
+
+        {/* Rule-based advice sections conditionally rendered under Trends */}
+        <div className="mt-6 space-y-5">
+          {SECTIONS.map(section => {
+            const cards = bySection[section.key];
+            if (cards.length === 0) return null; // Hide completely when empty
+            return (
+              <div key={section.key}>
+                <div className="flex items-center gap-2 mb-3">
+                  <h3 className="text-sm font-semibold text-foreground">{section.label}</h3>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${section.badge}`}>{cards.length}</span>
+                  <span className="text-xs text-muted-foreground">{section.sublabel}</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {cards.map(card => <InsightCard key={card.id} card={card} badge={section.badge} bg={section.bg} />)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
     </div>
   );
 }
