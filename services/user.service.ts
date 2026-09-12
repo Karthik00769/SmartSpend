@@ -19,7 +19,6 @@ export interface UserProfile {
   email: string;
   monthlyIncomeMinor: number;
   currency: string;
-  timezone: string;
   twoFactorEnabled: boolean;
   preferences: UserPreferences;
   sessionVersion: number;
@@ -48,18 +47,6 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
 
   if (rows.length === 0) return null;
 
-  // Fetch timezone separately — column may not exist if migration 011 hasn't run
-  let timezone = 'Asia/Kolkata';
-  try {
-    const tzRows = await query<{ timezone: string }[]>(
-      `SELECT COALESCE(timezone, 'Asia/Kolkata') AS timezone FROM users WHERE id = ? LIMIT 1`,
-      [userId]
-    );
-    if (tzRows[0]?.timezone) timezone = tzRows[0].timezone;
-  } catch {
-    // Column doesn't exist yet — use default
-  }
-
   const row = rows[0];
   let prefs: UserPreferences = { budgetAlerts: true, aiInsights: true, weeklyDigest: false };
   
@@ -78,7 +65,6 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
     email: row.email,
     monthlyIncomeMinor: Number(row.monthly_income_minor ?? 0),
     currency: row.currency ?? 'USD',
-    timezone,
     twoFactorEnabled: !!row.two_factor_pin,
     preferences: prefs,
     sessionVersion: row.session_version || 1,
@@ -108,17 +94,6 @@ export async function updateUserProfile(userId: string, data: Partial<UserProfil
   if (data.currency !== undefined) {
     updates.push('currency_code = ?');
     values.push(data.currency);
-  }
-  if ((data as any).timezone !== undefined) {
-    // Only update timezone if the column exists (migration 011)
-    try {
-      await query<ResultSetHeader>(
-        `UPDATE users SET timezone = ? WHERE id = ?`,
-        [(data as any).timezone, userId]
-      );
-    } catch {
-      // Column doesn't exist yet — skip silently
-    }
   }
   if (data.preferences !== undefined) {
     updates.push('preferences = ?');

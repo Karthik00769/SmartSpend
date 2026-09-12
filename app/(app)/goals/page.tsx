@@ -65,16 +65,15 @@ function GoalCard({
   goal:        GoalDTO;
   probability: GoalProbabilityResult | undefined;
 }) {
-  const { depositToGoal, updateGoal, deleteGoal, fmt } = useSmartSpend();
-  const symbol = Format.CURRENCY_SYMBOL;
+  const { depositToGoal, updateGoal, deleteGoal, fmt, symbol } = useSmartSpend();
   const [depositAmount, setDepositAmount] = useState('');
   const [depositing,    setDepositing]    = useState(false);
   const [deleting,      setDeleting]      = useState(false);
 
   const pct       = goal.progressPct;
-  const remaining = FinanceCore.Math.minorToInr(goal.remainingMinor);
+  const remaining = goal.remainingMinor;
   const daysLeft  = goal.daysRemaining ?? 0;
-  const isTerminal = goal.lifecycleStatus === 'completed' || goal.lifecycleStatus === 'failed' || goal.lifecycleStatus === 'cancelled';
+  const isTerminal = goal.lifecycleStatus === 'completed' || goal.lifecycleStatus === 'overdue' || goal.lifecycleStatus === 'cancelled';
 
   const handleDeposit = async () => {
     const val = parseFloat(depositAmount);
@@ -100,7 +99,7 @@ function GoalCard({
   return (
     <Card className={`p-5 border transition-colors ${
       goal.lifecycleStatus === 'completed' ? 'border-green-300 dark:border-green-800 bg-green-50/30 dark:bg-green-950/10' :
-      goal.lifecycleStatus === 'failed'    ? 'border-red-300 dark:border-red-800 bg-red-50/30 dark:bg-red-950/10' :
+      goal.lifecycleStatus === 'overdue'    ? 'border-red-300 dark:border-red-800 bg-red-50/30 dark:bg-red-950/10' :
       'border-border/50 hover:border-primary/40'
     }`}>
 
@@ -121,8 +120,8 @@ function GoalCard({
       {/* Amounts */}
       <div className="flex items-end justify-between mb-2">
         <div>
-          <span className="text-xl font-bold text-foreground tabular-nums">{fmt(FinanceCore.Math.minorToInr(goal.savedAmountMinor))}</span>
-          <span className="text-sm text-muted-foreground ml-1">/ {fmt(FinanceCore.Math.minorToInr(goal.targetAmountMinor))}</span>
+          <span className="text-xl font-bold text-foreground tabular-nums">{fmt(goal.savedAmountMinor)}</span>
+          <span className="text-sm text-muted-foreground ml-1">/ {fmt(goal.targetAmountMinor)}</span>
         </div>
         <span className="text-sm font-bold text-primary">{pct}%</span>
       </div>
@@ -139,7 +138,7 @@ function GoalCard({
       <div className="flex justify-between text-xs text-muted-foreground mb-4">
         <span>
           {goal.lifecycleStatus === 'completed' ? '🎉 Goal reached!'
-            : goal.lifecycleStatus === 'failed' ? '⏰ Deadline passed'
+            : goal.lifecycleStatus === 'overdue' ? '⏰ Deadline passed'
             : `${fmt(remaining)} remaining`}
         </span>
         <span>
@@ -241,7 +240,7 @@ export default function GoalsPage() {
   const active    = goals.filter(g => g.lifecycleStatus === 'active');
   const paused    = goals.filter(g => g.lifecycleStatus === 'paused');
   const completed = goals.filter(g => g.lifecycleStatus === 'completed');
-  const failed    = goals.filter(g => g.lifecycleStatus === 'failed');
+  const failed    = goals.filter(g => g.lifecycleStatus === 'overdue');
 
   if (goalsLoading) return <GoalsSkeleton />;
 

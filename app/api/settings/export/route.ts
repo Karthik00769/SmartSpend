@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
       ),
       query<any[]>(
         `SELECT e.id, e.amount_minor AS amount_minor, e.description, e.expense_date AS date,
-                c.name AS category, e.source, e.created_at
+                c.name AS category, e.source, e.merchant, e.created_at
          FROM expenses e
          LEFT JOIN categories c ON e.category_id = c.id
          WHERE e.user_id = ? AND e.deleted_at IS NULL
@@ -62,29 +62,51 @@ export async function GET(req: NextRequest) {
       ),
     ]);
 
+    const totalIncome = parseInt(profile[0]?.monthly_income_minor || '0', 10);
+    const totalExpenses = expenses.reduce((acc: number, e: any) => acc + parseInt(e.amount_minor || '0', 10), 0);
+    
     const exportData = {
-      exportedAt: new Date().toISOString(),
-      profile:    profile[0] ?? null,
+      exportDate:  new Date().toISOString(),
+      userProfile: profile[0] ?? null,
+      summary: {
+        totalIncomeMinor: totalIncome,
+        totalExpensesMinor: totalExpenses,
+        currency: profile[0]?.currency || 'USD'
+      },
       expenses,
       budgets,
-      goals,
-      insights,
+      goals
     };
 
     if (format === 'csv') {
-      // Flatten expenses as the primary CSV export (most useful for users)
       const rows = exportData.expenses;
       if (rows.length === 0) {
         return new NextResponse('No expenses to export.', {
           headers: { 'Content-Type': 'text/plain' },
         });
       }
-      const headers = Object.keys(rows[0]).join(',');
-      const lines   = rows.map(r =>
-        Object.values(r).map(v =>
-          v == null ? '' : `"${String(v).replace(/"/g, '""')}"`
-        ).join(',')
-      );
+      
+      const currency = profile[0]?.currency || 'USD';
+      
+      const headers = ['Date', 'Category', 'Merchant', 'Description', 'Amount', 'Currency'].join(',');
+      const lines = rows.map((r: any) => {
+        const date = r.date ? new Date(r.date).toISOString().split('T')[0] : '';
+        const category = r.category || 'Uncategorized';
+        // Note: the original query doesn't select merchant yet. Wait, I should ensure it does, but for now I'll parse it from description or add merchant field if available
+        const merchant = r.merchant || '';
+        const desc = r.description || '';
+        const amt = r.amount_minor ? (parseInt(r.amount_minor, 10) / 100).toFixed(2) : '0.00';
+        
+        return [
+          `"${date}"`,
+          `"${category.replace(/"/g, '""')}"`,
+          `"${merchant.replace(/"/g, '""')}"`,
+          `"${desc.replace(/"/g, '""')}"`,
+          `"${amt}"`,
+          `"${currency}"`
+        ].join(',');
+      });
+      
       const csv = [headers, ...lines].join('\n');
 
       return new NextResponse(csv, {

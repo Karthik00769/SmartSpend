@@ -44,7 +44,7 @@ export const CreateExpenseInputSchema = z.object({
   categoryId: z.number().int().min(1),
   amountMinor: z.number().int().min(MIN_AMOUNT_INR * 100).max(MAX_AMOUNT_INR * 100),
   date: ISODate.refine(d => !isFutureDateIST(d), 'Expense date cannot be in the future'),
-  merchantName: z.string().trim().min(2, 'Merchant name is too short').max(MAX_MERCHANT_LENGTH, 'Merchant name is too long'),
+  merchantName: z.string().trim().min(1, 'Merchant name is too short').max(MAX_MERCHANT_LENGTH, 'Merchant name is too long'),
   description: z.string().trim().max(MAX_DESCRIPTION_LENGTH).optional(),
 });
 

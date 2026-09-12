@@ -39,10 +39,11 @@ export function extractAmountStringStrict(lines: string[]): string {
 export function extractMerchantStringStrict(lines: string[]): string {
   const topLines = lines.slice(0, 7);
 
-  interface RankedMerchant { text: string; score: number }
+  interface RankedMerchant { text: string; score: number; index: number; }
   const candidates: RankedMerchant[] = [];
 
-  for (const line of topLines) {
+  for (let i = 0; i < topLines.length; i++) {
+    const line = topLines[i];
     if (isJunkLine(line)) continue;
 
     const cleanLine = line.replace(/^[^a-zA-Z]+/, '').replace(/[^\w\s&',.\-]+$/, '').trim();
@@ -54,12 +55,32 @@ export function extractMerchantStringStrict(lines: string[]): string {
     if (!/\d/.test(cleanLine)) score += 20;
 
     if (score > 0) {
-      candidates.push({ text: cleanLine, score });
+      candidates.push({ text: cleanLine, score, index: i });
     }
   }
 
   candidates.sort((a, b) => b.score - a.score);
-  return candidates.length > 0 ? candidates[0].text.substring(0, 60) : '';
+  
+  if (candidates.length === 0) return '';
+  
+  const best = candidates[0];
+  let result = best.text;
+  
+  // Try to append subsequent lines if they also look like merchant parts
+  let currentIdx = best.index;
+  while (true) {
+    const nextIdx = currentIdx + 1;
+    const nextCandidate = candidates.find(c => c.index === nextIdx);
+    
+    if (nextCandidate && nextCandidate.score >= 40) {
+       result += ' - ' + nextCandidate.text;
+       currentIdx = nextIdx;
+    } else {
+       break;
+    }
+  }
+  
+  return result.substring(0, 100);
 }
 
 export function extractDateString(text: string): string {

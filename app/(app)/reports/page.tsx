@@ -16,6 +16,7 @@ interface ReportData {
     score: number;
     status: string;
     details: any;
+    recommendations?: string[];
   };
 }
 
@@ -113,7 +114,7 @@ export default function ReportsPage() {
         </div>
         <div>
           {data && (
-            <HealthScore score={data.health.score} details={data.health.details} />
+            <HealthScore score={data.health.score} details={data.health.details} recommendations={data.health.recommendations} />
           )}
         </div>
       </div>

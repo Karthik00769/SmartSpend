@@ -16,7 +16,8 @@ export const authOptions: NextAuthOptions = {
       name: "Credentials",
       credentials: {
         email: { label: "Email", type: "email", placeholder: "you@example.com" },
-        password: { label: "Password", type: "password" }
+        password: { label: "Password", type: "password" },
+        pin: { label: "2FA PIN (if enabled)", type: "text" }
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
@@ -24,7 +25,7 @@ export const authOptions: NextAuthOptions = {
         }
 
         const [rows] = await pool.execute<RowDataPacket[]>(
-          "SELECT id, email, password_hash, session_version FROM users WHERE email = ? AND is_active = 1 AND deleted_at IS NULL",
+          "SELECT id, email, password_hash, session_version, currency_code, two_factor_pin FROM users WHERE email = ? AND is_active = 1 AND deleted_at IS NULL",
           [credentials.email]
         );
 
@@ -40,10 +41,21 @@ export const authOptions: NextAuthOptions = {
           if (!valid) throw new Error("Invalid email or password");
         }
 
+        // Validate 2FA
+        if (user.two_factor_pin) {
+          if (!credentials.pin) {
+            throw new Error("2FA PIN required");
+          }
+          if (credentials.pin !== user.two_factor_pin) {
+            throw new Error("Invalid 2FA PIN");
+          }
+        }
+
         return {
           id: user.id.toString(),
           email: user.email,
-          session_version: user.session_version // Custom property for force logout
+          session_version: user.session_version, // Custom property for force logout
+          currency: user.currency_code || 'USD'
         };
       }
     })
@@ -54,8 +66,8 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ user, account, profile }) {
       if (account?.provider === "google") {
-        if (!user.email) return false; 
-        
+        if (!user.email) return false;
+
         // Use sub (unique provider ID) as oauth_id
         const oauth_id = profile?.sub || account?.providerAccountId;
         if (!oauth_id) return false;
@@ -63,7 +75,7 @@ export const authOptions: NextAuthOptions = {
         // 1. LOOKUP: Try oauth_id first, then fallback to email
         // This prevents duplicate accounts if a user signed up with credentials first.
         const [rows] = await pool.execute<RowDataPacket[]>(
-          "SELECT id, oauth_id, is_active, deleted_at, session_version FROM users WHERE oauth_id = ? OR email = ?",
+          "SELECT id, oauth_id, is_active, deleted_at, session_version, currency_code FROM users WHERE oauth_id = ? OR email = ?",
           [oauth_id, user.email]
         );
 
@@ -73,9 +85,9 @@ export const authOptions: NextAuthOptions = {
             `INSERT INTO users (oauth_id, email, full_name, avatar_url, currency_code, created_at, session_version, is_active) 
              VALUES (?, ?, ?, ?, 'USD', NOW(), 1, 1)`,
             [
-              oauth_id, 
-              user.email, 
-              (user as any).name || user.email.split('@')[0], 
+              oauth_id,
+              user.email,
+              (user as any).name || user.email.split('@')[0],
               (user as any).image || ''
             ]
           );
@@ -87,21 +99,22 @@ export const authOptions: NextAuthOptions = {
 
           // 3. VALIDATE: Ensure user is allowed to login
           if (dbUser.is_active === 0 || dbUser.deleted_at !== null) {
-             console.warn(`[AUTH] Blocked login for deactivated user: ${user.email}`);
-             return false;
+            console.warn(`[AUTH] Blocked login for deactivated user: ${user.email}`);
+            return false;
           }
 
           // 4. LINKING / RECOVERY: If we found user by email but oauth_id is missing or different
           if (!dbUser.oauth_id || dbUser.oauth_id !== oauth_id) {
-             console.log(`[AUTH] Linking existing email account ${user.email} to Google oauth_id: ${oauth_id}`);
-             await pool.execute(
-               "UPDATE users SET oauth_id = ?, avatar_url = ? WHERE id = ?",
-               [oauth_id, (user as any).image || '', dbUser.id]
-             );
+            console.log(`[AUTH] Linking existing email account ${user.email} to Google oauth_id: ${oauth_id}`);
+            await pool.execute(
+              "UPDATE users SET oauth_id = ?, avatar_url = ? WHERE id = ?",
+              [oauth_id, (user as any).image || '', dbUser.id]
+            );
           }
-          
+
           user.id = dbUser.id.toString();
           (user as any).session_version = dbUser.session_version;
+          (user as any).currency = dbUser.currency_code || 'USD';
         }
       }
 
@@ -116,6 +129,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id;
         token.session_version = (user as any).session_version;
+        token.currency = (user as any).currency;
         return token;
       }
 
@@ -129,23 +143,25 @@ export const authOptions: NextAuthOptions = {
       if (token.id) {
         try {
           const [rows] = await pool.execute<RowDataPacket[]>(
-            "SELECT session_version, is_active, deleted_at FROM users WHERE id = ?",
+            "SELECT session_version, is_active, deleted_at, currency_code FROM users WHERE id = ?",
             [token.id as string]
           );
 
           if (rows.length === 0) return null as any;
 
           const dbUser = rows[0];
-          
+
           // Invalidate if deactivated, deleted, or version mismatch (Force Logout)
           if (
-            dbUser.is_active === 0 || 
-            dbUser.deleted_at !== null || 
+            dbUser.is_active === 0 ||
+            dbUser.deleted_at !== null ||
             dbUser.session_version !== token.session_version
           ) {
             console.warn(`[AUTH] Force logout triggered for User ID: ${token.id} (Version Mismatch or Account Disabled)`);
             return null as any;
           }
+
+          token.currency = dbUser.currency_code || 'USD';
 
         } catch (err) {
           console.error('[AUTH] Failed to verify session version:', err);
@@ -153,13 +169,14 @@ export const authOptions: NextAuthOptions = {
           return null as any;
         }
       }
-      
+
       return token;
     },
     async session({ session, token }) {
       if (session.user && token) {
         (session.user as any).id = token.id;
         (session.user as any).session_version = token.session_version;
+        (session.user as any).currency = token.currency || 'USD';
       }
       return session;
     }

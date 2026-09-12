@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "corrections": [
+    {
+      "ocrMerchantPattern": "chetpet eq park chennat",
+      "correctedMerchant": "CHETPET EQ PARK. CHENNAT",
+      "correctedAmount": 0,
+      "lastUpdated": "2026-09-12T06:38:37.524Z",
+      "hitCount": 1
+    },
+    {
+      "ocrMerchantPattern": "chetpet eco park chennai entry others",
+      "correctedMerchant": "CHETPET ECO PARK. CHENNAI",
+      "correctedAmount": 50,
+      "lastUpdated": "2026-09-12T07:10:56.712Z",
+      "hitCount": 1
+    },
+    {
+      "ocrMerchantPattern": "tnfdc ltd chetpet eco park chennai",
+      "correctedMerchant": "TNFDC LTD CHETPET ECO PARK, CHENNAI",
+      "correctedAmount": 0,
+      "lastUpdated": "2026-09-12T07:31:23.050Z",
+      "hitCount": 1
+    }
+  ]
+}

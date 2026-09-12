@@ -41,41 +41,60 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
     
     // Module 4: Deterministic OCR Pipeline
-    const ocrResult = await processReceiptImage(buffer);
+    const ocrResult = await processReceiptImage(buffer, mimeType);
     
-    // Delegate amount parsing entirely to FinanceCore
-    const amount  = FinanceCore.Parsing.extractAmount(ocrResult.parsed.amountRaw ?? '');
-    const merchant = FinanceCore.Parsing.sanitizeMerchantName(ocrResult.parsed.merchantRaw || '');
-    const date     = FinanceCore.Parsing.extractDate(ocrResult.parsed.dateRaw ?? '') ?? new Date().toISOString().slice(0, 10);
-    const dateAdjusted = !ocrResult.parsed.dateRaw;
+    let amount: number;
+    let merchant: string;
+    let date: string;
+    let description: string;
+    let dateAdjusted = false;
+
+    if (ocrResult.source === 'gemini') {
+      // Gemini provided native data
+      amount = typeof ocrResult.extracted.amount === 'number' ? ocrResult.extracted.amount : FinanceCore.Parsing.extractAmount(String(ocrResult.extracted.amount));
+      merchant = ocrResult.extracted.merchant || 'Unknown Merchant';
+      date = ocrResult.extracted.date || new Date().toISOString().slice(0, 10);
+      description = ocrResult.extracted.description || merchant;
+    } else {
+      // Delegate amount parsing entirely to FinanceCore (Tesseract fallback)
+      amount  = FinanceCore.Parsing.extractAmount(ocrResult.parsed.amountRaw ?? '');
+      merchant = FinanceCore.Parsing.sanitizeMerchantName(ocrResult.parsed.merchantRaw || '');
+      date     = FinanceCore.Parsing.extractDate(ocrResult.parsed.dateRaw ?? '') ?? new Date().toISOString().slice(0, 10);
+      dateAdjusted = !ocrResult.parsed.dateRaw;
+      description = merchant;
+    }
 
     const amountWarning = amount === 0 
         ? 'Could not detect a valid amount — please enter it manually.' 
         : ocrResult.needsReview ? 'Amount detected but confidence is low — verify before saving.' : null;
 
+    const responseDto = {
+      extracted: {
+        amount,
+        date,
+        merchant,
+        description,
+        dateAdjusted,
+      },
+      source: ocrResult.source || 'ocr',
+      confidence: ocrResult.confidence || { overall: 0.5 },
+      needsReview: ocrResult.needsReview,
+      amountWarning,
+      _debug: {
+        ocrSource: ocrResult.source,
+        extractedDate: date,
+      },
+    };
+
+    console.log('[SCAN] Final API response DTO:', JSON.stringify(responseDto, null, 2));
+
     return NextResponse.json({
       ok: true,
-      data: {
-        extracted: {
-          amount,
-          date,
-          merchant,
-          description: merchant, // default description to merchant
-          dateAdjusted,
-        },
-        source: 'ocr',
-        confidence: ocrResult.confidence,
-        needsReview: ocrResult.needsReview,
-        amountWarning,
-        _debug: {
-          ocrConfidenceOverall: ocrResult.confidence.overall,
-          textLength: ocrResult.rawText.trim().length,
-          extractedDate: date,
-        },
-      },
+      data: responseDto,
     });
   } catch (err: any) {
     console.error('[SCAN] Unexpected error:', err);
     return NextResponse.json({ ok: false, error: 'An unexpected error occurred.' }, { status: 500 });
   }
 }
+

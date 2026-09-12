@@ -25,6 +25,7 @@ const EngineInputSchema = z.object({
     return !/<script|javascript:/i.test(val);
   }, 'Description contains invalid characters.'),
   categoryId: z.union([z.string(), z.number()]).optional(),
+  currencyCode: z.string().optional(),
   source: z.enum(['manual', 'receipt_scan', 'bank_import']).optional(),
 });
 
@@ -90,6 +91,7 @@ export function enrichExpense(
     userId,
     categoryId,
     amountMinor:   input.amountMinor,
+    currencyCode:  input.currencyCode || 'INR',
     date:          input.date,
     description:   input.description?.trim() ?? '',
     week,

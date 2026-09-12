@@ -76,8 +76,8 @@ function InsightCard({ card, badge, bg }: { card: TextAdvice; badge: string; bg:
 
 function SummaryCard({ data, fmt }: { data: any; fmt: (n: number) => string }) {
   const mom = data.monthOverMonth;
-  const totalSpent = FinanceCore.Math.minorToInr(mom.totalSpend.current);
-  const savings    = FinanceCore.Math.minorToInr(mom.savings.current);
+  const totalSpent = mom.totalSpend.current;
+  const savings    = mom.savings.current;
   const topCat     = mom.categories[0]?.categoryName ?? '—';
   const trend      = mom.totalSpend.direction;
   const trendIcon  = trend === 'up' ? '↑' : trend === 'down' ? '↓' : '→';
@@ -152,7 +152,7 @@ function GoalCard({ goal, fmt }: { goal: GoalProbabilityResult; fmt: (n: number)
       <div className="flex justify-between items-start mb-2">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-foreground truncate">{goal.title}</p>
-          <p className="text-xs text-muted-foreground">{fmt(FinanceCore.Math.minorToInr(goal.savedAmountMinor))} / {fmt(FinanceCore.Math.minorToInr(goal.targetAmountMinor))}</p>
+          <p className="text-xs text-muted-foreground">{fmt(goal.savedAmountMinor)} / {fmt(goal.targetAmountMinor)}</p>
         </div>
         <span className={`text-base font-bold shrink-0 ml-2 ${riskCls[goal.risk]}`}>{goal.probability}%</span>
       </div>
@@ -243,11 +243,11 @@ export default function InsightsPage() {
   expenses.forEach((e, idx) => {
     const key = catLabel(e.categoryName, e.description);
     if (txPieMap.has(key)) {
-      txPieMap.get(key)!.value += FinanceCore.Math.minorToInr(e.amountMinor);
+      txPieMap.get(key)!.value += e.amountMinor;
     } else {
       txPieMap.set(key, {
         name:  key,
-        value: FinanceCore.Math.minorToInr(e.amountMinor),
+        value: e.amountMinor,
         fill:  COLORS[txPieMap.size % COLORS.length],
         icon:  e.categoryIcon,
       });
@@ -329,11 +329,11 @@ export default function InsightsPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card className="p-4">
           <p className="text-xs text-muted-foreground mb-1">Total Spent</p>
-          <p className="text-xl font-bold text-foreground tabular-nums">{fmt(FinanceCore.Math.minorToInr(savingsAnalysis.totalSpentMinor))}</p>
+          <p className="text-xl font-bold text-foreground tabular-nums">{fmt(savingsAnalysis.totalSpentMinor)}</p>
         </Card>
         <Card className="p-4">
           <p className="text-xs text-muted-foreground mb-1">Savings</p>
-          <p className={`text-xl font-bold tabular-nums ${savingsCls}`}>{fmt(FinanceCore.Math.minorToInr(savingsAnalysis.savingsMinor))}</p>
+          <p className={`text-xl font-bold tabular-nums ${savingsCls}`}>{fmt(savingsAnalysis.savingsMinor)}</p>
         </Card>
         <Card className="p-4">
           <p className="text-xs text-muted-foreground mb-1">Savings Rate</p>
@@ -348,8 +348,8 @@ export default function InsightsPage() {
       {monthlyBreakdown && monthlyBreakdown.some(m => m.totalSpentMinor > 0) && (() => {
         const mappedBreakdown = monthlyBreakdown.map(m => ({
           ...m,
-          totalSpent: FinanceCore.Math.minorToInr(m.totalSpentMinor),
-          savings: FinanceCore.Math.minorToInr(m.savingsMinor)
+          totalSpent: m.totalSpentMinor,
+          savings: m.savingsMinor
         }));
         return (
         <div>
@@ -400,7 +400,7 @@ export default function InsightsPage() {
                       <p className="text-[10px] text-muted-foreground">{tx.date}</p>
                     </div>
                   </div>
-                  <span className="text-sm font-semibold tabular-nums shrink-0 ml-3">{fmt(FinanceCore.Math.minorToInr(tx.amountMinor))}</span>
+                  <span className="text-sm font-semibold tabular-nums shrink-0 ml-3">{fmt(tx.amountMinor)}</span>
                 </div>
               ))}
             </div>
@@ -424,7 +424,7 @@ export default function InsightsPage() {
                 <span className="text-2xl shrink-0">{c.icon}</span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-foreground truncate">{label}</p>
-                  <p className="text-xs text-muted-foreground">{fmt(FinanceCore.Math.minorToInr(c.totalMinor))}</p>
+                  <p className="text-xs text-muted-foreground">{fmt(c.totalMinor)}</p>
                 </div>
                 <span className="text-sm font-bold text-primary shrink-0">{c.percentageOfTotal}%</span>
               </Card>
@@ -451,7 +451,7 @@ export default function InsightsPage() {
                     <span className="text-sm text-foreground truncate">{label}</span>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-xs text-muted-foreground tabular-nums">{fmt(FinanceCore.Math.minorToInr(t.currentSpendMinor))}</span>
+                    <span className="text-xs text-muted-foreground tabular-nums">{fmt(t.currentSpendMinor)}</span>
                     <span className={`text-sm font-bold ${trendCls(t.trend)}`}>
                       {trendIcon(t.trend)} {t.trend !== 'stable' && t.trend !== 'new' ? `${t.trendPct}%` : t.trend}
                     </span>
@@ -481,7 +481,7 @@ export default function InsightsPage() {
                   <p className="text-sm font-semibold text-foreground">{label} — {a.spikeRatio}× spike</p>
                   <p className="text-xs text-muted-foreground mt-0.5">{a.message}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    This month: {fmt(FinanceCore.Math.minorToInr(a.currentSpendMinor))} · Recent avg: {fmt(FinanceCore.Math.minorToInr(a.avgPrevSpendMinor))}
+                    This month: {fmt(a.currentSpendMinor)} · Recent avg: {fmt(a.avgPrevSpendMinor)}
                   </p>
                 </div>
               </div>

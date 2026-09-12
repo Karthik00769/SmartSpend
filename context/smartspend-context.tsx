@@ -97,6 +97,7 @@ interface SmartSpendContextValue {
   // Global
   refreshAll: () => void;
   currency:   string;
+  symbol:     string;
   fmt:        (amount: number) => string;
 
   // Offline
@@ -266,6 +267,7 @@ export function SmartSpendProvider({ children }: SmartSpendProviderProps) {
 
     refreshAll,
     currency: currH.currency,
+    symbol:   currH.symbol,
     fmt:      currH.fmt,
 
     isOnline:     offlineSync.isOnline,

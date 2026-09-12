@@ -16,7 +16,6 @@ const ProfileUpdateSchema = z.object({
   email:          z.string().email().optional(),
   monthly_income: z.preprocess((val) => Number(val), z.number().min(0)),
   currency:       z.string().length(3).default('USD'),
-  timezone:       z.string().max(50).default('Asia/Kolkata'),
   preferences:    z.object({
     budgetAlerts: z.boolean().optional(),
     aiInsights:   z.boolean().optional(),
@@ -42,7 +41,6 @@ export async function GET(req: NextRequest) {
         email: (session.user as any).email ?? '',
         monthly_income: 0,
         currency: 'USD',
-        timezone: 'Asia/Kolkata',
         twoFactorEnabled: false,
         preferences: { budgetAlerts: true, aiInsights: true, weeklyDigest: false },
         sessionVersion: 1,
@@ -83,7 +81,6 @@ export async function POST(req: NextRequest) {
       email:          parsed.data.email,
       monthlyIncomeMinor: FinanceCore.Math.inrToMinor(parsed.data.monthly_income),
       currency:       parsed.data.currency,
-      timezone:       parsed.data.timezone,
       preferences:    parsed.data.preferences as any,
     });
 

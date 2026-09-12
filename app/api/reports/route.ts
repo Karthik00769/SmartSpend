@@ -64,6 +64,8 @@ export async function GET(req: NextRequest) {
         mo ASC
     `, [userId, months]);
 
+    console.log('[VALIDATION: REPORTS SQL TOTALS]', rows.map(r => ({ month: r.month_label, total_minor: r.total_spent_minor })));
+
 
     // Current month context for Health Score
     const now = new Date();
@@ -103,7 +105,8 @@ export async function GET(req: NextRequest) {
       health: {
         score:   healthData.score,
         status:  healthData.status,
-        details: healthData.details
+        details: healthData.details,
+        recommendations: healthData.recommendations
       }
     });
   } catch (err) {

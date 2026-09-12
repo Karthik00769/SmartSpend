@@ -27,10 +27,10 @@ export interface GeneratedInsight {
 // Older SDK versions use generateContent via getGenerativeModel().
 // We try models in sequence and fall back gracefully if one 404s.
 const MODEL_CANDIDATES = [
-  'gemini-1.5-flash',
-  'gemini-1.5-pro',
-  'gemini-pro',
+  'gemini-3.5-flash',
+  'gemini-3.1-flash-lite',
 ];
+
 
 // ─── Rule-based fallback insights ────────────────────────────────────────────
 /**

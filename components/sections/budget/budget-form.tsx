@@ -25,6 +25,7 @@ import {
 import { useSmartSpend }  from '@/context/smartspend-context';
 import { apiGet }         from '@/lib/api-client';
 import { budgetSchema, type BudgetFormValues } from '@/lib/validation/schemas';
+import { useCurrency }    from '@/hooks/use-currency';
 
 interface Category {
   id:    number;
@@ -34,6 +35,7 @@ interface Category {
 
 export function BudgetForm() {
   const { upsertBudget, budgetSubmitting, budgetSubmitError, budget } = useSmartSpend();
+  const { symbol, fmt } = useCurrency();
   const [success, setSuccess] = useState(false);
 
   // Fetch real categories from the DB — never use hardcoded IDs
@@ -150,7 +152,7 @@ export function BudgetForm() {
             name="limitAmount"
             render={({ field }) => (
               <FormItem>
-                <FormLabel htmlFor="limit-amount">Monthly Limit ($)</FormLabel>
+                <FormLabel htmlFor="limit-amount">Monthly Limit ({symbol})</FormLabel>
                 <FormControl>
                   <Input
                     id="limit-amount"
@@ -195,10 +197,10 @@ export function BudgetForm() {
                   </span>
                   <div className="text-right">
                     <span className="text-sm font-semibold text-foreground">
-                      ${FinanceCore.Math.minorToInr(cat.spentMinor).toFixed(0)}
+                      {fmt(cat.spentMinor)}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {' '}/ ${FinanceCore.Math.minorToInr(cat.allocatedMinor).toFixed(0)}
+                      {' '}/ {fmt(cat.allocatedMinor)}
                     </span>
                   </div>
                 </div>

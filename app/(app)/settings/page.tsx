@@ -29,7 +29,6 @@ export default function SettingsPage() {
     email: '',
     monthly_income: 0,
     currency: 'USD',
-    timezone: 'Asia/Kolkata',
     twoFactorEnabled: false,
     preferences: {
       budgetAlerts: true,
@@ -55,7 +54,6 @@ export default function SettingsPage() {
         email: data.email || '',
         monthly_income: data.monthly_income || 0,
         currency: data.currency || 'USD',
-        timezone: data.timezone || 'Asia/Kolkata',
         twoFactorEnabled: data.twoFactorEnabled || false,
         preferences: data.preferences || {
           budgetAlerts: true,
@@ -128,7 +126,6 @@ export default function SettingsPage() {
         email: profile.email,
         monthly_income: profile.monthly_income,
         currency: profile.currency,
-        timezone: profile.timezone,
         preferences: profile.preferences,
       });
 
@@ -324,13 +321,6 @@ export default function SettingsPage() {
                     <option value="INR">INR (₹)</option><option value="CAD">CAD ($)</option><option value="AUD">AUD (A$)</option>
                   </select>
                 </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="timezone" className="text-xs">Timezone</Label>
-                <select id="timezone" value={profile.timezone} onChange={(e) => handleProfileChange('timezone', e.target.value)} className="w-full h-8 px-2 py-1 border rounded bg-background text-xs">
-                  <option value="Asia/Kolkata">Asia/Kolkata</option><option value="America/New_York">New York</option>
-                  <option value="Europe/London">London</option><option value="UTC">UTC</option>
-                </select>
               </div>
             </div>
             <Button type="submit" size="sm" className="w-full" disabled={saving}>

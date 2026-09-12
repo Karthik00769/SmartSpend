@@ -2,19 +2,19 @@
 
 import { useState } from 'react';
 import { useSmartSpend } from '@/context/smartspend-context';
-import { BudgetForm }    from '@/components/sections/budget/budget-form';
+import { BudgetForm } from '@/components/sections/budget/budget-form';
 import { BudgetTracker } from '@/components/sections/dashboard/budget-tracker';
-import { Card }          from '@/components/ui/card';
-import { EmptyState }    from '@/components/ui/EmptyState';
+import { Card } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/EmptyState';
 import * as FinanceCore from '@/lib/finance';
-import { Button }        from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 
 const MONTHS = [
-  'January','February','March','April','May','June',
-  'July','August','September','October','November','December',
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
 function BudgetSkeleton() {
@@ -42,7 +42,7 @@ export default function BudgetPage() {
     period.year === now.getFullYear() && period.month === now.getMonth() + 1;
   const isPastPeriod = !isCurrentPeriod &&
     (period.year < now.getFullYear() ||
-     (period.year === now.getFullYear() && period.month < now.getMonth() + 1));
+      (period.year === now.getFullYear() && period.month < now.getMonth() + 1));
 
   return (
     <div>
@@ -92,13 +92,13 @@ export default function BudgetPage() {
           {[
             {
               label: 'Total Budget',
-              value: `${fmt(FinanceCore.Math.minorToInr(budget.totalBudgetMinor))}`,
+              value: `${fmt(budget.totalBudgetMinor)}`,
               icon: '📋',
               cls: 'text-foreground',
             },
             {
               label: 'Total Spent',
-              value: `${fmt(FinanceCore.Math.minorToInr(budget.totalSpentMinor))}`,
+              value: `${fmt(budget.totalSpentMinor)}`,
               icon: '💸',
               cls: budget.totalSpentMinor > budget.totalBudgetMinor
                 ? 'text-red-600 dark:text-red-400'
@@ -106,7 +106,7 @@ export default function BudgetPage() {
             },
             {
               label: 'Remaining',
-              value: `${fmt(FinanceCore.Math.minorToInr(FinanceCore.Math.subtract(budget.totalBudgetMinor, budget.totalSpentMinor)))}`,
+              value: `${fmt(FinanceCore.Math.subtract(budget.totalBudgetMinor, budget.totalSpentMinor))}`,
               icon: '💰',
               cls: FinanceCore.Budget.isBudgetExceeded(budget.totalSpentMinor, budget.totalBudgetMinor)
                 ? 'text-red-600 dark:text-red-400'

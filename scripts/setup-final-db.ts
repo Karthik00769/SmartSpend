@@ -119,7 +119,7 @@ CREATE TABLE goals (
   saved_amount decimal(12,2) NOT NULL DEFAULT 0.00,
   deadline date NULL,
   type enum('short','long') NULL DEFAULT 'short',
-  status enum('active','paused','completed','cancelled') NOT NULL DEFAULT 'active',
+  status enum('active','paused','completed','cancelled','overdue') NOT NULL DEFAULT 'active',
   goal_type enum('short_term','long_term') NOT NULL DEFAULT 'short_term',
   priority enum('low','medium','high') NOT NULL DEFAULT 'medium',
   deleted_at datetime NULL,

@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Card }   from '@/components/ui/card';
-import { Input }  from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -16,11 +16,12 @@ import { apiGet, apiPatch, apiDelete, buildQuery, ApiRequestError } from '@/lib/
 import { format } from 'date-fns';
 import type { ExpenseDTO } from '@/types/api';
 import * as FinanceCore from '@/lib/finance';
+import { useSmartSpend } from '@/context/smartspend-context';
 
 const SOURCE_META: Record<string, { label: string; emoji: string; cls: string }> = {
-  manual:       { label: 'Manual', emoji: '✏️', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' },
-  receipt_scan: { label: 'OCR',    emoji: '📸', cls: 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300' },
-  bank_import:  { label: 'Bank',   emoji: '🏦', cls: 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300' },
+  manual: { label: 'Manual', emoji: '✏️', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' },
+  receipt_scan: { label: 'OCR', emoji: '📸', cls: 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300' },
+  bank_import: { label: 'Bank', emoji: '🏦', cls: 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300' },
 };
 
 function SourceBadge({ source }: { source: string }) {
@@ -44,18 +45,18 @@ interface EditState {
 
 // EditRow: manual source → category dropdown, auto/OCR/bank → free text
 function EditRow({ expense, categories, onSave, onCancel, saving }: {
-  expense:    ExpenseDTO;
+  expense: ExpenseDTO;
   categories: Category[];
-  onSave:     (id: string, patch: EditState) => Promise<void>;
-  onCancel:   () => void;
-  saving:     boolean;
+  onSave: (id: string, patch: EditState) => Promise<void>;
+  onCancel: () => void;
+  saving: boolean;
 }) {
   const [form, setForm] = useState<EditState>({
-    amount:       String(FinanceCore.Math.minorToInr(expense.amountMinor)),
-    description:  expense.description,
+    amount: String(FinanceCore.Math.minorToInr(expense.amountMinor)),
+    description: expense.description,
     categoryName: expense.categoryName,
-    categoryId:   String(expense.categoryId ?? ''),
-    date:         expense.date,
+    categoryId: String(expense.categoryId ?? ''),
+    date: expense.date,
   });
 
   const set = (k: keyof EditState) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -127,24 +128,25 @@ function EditRow({ expense, categories, onSave, onCancel, saving }: {
 }
 
 function MobileEditCard({ expense, categories, onSave, onCancel, saving }: {
-  expense:    ExpenseDTO;
+  expense: ExpenseDTO;
   categories: Category[];
-  onSave:     (id: string, patch: EditState) => Promise<void>;
-  onCancel:   () => void;
-  saving:     boolean;
+  onSave: (id: string, patch: EditState) => Promise<void>;
+  onCancel: () => void;
+  saving: boolean;
 }) {
   const [form, setForm] = useState<EditState>({
-    amount:       String(FinanceCore.Math.minorToInr(expense.amountMinor)),
-    description:  expense.description,
+    amount: String(FinanceCore.Math.minorToInr(expense.amountMinor)),
+    description: expense.description,
     categoryName: expense.categoryName,
-    categoryId:   String(expense.categoryId ?? ''),
-    date:         expense.date,
+    categoryId: String(expense.categoryId ?? ''),
+    date: expense.date,
   });
 
   const set = (k: keyof EditState) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(p => ({ ...p, [k]: e.target.value }));
 
   const isManual = !expense.source || expense.source === 'manual';
+  const { symbol } = useSmartSpend();
 
   return (
     <div className="p-4 rounded-xl border-2 border-primary/20 bg-primary/5 flex flex-col gap-3 shadow-sm animate-in fade-in zoom-in-95 duration-200">
@@ -173,7 +175,7 @@ function MobileEditCard({ expense, categories, onSave, onCancel, saving }: {
       </div>
       <Input value={form.description} onChange={set('description')} className="h-9" placeholder="Description" />
       <div className="flex items-center gap-2">
-        <span className="text-xl font-bold text-muted-foreground">$</span>
+        <span className="text-xl font-bold text-muted-foreground">{symbol}</span>
         <Input type="number" step="0.01" min="0.01" value={form.amount} onChange={set('amount')} className="h-10 text-lg font-bold flex-1" />
       </div>
       <div className="flex gap-2 justify-end mt-1">
@@ -189,29 +191,31 @@ function MobileEditCard({ expense, categories, onSave, onCancel, saving }: {
 const PAGE_SIZE = 25;
 
 export default function ExpensesHistoryPage() {
-  const [expenses,   setExpenses]   = useState<ExpenseDTO[]>([]);
-  const [total,      setTotal]      = useState(0);
-  const [loading,    setLoading]    = useState(true);
-  const [error,      setError]      = useState<string | null>(null);
-  const [page,       setPage]       = useState(0);
-  const [search,     setSearch]     = useState('');
-  const [startDate,  setStartDate]  = useState('');
-  const [endDate,    setEndDate]    = useState('');
-  const [minAmount,  setMinAmount]  = useState('');
-  const [maxAmount,  setMaxAmount]  = useState('');
-  const [source,     setSource]     = useState('');
-  const [catFilter,  setCatFilter]  = useState('');
+  const [expenses, setExpenses] = useState<ExpenseDTO[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [search, setSearch] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [minAmount, setMinAmount] = useState('');
+  const [maxAmount, setMaxAmount] = useState('');
+  const [source, setSource] = useState('');
+  const [catFilter, setCatFilter] = useState('');
   const [categories, setCategories] = useState<Category[]>([]);
   const debRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [dbSearch,   setDbSearch]   = useState('');
-  const [editingId,  setEditingId]  = useState<string | null>(null);
-  const [savingId,   setSavingId]   = useState<string | null>(null);
+  const [dbSearch, setDbSearch] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const { fmt } = useSmartSpend();
 
   useEffect(() => {
     apiGet<{ categories: Category[] }>('/api/categories')
       .then(d => setCategories(d.categories ?? []))
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   useEffect(() => {
@@ -225,15 +229,15 @@ export default function ExpensesHistoryPage() {
     setLoading(true); setError(null);
     try {
       const qs = buildQuery({
-        limit:      PAGE_SIZE,
-        offset:     page * PAGE_SIZE,
-        search:     dbSearch   || undefined,
-        startDate:  startDate  || undefined,
-        endDate:    endDate    || undefined,
-        minAmount:  minAmount  ? Number(minAmount) : undefined,
-        maxAmount:  maxAmount  ? Number(maxAmount) : undefined,
-        source:     source     || undefined,
-        categoryId: catFilter  ? Number(catFilter) : undefined,
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
+        search: dbSearch || undefined,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+        minAmount: minAmount ? Number(minAmount) : undefined,
+        maxAmount: maxAmount ? Number(maxAmount) : undefined,
+        source: source || undefined,
+        categoryId: catFilter ? Number(catFilter) : undefined,
       });
       const data = await apiGet<{ expenses: ExpenseDTO[]; total: number }>(`/api/expenses${qs}`);
       setExpenses(data.expenses);
@@ -253,9 +257,9 @@ export default function ExpensesHistoryPage() {
       const exp = expenses.find(e => e.id === id);
       const isManual = !exp?.source || exp.source === 'manual';
       await apiPatch(`/api/expenses/${id}`, {
-        amount:      parseFloat(patch.amount),
+        amount: parseFloat(patch.amount),
         description: patch.description,
-        date:        patch.date,
+        date: patch.date,
         ...(isManual && patch.categoryId
           ? { categoryId: Number(patch.categoryId) }
           : { categoryName: patch.categoryName }),
@@ -348,7 +352,7 @@ export default function ExpensesHistoryPage() {
             ⚠️ {error}
           </div>
         )}
-        
+
         {/* Desktop View */}
         <div className="hidden md:block overflow-x-auto">
           <Table>
@@ -426,7 +430,7 @@ export default function ExpensesHistoryPage() {
                     <TableCell className="text-xs text-muted-foreground">{exp.date}</TableCell>
                     <TableCell><SourceBadge source={exp.source} /></TableCell>
                     <TableCell className="text-right font-bold tabular-nums">
-                      ${FinanceCore.Math.minorToInr(exp.amountMinor).toFixed(2)}
+                      {fmt(exp.amountMinor)}
                     </TableCell>
                     <TableCell className="no-print">
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
@@ -463,7 +467,7 @@ export default function ExpensesHistoryPage() {
               />
             </div>
           )}
-          {!loading && expenses.map(exp => 
+          {!loading && expenses.map(exp =>
             editingId === exp.id ? (
               <div key={exp.id} className="p-3">
                 <MobileEditCard
@@ -492,14 +496,14 @@ export default function ExpensesHistoryPage() {
                   </div>
                   <div className="text-right shrink-0">
                     <p className="font-bold text-foreground tabular-nums text-sm">
-                      ${FinanceCore.Math.minorToInr(exp.amountMinor).toFixed(2)}
+                      {fmt(exp.amountMinor)}
                     </p>
                     <p className="text-[10px] text-muted-foreground mt-0.5">
                       {exp.date}
                     </p>
                   </div>
                 </div>
-                
+
                 <div className="flex justify-between items-center mt-1">
                   <SourceBadge source={exp.source} />
                   <div className="flex gap-2">

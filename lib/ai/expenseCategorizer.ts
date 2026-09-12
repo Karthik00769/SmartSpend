@@ -1,12 +1,12 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 import { CATEGORY_RULES } from '@/lib/expense-engine/categorizer';
 import type { CategorizationResult } from '@/lib/expense-engine/types';
 
 const MODEL_CANDIDATES = [
-  'gemini-1.5-flash',
-  'gemini-1.5-pro',
-  'gemini-pro',
+  'gemini-3-flash',
+  'gemini-3.1-flash-lite',
 ];
+
 
 export async function callGeminiCategorizer(description: string): Promise<CategorizationResult | null> {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -51,23 +51,48 @@ Return ONLY the category name.`;
   for (const modelName of MODEL_CANDIDATES) {
     try {
       const model = genAI.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: 'text/plain',
-          temperature: 0.2,
-          maxOutputTokens: 20,
-        },
-      });
+      
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Gemini API timeout')), 6000)
+      );
+
+      const result = await Promise.race([
+        model.generateContent({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: SchemaType.OBJECT,
+              properties: {
+                category: {
+                  type: SchemaType.STRING,
+                  description: 'The selected category from the available list: ' + categoriesListStr
+                }
+              },
+              required: ['category']
+            },
+            temperature: 0.1,
+            maxOutputTokens: 50,
+          },
+        }),
+        timeoutPromise
+      ]) as any;
 
       let responseText = result.response.text().trim();
-      responseText = responseText.replace(/```[a-z]*\n?/g, '').replace(/```/g, '').replace(/['"]/g, '').trim();
+      let parsed: { category: string };
+      try {
+        parsed = JSON.parse(responseText);
+      } catch (e) {
+        console.error(`[expenseCategorizer|${modelName}] Invalid JSON:`, responseText);
+        continue;
+      }
       
-      console.log(`[expenseCategorizer|${modelName}] Input: "${description}" | Gemini: "${responseText}"`);
+      const chosenCategory = parsed.category;
+      console.log(`[expenseCategorizer|${modelName}] Input: "${description}" | Gemini: "${chosenCategory}"`);
 
       // Post Validation - Case insensitive match
       const matchedRule = CATEGORY_RULES.find(
-        r => r.name.toLowerCase() === responseText.toLowerCase()
+        r => r.name.toLowerCase() === chosenCategory.toLowerCase()
       );
 
       // If response NOT in category list, return 'Other' (ID: 9 in CATEGORY_RULES)

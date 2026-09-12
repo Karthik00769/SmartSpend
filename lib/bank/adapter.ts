@@ -1,6 +1,7 @@
 import { RawBankTransaction } from './types';
 import * as FinanceCore from '../finance';
 import { processExpense } from '../expense-engine';
+import { query } from '../db';
 
 export interface BankImportResult {
   importedCount: number;
@@ -26,6 +27,21 @@ export async function importBankTransactions(
     skippedRows: []
   };
 
+  if (transactions.length === 0) return result;
+
+  // Pre-fetch all existing expenses to deduplicate by hash: "YYYY-MM-DD|amountMinor|description"
+  const existingExpenses = await query<any[]>(
+    `SELECT DATE_FORMAT(expense_date, '%Y-%m-%d') as expense_date, amount_minor, description 
+     FROM expenses 
+     WHERE user_id = ? AND deleted_at IS NULL`,
+    [userId]
+  );
+  
+  const safeExisting = Array.isArray(existingExpenses) ? existingExpenses : [];
+  const existingHashes = new Set(
+    safeExisting.map(e => `${e.expense_date}|${Number(e.amount_minor)}|${(e.description || '').trim()}`)
+  );
+
   const CHUNK_SIZE = 10;
   for (let i = 0; i < transactions.length; i += CHUNK_SIZE) {
     const chunk = transactions.slice(i, i + CHUNK_SIZE);
@@ -46,13 +62,30 @@ export async function importBankTransactions(
         // Convert to Minor
         const amountMinor = FinanceCore.Math.inrToMinor(amountInr);
 
+        // Filter out Credits/Income (SmartSpend only tracks expenses)
+        if (amountMinor <= 0) {
+          result.skippedCount++;
+          result.skippedRows.push({ raw, reason: 'Credit/Income transaction skipped' });
+          return;
+        }
+
+        const finalDescription = raw.referenceRaw || merchantStr;
+
+        // Deduplication Check
+        const hash = `${dateStr}|${amountMinor}|${finalDescription.trim()}`;
+        if (existingHashes.has(hash)) {
+          result.skippedCount++;
+          result.skippedRows.push({ raw, reason: 'Duplicate transaction (already exists)' });
+          return;
+        }
+
         const validationInput = {
           userId,
           categoryId: 1, // Fallback
           amountMinor,
           date: dateStr,
           merchantName: merchantStr,
-          description: raw.referenceRaw || merchantStr
+          description: finalDescription
         };
 
         const validation = FinanceCore.Validation.CreateExpenseInputSchema.safeParse(validationInput);
@@ -71,12 +104,13 @@ export async function importBankTransactions(
           categoryId: undefined,
           amountMinor: amountMinor,
           date: dateStr,
-          description: raw.referenceRaw || merchantStr,
+          description: finalDescription,
           source: 'bank_import'
         }, userId);
 
         if (engineResult.validation.valid) {
           result.importedCount++;
+          existingHashes.add(hash); // Prevent duplicates within the same upload
         } else {
           result.skippedCount++;
           result.skippedRows.push({

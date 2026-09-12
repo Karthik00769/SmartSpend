@@ -17,6 +17,9 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [requires2FA, setRequires2FA] = useState(false);
+  const [pin, setPin] = useState('');
+
   // Already authenticated → go to dashboard (client-side, no proxy loop)
   useEffect(() => {
     if (status === 'authenticated') {
@@ -33,12 +36,18 @@ export default function LoginPage() {
       redirect: false,
       email,
       password,
+      ...(requires2FA ? { pin } : {})
     });
 
     setLoading(false);
 
     if (result?.error) {
-      setError(result.error);
+      if (result.error === '2FA PIN required') {
+        setRequires2FA(true);
+        setError(null);
+      } else {
+        setError(result.error);
+      }
     } else {
       router.push('/dashboard');
       router.refresh();
@@ -53,48 +62,76 @@ export default function LoginPage() {
             {error}
           </div>
         )}
-        <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            disabled={loading}
-          />
-        </div>
+        
+        {!requires2FA ? (
+          <>
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                disabled={loading}
+              />
+            </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
-          <div className="relative">
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  disabled={loading}
+                  className="pr-12"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground hover:text-foreground"
+                >
+                  {showPassword ? 'HIDE' : 'SHOW'}
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="space-y-2">
+            <Label htmlFor="pin">2FA PIN</Label>
             <Input
-              id="password"
-              type={showPassword ? 'text' : 'password'}
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              id="pin"
+              type="text"
+              placeholder="123456"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
               required
               disabled={loading}
-              className="pr-12"
             />
             <button
               type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                setRequires2FA(false);
+                setPin('');
+              }}
+              className="text-sm text-muted-foreground hover:text-foreground underline mt-2 block"
             >
-              {showPassword ? 'HIDE' : 'SHOW'}
+              Back to password
             </button>
           </div>
-        </div>
+        )}
 
         <Button 
           type="submit" 
           className="w-full" 
           disabled={loading}
         >
-          {loading ? 'Signing in...' : 'Sign In'}
+          {loading ? 'Signing in...' : (requires2FA ? 'Verify PIN' : 'Sign In')}
         </Button>
       </form>
 

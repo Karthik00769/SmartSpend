@@ -63,7 +63,7 @@ export type BudgetFormValues = z.infer<typeof budgetSchema>;
 export const goalSchema = z.object({
   title: z.string().min(3, 'Title is required').max(100),
   
-  description: z.string().min(1, 'Description is required').max(500),
+  description: z.string().max(500).optional(),
   
   targetAmount: z.coerce
     .number({ required_error: 'Target amount is required' })

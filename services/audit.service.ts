@@ -44,8 +44,8 @@ export async function logAuditEvent(
 
   // 3. Insert new log
   await query(
-    `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, metadata, hash)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, metadata, hash, sequence_no)
+     VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(s.sequence_no), 0) + 1 FROM audit_logs s))`,
     [
       userId,
       action,

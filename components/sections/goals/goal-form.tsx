@@ -21,8 +21,7 @@ import { useCurrency }   from '@/hooks/use-currency';
 
 export function GoalForm() {
   const { createGoal, goalSubmitting, goalSubmitError } = useSmartSpend();
-  const { fmt } = useCurrency();
-  const symbol = Format.CURRENCY_SYMBOL;
+  const { fmt, symbol } = useCurrency();
 
   const [success,    setSuccess]    = useState(false);
   const [goalStatus, setGoalStatus] = useState<{ longTermUnlocked: boolean; monthsOfData: number } | null>(null);

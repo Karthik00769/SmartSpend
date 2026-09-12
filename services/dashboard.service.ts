@@ -1,5 +1,5 @@
 import { query } from '@/lib/db';
-import { Analytics, Budget, Goals, Math as FinanceMath } from '@/lib/finance';
+import { Budget, Core, Goals, Math as FinanceMath } from '@/lib/finance';
 import type { DashboardSummaryDTO, SmartAlert, BudgetCategoryDTO, ExpenseDTO } from '@/types/api';
 import { listBudgets } from './budget.service';
 import { listGoals } from './goal.service';
@@ -101,15 +101,15 @@ export async function getDashboardSummary(userId: string): Promise<DashboardSumm
   const thisWeekSpentMinor = Number(thisWeekStats?.total_spent ?? 0);
   const lastWeekSpentMinor = Number(lastWeekStats?.total_spent ?? 0);
 
-  const savingsMinor = Math.max(0, Analytics.calculateSavings(monthlyIncomeMinor, totalSpentMinor));
-  const savingsRate  = Math.max(0, Math.round(Analytics.calculateSavingsRate(monthlyIncomeMinor, totalSpentMinor)));
+  const savingsMinor = Math.max(0, Core.calculateSavings(monthlyIncomeMinor, totalSpentMinor));
+  const savingsRate  = Math.max(0, Math.round(Core.calculateSavingsRate(monthlyIncomeMinor, totalSpentMinor)));
 
-  const monthlyGrowthPct = Math.round(Analytics.calculateGrowthPct(totalSpentMinor, lastMonthSpentMinor));
+  const monthlyGrowthPct = Math.round(Core.calculateGrowthPct(totalSpentMinor, lastMonthSpentMinor));
 
   const budgetCategories   = budgets.categories;
   const compliantCount     = budgetCategories.filter((c) => !c.isOverBudget).length;
   const budgetCompliancePct = budgetCategories.length > 0
-    ? Math.round(Analytics.calculateCategoryPct(compliantCount, budgetCategories.length))
+    ? Math.round(Core.calculateCategoryPercentage(compliantCount, budgetCategories.length))
     : 0;
 
   // Smart Alerts
@@ -140,7 +140,7 @@ export async function getDashboardSummary(userId: string): Promise<DashboardSumm
   }
 
   if (lastWeekSpentMinor > 1000 && thisWeekSpentMinor > lastWeekSpentMinor * 1.5) {
-    const spikePct = Math.round(Analytics.calculateGrowthPct(thisWeekSpentMinor, lastWeekSpentMinor));
+    const spikePct = Math.round(Core.calculateGrowthPct(thisWeekSpentMinor, lastWeekSpentMinor));
     alerts.push({
       id:        'spending-spike',
       level:     'warning',

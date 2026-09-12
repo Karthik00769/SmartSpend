@@ -115,14 +115,18 @@ export async function upsertBudget(input: any): Promise<BudgetSummaryDTO> {
     throw new Error(`Category ${catId} not found or does not belong to this user.`);
   }
 
+  const [userRow] = await query<any[]>('SELECT currency_code FROM users WHERE id = ? LIMIT 1', [userId_]);
+  const currencyCode = userRow?.currency_code || 'INR';
+
   // Upsert with UNIQUE KEY (user_id, category_id, month, year)
   await query(
-    `INSERT INTO budgets (user_id, category_id, limit_minor, month, year, updated_at)
-     VALUES (?, ?, ?, ?, ?, NOW())
+    `INSERT INTO budgets (user_id, category_id, limit_minor, month, year, updated_at, currency_code)
+     VALUES (?, ?, ?, ?, ?, NOW(), ?)
      ON DUPLICATE KEY UPDATE
        limit_minor = VALUES(limit_minor),
+       currency_code = ?,
        updated_at  = NOW()`,
-    [userId_, catId, Number(amountMinor), Number(month), Number(year)],
+    [userId_, catId, Number(amountMinor), Number(month), Number(year), currencyCode, currencyCode],
   );
 
   await logAuditEvent(userId_, 'BUDGET_UPDATED', 'BUDGET', catId, { amountMinor, month, year });

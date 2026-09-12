@@ -13,7 +13,7 @@
 export type Priority = 'low' | 'medium' | 'high';
 
 /** Lifecycle status for a savings goal (database) */
-export type GoalLifecycleStatus = 'active' | 'paused' | 'completed' | 'cancelled' | 'failed';
+export type GoalLifecycleStatus = 'active' | 'paused' | 'completed' | 'cancelled' | 'overdue';
 
 /** Computed status for a savings goal */
 export type GoalStatus = 'on_track' | 'at_risk' | 'completed' | 'overdue';
@@ -43,6 +43,18 @@ export interface CategoryDTO {
 }
 
 // ─── Expense ─────────────────────────────────────────────────────────────────
+
+export interface ExpenseCreateDTO {
+  userId: string;
+  amountMinor: number;
+  currencyCode: string;
+  categoryId?: number;
+  merchant?: string;
+  description?: string;
+  expenseDate: string;
+  source: 'manual' | 'receipt_scan' | 'bank_import';
+  categorySource?: 'manual' | 'auto' | 'system';
+}
 
 export interface ExpenseDTO {
   id:             string;

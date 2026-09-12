@@ -108,15 +108,28 @@ export async function processExpense(
   }
 
   // ── Step 4: Persist to MySQL ──────────────────────────────────────────────
-  const savedExpense = await createExpense({
+  const dto = {
     userId:      processed.userId,
     categoryId:  cat.categoryId,
     amountMinor: processed.amountMinor,
-    date:        processed.date,
+    currencyCode: processed.currencyCode,
+    expenseDate: processed.date,
     description: processed.description,
-    categorySource: cat.confidence === 'exact' ? 'manual' : 'auto',
+    categorySource: (cat.confidence === 'exact' ? 'manual' : 'auto') as 'manual' | 'auto',
     source:      raw.source ?? 'manual',
-  });
+  };
+
+  console.log(
+    "[EXPENSE DTO]",
+    JSON.stringify(dto, null, 2)
+  );
+
+  const savedExpense = await createExpense(dto);
+
+  console.log(
+    "[EXPENSE CREATED]",
+    savedExpense.id
+  );
 
   return {
     processed,

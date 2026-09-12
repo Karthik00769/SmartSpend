@@ -1,32 +1,32 @@
 'use client';
 
-import Link              from 'next/link';
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useSmartSpend } from '@/context/smartspend-context';
-import { Card }          from '@/components/ui/card';
-import { Skeleton }      from '@/components/ui/skeleton';
-import { Progress }      from '@/components/ui/progress';
-import { EmptyState }    from '@/components/ui/EmptyState';
-import { useRouter }     from 'next/navigation';
+import { Card } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Progress } from '@/components/ui/progress';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { useRouter } from 'next/navigation';
 import { SpendingChart } from '@/components/sections/dashboard/spending-chart';
-import * as FinanceCore  from '@/lib/finance';
+import * as FinanceCore from '@/lib/finance';
 import type { BudgetCategoryDTO, GoalDTO, ExpenseDTO, SmartAlert, AlertLevel } from '@/types/api';
 
 const LEVEL_STYLE: Record<AlertLevel, { card: string; badge: string }> = {
   critical: {
-    card:  'border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30',
+    card: 'border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30',
     badge: 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400',
   },
   warning: {
-    card:  'border-yellow-300 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-950/30',
+    card: 'border-yellow-300 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-950/30',
     badge: 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-400',
   },
   info: {
-    card:  'border-blue-300 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30',
+    card: 'border-blue-300 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30',
     badge: 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-400',
   },
   success: {
-    card:  'border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/30',
+    card: 'border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/30',
     badge: 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-400',
   },
 };
@@ -102,7 +102,7 @@ function DashboardSkeleton() {
 
 function budgetBarCls(status?: 'safe' | 'warning' | 'exceeded'): string {
   if (status === 'exceeded') return '[&>div]:bg-red-500';
-  if (status === 'warning')  return '[&>div]:bg-yellow-500';
+  if (status === 'warning') return '[&>div]:bg-yellow-500';
   return '[&>div]:bg-green-500';
 }
 
@@ -110,7 +110,7 @@ function budgetBarCls(status?: 'safe' | 'warning' | 'exceeded'): string {
 
 function goalBarCls(pct: number): string {
   if (pct >= 100) return '[&>div]:bg-green-500';
-  if (pct >= 50)  return '[&>div]:bg-blue-500';
+  if (pct >= 50) return '[&>div]:bg-blue-500';
   return '[&>div]:bg-indigo-400';
 }
 
@@ -119,9 +119,9 @@ function goalBarCls(pct: number): string {
 export default function DashboardPage() {
   const router = useRouter();
   const {
-    dashboardSummary:        data,
+    dashboardSummary: data,
     dashboardSummaryLoading: loading,
-    dashboardSummaryError:   error,
+    dashboardSummaryError: error,
     refreshDashboardSummary: refresh,
     expenses,
     goals,
@@ -155,9 +155,9 @@ export default function DashboardPage() {
 
   const healthColors: Record<string, string> = {
     excellent: 'text-green-500 bg-green-500/10 border-green-500/20',
-    good:      'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
-    warning:   'text-yellow-500 bg-yellow-500/10 border-yellow-500/20',
-    critical:  'text-red-500 bg-red-500/10 border-red-500/20',
+    good: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+    warning: 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20',
+    critical: 'text-red-500 bg-red-500/10 border-red-500/20',
   };
   const statusClasses = healthColors[data.healthStatus] ?? 'text-muted-foreground bg-muted border-border';
 
@@ -198,11 +198,11 @@ export default function DashboardPage() {
       {/* ── Bento Grid ── */}
       {!isEmpty && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 auto-rows-min gap-4 lg:gap-5">
-          
+
           {/* Total Spent KPI */}
           <Card className="p-5 flex flex-col justify-between overflow-hidden relative group hover:shadow-md transition-shadow">
             <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-              <svg className="w-12 h-12 text-primary" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+              <svg className="w-12 h-12 text-primary" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" /></svg>
             </div>
             <p className="text-sm text-muted-foreground font-medium mb-2 flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-primary/50"></span>
@@ -210,7 +210,7 @@ export default function DashboardPage() {
             </p>
             <div>
               <p className="text-2xl lg:text-3xl font-bold text-foreground tabular-nums tracking-tight">
-                {fmt(FinanceCore.Math.minorToInr(data.totalSpentMinor))}
+                {fmt(data.totalSpentMinor)}
               </p>
               <p className="text-xs text-muted-foreground mt-1.5 font-medium">This month</p>
             </div>
@@ -244,7 +244,7 @@ export default function DashboardPage() {
                 <div className="min-w-0">
                   <p className="text-lg font-bold text-foreground truncate">{topCategory.category}</p>
                   <p className="text-sm text-muted-foreground tabular-nums">
-                    {fmt(FinanceCore.Math.minorToInr(topCategory.spentMinor))}
+                    {fmt(topCategory.spentMinor)}
                   </p>
                 </div>
               </div>
@@ -284,7 +284,7 @@ export default function DashboardPage() {
                 </h3>
               </div>
               <div className="flex-1 min-h-[250px]">
-                <SpendingChart data={data.monthlyTrend.map(t => ({ label: t.label, spent: FinanceCore.Math.minorToInr(t.spentMinor) }))} title="" variant="bar" fmt={fmt} />
+                <SpendingChart data={data.monthlyTrend.map(t => ({ label: t.label, spent: t.spentMinor }))} title="" variant="bar" fmt={fmt} />
               </div>
             </Card>
           )}
@@ -353,7 +353,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <span className="text-sm font-bold text-foreground tabular-nums shrink-0">
-                      {fmt(FinanceCore.Math.minorToInr(tx.amountMinor))}
+                      {fmt(tx.amountMinor)}
                     </span>
                   </div>
                 ))}
@@ -379,7 +379,7 @@ export default function DashboardPage() {
               <div className="space-y-4">
                 {activeGoals.map(g => {
                   const pct = g.progressPct;
-                  const remaining = FinanceCore.Math.minorToInr(g.remainingMinor);
+                  const remaining = g.remainingMinor;
                   return (
                     <div key={g.id} className="group">
                       <div className="flex justify-between text-sm mb-1.5">

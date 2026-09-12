@@ -21,6 +21,18 @@ export function sanitizeMerchantName(raw: string): string {
   
   // Remove trailing junk common in bank statements e.g. "Merchant Name -", "Merchant #"
   clean = clean.replace(/[-*#]+$/, '').trim();
+
+  // Fuzzy match OCR errors (Normalization Layer)
+  const fuzzyDict: Record<string, string> = {
+    'CHENNAT': 'CHENNAI',
+    'EQ PARK': 'ECO PARK',
+  };
+  
+  for (const [wrong, right] of Object.entries(fuzzyDict)) {
+    // Replace full words
+    const regex = new RegExp(`\\b${wrong}\\b`, 'gi');
+    clean = clean.replace(regex, right);
+  }
   
   if (clean.length === 0) return 'Unknown Merchant';
   
@@ -57,15 +69,21 @@ export function extractDate(raw: string): string | undefined {
   
   let clean = raw.trim().replace(/^DATE:?\s*/i, '').trim();
   
+  // OCR common misreads for numbers
+  clean = clean.replace(/O/g, '0').replace(/I/g, '1').replace(/L/g, '1').replace(/S/g, '5').replace(/Z/g, '2');
+  
   // Try YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean;
   
-  // Try DD/MM/YYYY or DD-MM-YYYY
-  const dmMatch = clean.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  // Try DD/MM/YYYY or DD-MM-YYYY or DD/MM/YY
+  const dmMatch = clean.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if (dmMatch) {
     const d = dmMatch[1].padStart(2, '0');
     const m = dmMatch[2].padStart(2, '0');
-    const y = dmMatch[3];
+    let y = dmMatch[3];
+    if (y.length === 2) {
+      y = '20' + y;
+    }
     return `${y}-${m}-${d}`;
   }
   

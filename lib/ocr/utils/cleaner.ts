@@ -14,11 +14,18 @@ export function cleanOCRText(raw: string): string {
     .replace(/[\x00-\x09\x0B-\x1F\x7F-\x9F]/g, ' ')
     // Normalize "Rs." / "RS." → "Rs"
     .replace(/\bR[Ss]\.?\s*/g, 'Rs ')
-    // Fix OCR: "O" misread as "0" inside number sequences like "Rs O12.5O"
-    .replace(/(?<=\d|\.)O(?=\d|\.|$|\s)/g, '0')
-    .replace(/(?<=^|\s)O(?=\d|\.)/g, '0')
-    // Fix OCR: lowercase "l" misread where a digit is expected (e.g. "l50" → "150")
-    .replace(/(?<=\s|^)l(?=\d)/gm, '1')
+    // Fix OCR: O misread as 0, l/I misread as 1, S misread as 5, B as 8, A as 4
+    // We include slash and dash lookarounds to handle dates like 28/O3/2026
+    .replace(/(?<=\d|\.|[/-])[Oo](?=\d|\.|[/-]|$|\s)/g, '0')
+    .replace(/(?<=^|\s)[Oo](?=\d|\.|[/-])/g, '0')
+    .replace(/(?<=\s|^)[lI](?=\d|[/-])/gm, '1')
+    .replace(/(?<=\d|[/-])[lI](?=\d|\.|[/-]|$|\s)/gm, '1')
+    .replace(/(?<=\d|\.|[/-])S(?=\d|\.|[/-]|$|\s)/g, '5')
+    .replace(/(?<=^|\s)S(?=\d|\.|[/-])/g, '5')
+    .replace(/(?<=\d|\.|[/-])B(?=\d|\.|[/-]|$|\s)/g, '8')
+    .replace(/(?<=^|\s)B(?=\d|\.|[/-])/g, '8')
+    .replace(/(?<=\d|\.|[/-])A(?=\d|\.|[/-]|$|\s)/g, '4')
+    .replace(/(?<=^|\s)A(?=\d|\.|[/-])/g, '4')
     // Collapse runs of spaces (but NOT newlines)
     .replace(/ {2,}/g, ' ')
     // Collapse 3+ consecutive newlines into 2

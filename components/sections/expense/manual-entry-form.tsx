@@ -53,9 +53,8 @@ const AUTO_DETECT_VALUE = '__auto__';
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function ManualEntryForm({ onSuccess, initialData, source = 'manual' }: ManualEntryFormProps) {
-  const { addExpense, submitting, submitError } = useSmartSpend();
+  const { addExpense, submitting, submitError, symbol: currencySymbol } = useSmartSpend();
   const today = todayIST;
-  const currencySymbol = Format.CURRENCY_SYMBOL;
 
   const [categories,   setCategories]   = useState<Category[]>([]);
   const [autoTagMsg,   setAutoTagMsg]   = useState<string | null>(null);

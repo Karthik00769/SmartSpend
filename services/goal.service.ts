@@ -13,7 +13,7 @@ interface GoalRow {
   saved_minor:  string;
   target_date:  string;
   priority:    'low' | 'medium' | 'high';
-  status:      'active' | 'paused' | 'completed' | 'cancelled' | 'failed';
+  status:      'active' | 'paused' | 'completed' | 'cancelled' | 'overdue';
   goal_type:   'short_term' | 'long_term';
   created_at:  string;
 }
@@ -103,10 +103,13 @@ export async function listGoals(params: { userId: string; status?: string }): Pr
 export async function createGoal(input: any): Promise<GoalDTO> {
   const { userId, title, description, targetMinor, deadline, priority, goalType = 'short_term' } = input;
 
+  const [userRow] = await query<any[]>('SELECT currency_code FROM users WHERE id = ? LIMIT 1', [userId]);
+  const currencyCode = userRow?.currency_code || 'INR';
+
   const result = await query<ResultSetHeader>(
-    `INSERT INTO goals (user_id, title, description, target_minor, saved_minor, target_date, priority, status, goal_type)
-     VALUES (?, ?, ?, ?, 0, ?, ?, 'active', ?)`,
-    [userId, title, description || '', targetMinor, deadline, priority || 'medium', goalType],
+    `INSERT INTO goals (user_id, title, description, target_minor, saved_minor, target_date, priority, status, goal_type, currency_code)
+     VALUES (?, ?, ?, ?, 0, ?, ?, 'active', ?, ?)`,
+    [userId, title, description || '', targetMinor, deadline, priority || 'medium', goalType, currencyCode],
   );
 
   const [row] = await query<GoalRow[]>(
@@ -163,6 +166,7 @@ export async function updateGoal(
 
   if (sets.length === 0) throw new Error('Nothing to update.');
 
+  // currency_code is not updated on patch unless specifically requested
   sets.push('updated_at = NOW()');
   args.push(goalId, userId);
 
@@ -190,11 +194,11 @@ export async function softDeleteGoal(goalId: number, userId: string): Promise<vo
   await logAuditEvent(userId, 'GOAL_DELETED', 'GOAL', goalId, {});
 }
 
-/** Mark overdue active goals as failed. Called before every list query. */
+/** Mark overdue active goals as overdue. Called before every list query. */
 export async function syncGoalStatuses(userId: string): Promise<void> {
   await query(
     `UPDATE goals
-     SET status = 'failed'
+     SET status = 'overdue'
      WHERE user_id = ?
        AND status = 'active'
        AND target_date < CURDATE()

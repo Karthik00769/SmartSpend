@@ -298,7 +298,7 @@ export function analyzeGoal(
   const daysRemaining = Math.max(0, Math.ceil((targetDate.getTime() - today.getTime()) / 86_400_000));
   const remaining    = goal.remainingMinor / 100;
 
-  const requiredDailyAmount = daysRemaining > 0 ? remaining / daysRemaining : Infinity;
+  const requiredDailyAmount = daysRemaining > 0 ? remaining / daysRemaining : (remaining > 0 ? Infinity : 0);
 
   const projectedExtra   = avgDailySavings * daysRemaining;
   const projectedAmount  = Math.min(
@@ -310,16 +310,20 @@ export function analyzeGoal(
   const projectedAmountMinor = projectedAmount;
   
   const achievementPct   = goal.targetAmountMinor > 0
-    ? Math.min(100, Goals.calculateGoalProgress(projectedAmountMinor, targetAmountMinor))
+    ? Math.min(100, Math.floor((goal.savedAmountMinor / goal.targetAmountMinor) * 100))
     : 100;
 
+  const isCompleted = goal.savedAmountMinor >= goal.targetAmountMinor;
+  const isOverdue = !isCompleted && targetDate.getTime() < today.getTime();
+
   const ratio       = requiredDailyAmount > 0 ? avgDailySavings / requiredDailyAmount : 2;
-  const probability = daysRemaining === 0
-    ? (goal.isCompleted ? 100 : 0)
-    : logisticScore(Math.min(ratio, 3));
+  const probability = isCompleted 
+    ? 100 
+    : (isOverdue ? 0 : logisticScore(Math.min(ratio, 3)));
 
   let risk: GoalRisk;
-  if (goal.isCompleted)                          risk = 'completed';
+  if (isCompleted)                               risk = 'completed';
+  else if (isOverdue)                            risk = 'behind';
   else if (probability >= 70)                    risk = 'on_track';
   else if (probability >= 40)                    risk = 'at_risk';
   else                                           risk = 'behind';

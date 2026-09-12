@@ -8,9 +8,10 @@ interface HealthScoreProps {
     spendingStabilityScorePct: number;
     goalProgressScorePct: number;
   };
+  recommendations?: string[];
 }
 
-export function HealthScore({ score, details }: HealthScoreProps) {
+export function HealthScore({ score, details, recommendations }: HealthScoreProps) {
   const metrics = [
     { label: 'Budget Compliance', value: details?.budgetComplianceScorePct ?? 0 },
     { label: 'Savings Rate', value: details?.savingsRateScorePct ?? 0 },
@@ -74,12 +75,15 @@ export function HealthScore({ score, details }: HealthScoreProps) {
 
       <div className="mt-8 pt-6 border-t border-border">
         <h3 className="font-semibold text-foreground mb-3">Recommendations</h3>
-        <ul className="space-y-2 text-sm text-muted-foreground">
-          <li>• Increase your savings rate by reducing discretionary spending</li>
-          <li>• Focus on high-priority financial goals</li>
-          <li>• Keep your budget compliance above 90%</li>
-          <li>• Build your emergency fund to 6 months of expenses</li>
-        </ul>
+        {recommendations && recommendations.length > 0 ? (
+          <ul className="space-y-2 text-sm text-muted-foreground">
+            {recommendations.map((rec, idx) => (
+              <li key={idx}>• {rec}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">You are doing great! Keep it up.</p>
+        )}
       </div>
     </Card>
   );

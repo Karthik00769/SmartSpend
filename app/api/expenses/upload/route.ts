@@ -11,6 +11,9 @@ import { processReceiptImage }       from '@/lib/ocr';
 import { processBankStatement }      from '@/lib/bank';
 import * as FinanceCore              from '@/lib/finance';
 import { checkRateLimit }            from '@/lib/security/rate-limit';
+import { classifyDocumentImage, classifyDocumentText, DocumentClassification } from '@/lib/document/classifier';
+import { extractPDFLines } from '@/lib/bank/extractor/pdf';
+import { extractTextFromPDFOCR } from '@/lib/ocr/pdf-fallback';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -35,6 +38,7 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
+    const password = formData.get('password') as string | null;
 
     if (!file) return NextResponse.json({ ok: false, error: 'No file provided.' }, { status: 400 });
     if (file.size === 0) return NextResponse.json({ ok: false, error: 'The file is empty.' }, { status: 400 });
@@ -52,46 +56,67 @@ export async function POST(req: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    let docType: DocumentClassification = 'Unknown';
+    let textContent = '';
+    let preParsedLines: string[] | undefined = undefined;
 
+    // Classification Stage
     if (isImage) {
-      const ocrResult = await processReceiptImage(buffer);
-      
-      // Delegate amount and date parsing entirely to FinanceCore
-      const amount      = FinanceCore.Parsing.extractAmount(ocrResult.parsed.amountRaw ?? '');
-      const merchant    = FinanceCore.Parsing.sanitizeMerchantName(ocrResult.parsed.merchantRaw || '');
-      const date        = FinanceCore.Parsing.extractDate(ocrResult.parsed.dateRaw ?? '') ?? new Date().toISOString().slice(0, 10);
-      
-      const amountWarning = amount === 0 
-          ? 'Could not detect a valid amount — please enter it manually.' 
-          : ocrResult.needsReview ? 'Amount detected but confidence is low — verify before saving.' : null;
+      docType = await classifyDocumentImage(buffer, mimeType);
+    } else if (isPDF) {
+      try {
+        preParsedLines = await extractPDFLines(buffer, password || undefined);
+        textContent = preParsedLines.join('\n');
+      } catch (err: any) {
+        if (err.name === 'BankExtractionError' || err.code === 'ENCRYPTED_PDF') {
+          throw err;
+        }
+        console.warn('[UPLOAD] pdf-parse failed, attempting OCR fallback', err);
+        preParsedLines = await extractTextFromPDFOCR(buffer, password || undefined);
+        textContent = preParsedLines.join('\n');
+      }
+      docType = classifyDocumentText(textContent);
+    } else if (isText || isExcel) {
+      docType = 'Bank Statement';
+      textContent = isText ? buffer.toString('utf8') : '';
+    }
 
-      return NextResponse.json({
-        ok: true,
-        data: {
-          extracted: {
-            amount,
-            date,
-            dateAdjusted: !ocrResult.parsed.dateRaw,
-            merchant,
-            description: merchant,
-          },
-          source: 'ocr',
-          confidence: ocrResult.confidence,
-          needsReview: ocrResult.needsReview,
-          amountWarning,
-        },
-      });
-    } else {
-      // Bank Document (PDF, CSV, Excel)
-      const textContent = isText ? buffer.toString('utf8') : '';
+    console.log(`[DOC TYPE] ${docType}`);
+    console.log(`[EXTRACTED TEXT LENGTH] ${textContent.length}`);
+
+    // Allow user to manually fallback instead of failing
+    if (docType === 'Unknown') {
+      console.warn('[UPLOAD] Document type unknown. Defaulting to single-expense extraction.');
+      docType = 'Invoice';
+    }
+
+    // Routing based on classification
+    if (docType === 'Bank Statement') {
       const fileType = isExcel ? 'excel' : isPDF ? 'pdf' : 'csv';
       const bankResult = await processBankStatement(buffer, textContent, {
         fileType,
-        fileName: file.name
+        fileName: file.name,
+        password: password || undefined,
+        preParsedLines
       });
+
+      // 0-Transaction Fallback Logic
+      if (bankResult.metadata.transactions.length === 0) {
+        console.log('[UPLOAD] 0 transactions found in Bank Statement flow. Attempting fallback to Invoice/Receipt flow.');
+        
+        // If we have an image or PDF, process it directly with OCR
+        if (isImage || isPDF) {
+          const fallbackMime = isPDF ? 'application/pdf' : mimeType;
+          return await processSingleExpenseRoute(buffer, fallbackMime);
+        } else {
+          return NextResponse.json({ ok: false, error: 'No transactions found and format unsupported for single expense fallback.' }, { status: 400 });
+        }
+      }
       
       const { importBankTransactions } = await import('@/lib/bank');
       const importResult = await importBankTransactions(bankResult.metadata.transactions, (session.user as any).id as string);
+      
+      console.log(`[CREATED EXPENSES COUNT] ${importResult.importedCount}`);
       
       return NextResponse.json({
         ok: true,
@@ -103,10 +128,75 @@ export async function POST(req: NextRequest) {
           parseMode: fileType,
         },
       });
+    } else {
+      // It's a Receipt, Invoice, or Payment Acknowledgement
+      // Treat as Single Expense
+      const singleMimeType = isPDF ? 'application/pdf' : mimeType;
+      return await processSingleExpenseRoute(buffer, singleMimeType);
     }
 
   } catch (err: any) {
     console.error('[UPLOAD] Unexpected error:', err);
+    if (err.name === 'BankExtractionError' || err.code === 'ENCRYPTED_PDF') {
+      return NextResponse.json({ ok: false, error: err.message, code: err.code || 'EXTRACTION_ERROR' }, { status: 400 });
+    }
     return NextResponse.json({ ok: false, error: 'An unexpected processing error occurred.' }, { status: 500 });
   }
+}
+
+async function processSingleExpenseRoute(buffer: Buffer, mimeType: string) {
+  const ocrResult = await processReceiptImage(buffer, mimeType);
+  
+  let amount = 0;
+  let merchant = '';
+  let date = new Date().toISOString().slice(0, 10);
+  let dateAdjusted = false;
+  let description = '';
+
+  if (ocrResult.source === 'gemini' && ocrResult.extracted) {
+    console.log('[OCR NORMALIZED] Using Gemini extracted structure');
+    amount = ocrResult.extracted.amount;
+    merchant = ocrResult.extracted.merchant;
+    date = ocrResult.extracted.date;
+    description = ocrResult.extracted.description || merchant;
+    dateAdjusted = false;
+  } else {
+    console.log('[OCR NORMALIZED] Using Tesseract raw structure');
+    amount = FinanceCore.Parsing.extractAmount(ocrResult.parsed?.amountRaw ?? '');
+    merchant = FinanceCore.Parsing.sanitizeMerchantName(ocrResult.parsed?.merchantRaw || '');
+    date = FinanceCore.Parsing.extractDate(ocrResult.parsed?.dateRaw ?? '') ?? new Date().toISOString().slice(0, 10);
+    description = merchant;
+    dateAdjusted = !ocrResult.parsed?.dateRaw;
+  }
+  
+  const dto = {
+    merchant,
+    amount,
+    date,
+    currency: 'INR',
+    description
+  };
+  
+  console.log(`[EXPENSE DTO] ${JSON.stringify(dto, null, 2)}`);
+  
+  const createdCount = amount > 0 ? 1 : 0;
+  console.log(`[EXPENSE CREATED] ${createdCount}`);
+
+  const amountWarning = amount === 0 
+      ? 'Could not detect a valid amount — please enter it manually.' 
+      : ocrResult.needsReview ? 'Amount detected but confidence is low — verify before saving.' : null;
+
+  return NextResponse.json({
+    ok: true,
+    data: {
+      extracted: {
+        ...dto,
+        dateAdjusted,
+      },
+      source: ocrResult.source || 'ocr',
+      confidence: ocrResult.confidence || 0,
+      needsReview: ocrResult.needsReview,
+      amountWarning,
+    },
+  });
 }

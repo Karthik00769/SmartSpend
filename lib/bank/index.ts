@@ -1,7 +1,7 @@
 import { extractCSVRows } from './extractor/csv';
 import { extractPDFLines } from './extractor/pdf';
 import { extractExcelRows } from './extractor/excel';
-import { parseCSVGrid } from './parser/statement';
+import { parseCSVGrid, parseTextLines } from './parser/statement';
 import { calculateStatementConfidence } from './confidence/scorer';
 import { extractBankName, extractAccountMask } from './utils';
 import { BankStatementExtraction } from './types';
@@ -12,6 +12,7 @@ export interface ParseOptions {
   fileName?: string;
   password?: string;
   fileType: 'csv' | 'pdf' | 'excel';
+  preParsedLines?: string[];
 }
 
 /**
@@ -21,27 +22,44 @@ export interface ParseOptions {
  */
 export async function processBankStatement(buffer: Buffer, textContent: string, options: ParseOptions): Promise<BankStatementExtraction> {
   let rows: string[][] = [];
+  let transactions: any[] = [];
+  let headerSample = '';
   
   if (options.fileType === 'csv') {
     rows = extractCSVRows(textContent);
+    console.log("[BANK LINES]", rows.slice(0, 50));
+    transactions = parseCSVGrid(rows);
+    headerSample = rows.slice(0, 20).map(r => r.join(' ')).join('\n');
   } else if (options.fileType === 'pdf') {
-    const lines = await extractPDFLines(buffer, options.password);
-    // For a highly structured PDF, we simulate it as single-column CSV rows 
-    // or we split lines by multi-spaces to map to grids.
-    rows = lines.map(line => line.split(/\s{2,}/)); 
+    const lines = options.preParsedLines || await extractPDFLines(buffer, options.password);
+    console.log("[BANK LINES]", lines.slice(0, 50));
+    transactions = parseTextLines(lines);
+    headerSample = lines.slice(0, 20).join('\n');
   } else if (options.fileType === 'excel') {
     rows = extractExcelRows(buffer);
+    console.log("[BANK LINES]", rows.slice(0, 50));
+    transactions = parseCSVGrid(rows);
+    headerSample = rows.slice(0, 20).map(r => r.join(' ')).join('\n');
   } else {
     throw new UnsupportedBankFormatError();
   }
 
-  const transactions = parseCSVGrid(rows);
+  console.log(
+    "[PARSED TRANSACTIONS COUNT]",
+    transactions.length
+  );
+  console.log(
+    "[PARSED TRANSACTIONS SAMPLE]",
+    transactions.slice(0, 5)
+  );
+
   const confidence = calculateStatementConfidence(transactions);
 
+
   // Attempt to extract metadata cleanly from the first 20 rows of text
-  const headerSample = rows.slice(0, 20).map(r => r.join(' ')).join('\n');
   const bankName = extractBankName(headerSample);
   const accountMasked = extractAccountMask(headerSample);
+
 
   return {
     metadata: {

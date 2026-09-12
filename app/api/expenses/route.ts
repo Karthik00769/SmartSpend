@@ -23,13 +23,13 @@ import { getActiveGoalsProgress } from '@/services/goal.service';
 import * as FinanceCore from '@/lib/finance';
 
 const IntakeAdapterSchema = z.object({
-  userId:       z.union([z.string(), z.number()]).transform(String).optional(),
-  categoryId:   z.preprocess((val) => val != null && val !== '' ? Number(val) : undefined, z.number().optional()),
+  userId: z.union([z.string(), z.number()]).transform(String).optional(),
+  categoryId: z.preprocess((val) => val != null && val !== '' ? Number(val) : undefined, z.number().optional()),
   categoryName: z.string().trim().max(100).optional(),
-  amount:       z.coerce.number(),
-  date:         z.string(),
-  description:  z.string().default(''),
-  source:       z.enum(['manual', 'receipt_scan', 'bank_import']).default('manual'),
+  amount: z.coerce.number(),
+  date: z.string().transform(d => d.split('T')[0]),
+  description: z.string().default(''),
+  source: z.enum(['manual', 'receipt_scan', 'bank_import']).default('manual'),
 });
 
 export async function GET(req: NextRequest) {
@@ -72,6 +72,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (!resolvedCategoryId) {
+      return fail('Category is required', 400);
+    }
+
     // ── FINANCIAL CORE BOUNDARY ──────────────────────────────────────────────
     const amountMinor = FinanceCore.Math.inrToMinor(parsed.data.amount);
     const sanitizedMerchant = FinanceCore.Parsing.sanitizeMerchantName(parsed.data.description);
@@ -86,12 +90,15 @@ export async function POST(req: NextRequest) {
     });
 
     if (!validationResult.success) {
-      const details: Record<string, string[]> = {};
-      for (const issue of validationResult.error.issues) {
-        const key = issue.path.join('.') || '_root';
-        details[key] = [...(details[key] ?? []), issue.message];
-      }
-      return fail('Expense validation failed.', 422, details);
+      console.error(
+        '[Expense Validation]',
+        JSON.stringify(validationResult.error.flatten(), null, 2)
+      );
+
+      const flatErrors = validationResult.error.flatten();
+      const details = { ...flatErrors.fieldErrors, ...flatErrors.formErrors };
+
+      return fail('Expense validation failed.', 422, details as any);
     }
 
     const coreData = validationResult.data;
@@ -99,12 +106,12 @@ export async function POST(req: NextRequest) {
 
     const result = await processExpense(
       {
-        userId:      coreData.userId as string,
-        categoryId:  coreData.categoryId,
+        userId: coreData.userId as string,
+        categoryId: coreData.categoryId,
         amountMinor: coreData.amountMinor,
-        date:        coreData.date,
+        date: coreData.date,
         description: coreData.merchantName,
-        source:      parsed.data.source,
+        source: parsed.data.source,
       },
       userId as string,
     );
@@ -132,14 +139,14 @@ export async function POST(req: NextRequest) {
 
     return ok(
       {
-        expense:        result.savedExpense,
+        expense: result.savedExpense,
         dateAdjusted,
-        message:        `Expense added for ${parsed.data.date}`,
-        budgetStatus:   budgetStatus ? { usedPercent: budgetStatus.percent, status: budgetStatus.status } : null,
+        message: `Expense added for ${parsed.data.date}`,
+        budgetStatus: budgetStatus ? { usedPercent: budgetStatus.percent, status: budgetStatus.status } : null,
         goalStatus,
         // legacy compat
-        expenseId:      result.savedExpenseId,
-        processed:      result.processed,
+        expenseId: result.savedExpenseId,
+        processed: result.processed,
         categorization: result.categorization,
       },
       201,

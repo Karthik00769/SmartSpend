@@ -20,3 +20,4 @@ export * as Goals from './calculations/goals';
 export * as Insights from './calculations/insights';
 export * as Reports from './calculations/reports';
 export * as Receipts from './calculations/receipts';
+export * as Core from './calculations/core';
