@@ -33,12 +33,12 @@ export const GOAL_TYPES = [
 
 // Sample goal templates
 export const GOAL_TEMPLATES = [
-  { id: 'emergency-fund', label: 'Emergency Fund', amount: 5000, priority: 'high' },
-  { id: 'vacation', label: 'Vacation Fund', amount: 3000, priority: 'medium' },
-  { id: 'gadget', label: 'New Gadget', amount: 1000, priority: 'low' },
-  { id: 'car', label: 'Car Down Payment', amount: 20000, priority: 'high' },
-  { id: 'house', label: 'House Down Payment', amount: 100000, priority: 'high' },
-  { id: 'education', label: 'Education Fund', amount: 15000, priority: 'high' },
+  { id: 'emergency-fund', label: 'Emergency Fund', amount: 50000, priority: 'high' },
+  { id: 'vacation', label: 'Vacation Fund', amount: 30000, priority: 'medium' },
+  { id: 'gadget', label: 'New Gadget', amount: 10000, priority: 'low' },
+  { id: 'car', label: 'Car Down Payment', amount: 200000, priority: 'high' },
+  { id: 'house', label: 'House Down Payment', amount: 1000000, priority: 'high' },
+  { id: 'education', label: 'Education Fund', amount: 150000, priority: 'high' },
 ];
 
 // Navigation links — ordered by usage frequency

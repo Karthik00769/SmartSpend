@@ -32,7 +32,7 @@ export function ExpenseSummary({ data, fmt }: ExpenseSummaryProps) {
         </div>
         <div className="bg-muted rounded-lg p-4">
           <p className="text-sm text-muted-foreground mb-1">Total Savings</p>
-          <p className="text-2xl font-bold text-accent">{fmt(totalSavings)}</p>
+          <p className="text-2xl font-bold text-foreground">{fmt(totalSavings)}</p>
         </div>
       </div>
 

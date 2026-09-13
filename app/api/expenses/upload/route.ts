@@ -13,7 +13,6 @@ import * as FinanceCore              from '@/lib/finance';
 import { checkRateLimit }            from '@/lib/security/rate-limit';
 import { classifyDocumentImage, classifyDocumentText, DocumentClassification } from '@/lib/document/classifier';
 import { extractPDFLines } from '@/lib/bank/extractor/pdf';
-import { extractTextFromPDFOCR } from '@/lib/ocr/pdf-fallback';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -64,17 +63,8 @@ export async function POST(req: NextRequest) {
     if (isImage) {
       docType = await classifyDocumentImage(buffer, mimeType);
     } else if (isPDF) {
-      try {
-        preParsedLines = await extractPDFLines(buffer, password || undefined);
-        textContent = preParsedLines.join('\n');
-      } catch (err: any) {
-        if (err.name === 'BankExtractionError' || err.code === 'ENCRYPTED_PDF') {
-          throw err;
-        }
-        console.warn('[UPLOAD] pdf-parse failed, attempting OCR fallback', err);
-        preParsedLines = await extractTextFromPDFOCR(buffer, password || undefined);
-        textContent = preParsedLines.join('\n');
-      }
+      preParsedLines = await extractPDFLines(buffer, password || undefined);
+      textContent = preParsedLines.join('\n');
       docType = classifyDocumentText(textContent);
     } else if (isText || isExcel) {
       docType = 'Bank Statement';

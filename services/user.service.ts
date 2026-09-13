@@ -342,12 +342,18 @@ export async function resetSessionVersion(userId: string): Promise<boolean> {
 }
 
 /**
- * deleteAccount (Soft Delete)
- * Flags the user as deleted and forcefully invalidates all active sessions.
+ * deleteAccount (Permanent Delete)
+ * Permanently deletes the user and all their associated data from the database.
+ * The NextAuth JWT zero-trust session validation will automatically invalidate their session.
+ * 
+ * Note: Database cascading rules (ON DELETE CASCADE) automatically clean up:
+ * categories, expenses, goals, budgets, insights, audit_logs, bank_accounts,
+ * bank_transactions, statement_uploads, receipt_uploads, receipt_extractions,
+ * and expense_audit_log.
  */
 export async function deleteAccount(userId: string): Promise<boolean> {
   const result = await query<ResultSetHeader>(
-    'UPDATE users SET deleted_at = NOW(), is_active = 0, session_version = session_version + 1 WHERE id = ?',
+    'DELETE FROM users WHERE id = ?',
     [userId]
   );
   return result.affectedRows > 0;

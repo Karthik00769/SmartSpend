@@ -1,200 +1,409 @@
-# SmartSpend V2
+<div align="center">
+  <h1>💰 SmartSpend</h1>
+  <p><strong>AI-powered personal finance platform that helps users track spending, manage budgets, analyze financial behavior, and make better money decisions.</strong></p>
 
-**Deterministic Financial Intelligence**
+  <p>
+    <a href="#demo-section"><img src="https://img.shields.io/badge/Demo-Live_Now-success?style=for-the-badge&logo=vercel" alt="Live Demo"/></a>
+    <a href="https://github.com/yourusername/smartspend/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License"/></a>
+    <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Built_with-Next.js-black?style=for-the-badge&logo=next.js" alt="Next.js"/></a>
+    <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript"/></a>
+    <a href="https://pingcap.com/tidb/"><img src="https://img.shields.io/badge/Database-TiDB-4479A1?style=for-the-badge&logo=mysql&logoColor=white" alt="TiDB"/></a>
+  </p>
+</div>
 
-SmartSpend V2 is an AI-assisted personal finance platform that combines deterministic financial calculations with intelligent spending insights while maintaining strict architectural separation between business logic and AI.
+<br />
 
-## Key Features
+---
 
-| Feature | Description |
-| :--- | :--- |
-| **Expense Tracking** | Manual expense logging with smart auto-categorization fallback. |
-| **OCR Receipt Scanning** | Extract amounts, dates, and merchants using AI vision with strict mathematical verification. |
-| **Bank Statement Import** | Parse CSV/TXT bank statements into structured transaction records safely. |
-| **Budget Management** | Set category-level spending limits with automated overage alerts and progress tracking. |
-| **Goal Tracking** | Define financial savings targets and track lifecycle progress (In Progress, Achieved). |
-| **Financial Insights** | Generate intelligent, AI-powered contextual recommendations based on deterministic data. |
-| **Dashboard Analytics** | Visualize monthly trends, day-of-week heatmaps, and category breakdowns. |
-| **FinanceCore Engine** | 100% of financial math, validation, and analytics routed through a deterministic core. |
+## 📖 Table of Contents
 
-## Architecture Overview
+1. [Project Vision](#1-project-vision)
+2. [Problem Statement](#2-problem-statement)
+3. [Why SmartSpend Exists](#3-why-smartspend-exists)
+4. [Key Features](#4-key-features)
+5. [Feature Showcase](#5-feature-showcase)
+6. [Architecture Overview](#6-architecture-overview)
+7. [System Design](#7-system-design)
+8. [Multi-Tenant Design](#8-multi-tenant-design)
+9. [Authentication Flow](#9-authentication-flow)
+10. [AI Architecture](#10-ai-architecture)
+11. [Receipt Processing Pipeline](#11-receipt-processing-pipeline)
+12. [Financial Insights Engine](#12-financial-insights-engine)
+13. [Database Design](#13-database-design)
+14. [Entity Relationship Diagram](#14-entity-relationship-diagram)
+15. [Security Architecture](#15-security-architecture)
+16. [Data Lifecycle](#16-data-lifecycle)
+17. [Account Deletion Architecture](#17-account-deletion-architecture)
+18. [Scalability Considerations](#18-scalability-considerations)
+19. [Technology Stack](#19-technology-stack)
+20. [Folder Structure](#20-folder-structure)
+21. [Local Development Setup](#21-local-development-setup)
+22. [Environment Variables](#22-environment-variables)
+23. [Deployment](#23-deployment)
+24. [Future Roadmap](#24-future-roadmap)
+25. [Lessons Learned](#25-lessons-learned)
+26. [Engineering Decisions](#26-engineering-decisions)
+27. [Screenshots Section](#27-screenshots-section)
+28. [Demo Section](#28-demo-section)
+29. [License](#29-license)
 
-### FinanceCore
-**Purpose:** The infallible, deterministic mathematical heart of the application.
-**Responsibilities:** 
-- Currency conversion (INR to Paise integer storage).
-- Budget limits and progress calculations.
-- Goal progression and target validation.
-- Centralized reporting and analytics math.
-- Duplicate detection and receipt validation.
+---
 
-### Expense Engine
-**Purpose:** The business logic orchestrator for transaction persistence and retrieval.
-**Responsibilities:** 
-- Managing CRUD operations for expenses.
-- Providing standardized DTOs for the API layer.
-- Interfacing with FinanceCore to validate amounts before DB insertion.
+## 1. Project Vision
+SmartSpend aims to democratize financial intelligence. We envision a world where anyone, regardless of financial literacy, can access enterprise-grade analytics and AI-powered insights to manage their personal economy effectively. Our vision is to eliminate the cognitive load of budgeting through automation, machine learning, and intuitive design.
 
-### OCR System
-**Purpose:** A pure extraction layer powered by Gemini 1.5 Flash.
-**Responsibilities:** 
-- Reading raw text from uploaded images and PDFs.
-- Identifying candidate values (Total Amount, Date, Merchant).
-- Never calculating percentages, assigning confidence, or mutating currency schemas.
+## 2. Problem Statement
+Personal finance is notoriously tedious. Users are forced to choose between highly manual, spreadsheet-like interfaces that require hours of data entry, or overly simplistic apps that lack the depth required to make meaningful financial decisions. Furthermore, modern financial tools often compromise user privacy, lack strict data isolation, and struggle with the complexities of multi-currency processing and unstructured receipt data.
 
-### Insights Engine
-**Purpose:** The presentation layer for personalized financial intelligence.
-**Responsibilities:** 
-- Interpreting pre-calculated analytics from FinanceCore.
-- Generating contextual natural language insights and warnings.
-- Ensuring AI models never perform arithmetic.
+## 3. Why SmartSpend Exists
+SmartSpend was built from the ground up to solve the friction of financial tracking by leveraging Generative AI and a highly secure, multi-tenant architecture. 
 
-### API Layer
-**Purpose:** The boundary between the frontend UI and backend services.
-**Responsibilities:** 
-- Zod schema validation for all incoming requests.
-- Routing requests to the appropriate service adapters.
-- Stripping implementation details before returning JSON responses.
+It exists to provide:
+* **Frictionless Data Entry:** Through AI-driven OCR receipt parsing.
+* **Proactive Intelligence:** Moving beyond retroactive reporting to predictive budget warnings and actionable insights.
+* **Uncompromising Security:** Ensuring that personal financial data is strictly isolated, cryptographically verified, and immutably audited.
 
-## System Data Flow
+## 4. Key Features
+* **Intelligent Expense Tracking:** Log expenses manually or upload receipts for automated OCR extraction.
+* **Dynamic Budget Management:** Set contextual spending limits and receive real-time alerts before overspending occurs.
+* **Lifecycle Savings Goals:** Define financial targets, contribute incrementally, and track your journey to completion.
+* **AI-Powered Financial Insights:** Generate personalized recommendations and behavioral analytics based on your unique spending patterns.
+* **Multi-Currency Support:** Seamlessly manage finances across borders without dealing with floating-point conversion errors.
+* **Immutable Audit Trails:** Maintain complete transparency with compliance-grade activity logs.
+* **Zero-Trust Authentication:** Secure Google login backed by continuous session validation.
 
-**Standard Transaction Flow**
-```text
-User Input → API Route → Service Layer → FinanceCore (Validation) → Expense Engine → Database
+## 5. Feature Showcase
+
+| Feature | Description | Engineering Highlights |
+| :--- | :--- | :--- |
+| **Receipt Intelligence** | Upload photos or PDFs; AI extracts the merchant, date, and amount. | Utilizes Google Gemini Vision API; built-in confidence scoring. |
+| **Budget Enforcement** | Category-level spending limits with progress visualizations. | Aggregation queries executed directly in TiDB for sub-millisecond response. |
+| **Goal Tracking** | Savings targets that adapt to your monthly income and savings rate. | Deterministic fractional math to prevent rounding errors. |
+| **Activity Auditing** | A historical ledger of every critical state change in the system. | Immutable append-only logging tables. |
+
+## 6. Architecture Overview
+SmartSpend is built on a modern, serverless ecosystem. The frontend is heavily optimized for Core Web Vitals using Next.js App Router, while the backend leverages serverless API routes connected to a distributed, MySQL-compatible TiDB database. The architecture is designed to scale horizontally and globally.
+
+## 7. System Design
+
+### Request Lifecycle
+```mermaid
+sequenceDiagram
+    participant Client as Web Client
+    participant Edge as Vercel Edge Network
+    participant API as Next.js API Routes
+    participant Auth as NextAuth / GCP
+    participant DB as TiDB (Database)
+    participant AI as Gemini Service
+
+    Client->>Edge: HTTPS Request
+    Edge->>API: Route to Serverless Function
+    API->>Auth: Validate JWT / Session
+    Auth-->>API: Authorized User Info
+    API->>DB: Query Scoped Data (WHERE user_id = ?)
+    DB-->>API: Row Data
+    opt If AI Processing Required
+        API->>AI: Send Prompt / Payload
+        AI-->>API: Return Structured JSON
+    end
+    API-->>Edge: Formatted Response
+    Edge-->>Client: Render UI
 ```
 
-**Receipt Scanning Flow**
-```text
-Receipt Image → OCR System (Extraction) → Adapter → FinanceCore (Duplicate/Validation) → Expense Engine → Database
+## 8. Multi-Tenant Design
+In SaaS applications, multi-tenancy is the architecture where a single instance of the software serves multiple customers (tenants). In SmartSpend, every individual user operates as a distinct tenant.
+
+**Why it matters:** 
+Financial data is highly sensitive. A failure in data isolation could result in a user viewing another user's bank transactions or budgets, leading to catastrophic privacy breaches.
+
+**How we enforce it:**
+* **Database Level:** Every entity table (`expenses`, `budgets`, `goals`, `categories`, `insights`, `audit_logs`, `expense_audit_log`, `bank_accounts`, `bank_transactions`, `statement_uploads`, `receipt_uploads`, `receipt_extractions`) features a mandatory `user_id` foreign key.
+* **Application Level:** Every database query explicitly requires the `user_id` derived securely from the authenticated server-side session. There are zero "global" queries executed on behalf of a user.
+
+## 9. Authentication Flow
+SmartSpend implements a robust, Zero-Trust authentication model utilizing NextAuth and Google OAuth.
+
+### Authentication Lifecycle
+1. **OAuth Verification:** Users authenticate securely via Google Cloud Platform.
+2. **Session Generation:** NextAuth generates an encrypted JWT session cookie.
+3. **Zero-Trust Validation:** On *every protected request*, the backend decrypts the JWT and queries the database to verify the user account is still active, undeleted, and hasn't had its session version revoked.
+
+```mermaid
+graph TD
+    Start[User Login Attempt] --> Google[Google OAuth Consent]
+    Google -->|Callback| NextAuth[NextAuth Provider]
+    NextAuth --> DBCheck{User Exists?}
+    DBCheck -->|No| CreateUser[Insert User Record]
+    DBCheck -->|Yes| UpdateLogin[Update Last Login]
+    CreateUser --> IssueJWT[Issue Encrypted JWT]
+    UpdateLogin --> IssueJWT
+    IssueJWT --> Authenticated((Authenticated State))
 ```
 
-**Bank Statement Flow**
-```text
-Bank Statement → Extractor → Parser → Adapter → FinanceCore → Expense Engine → Database
+## 10. AI Architecture
+The AI infrastructure is separated from deterministic financial calculations. We use Large Language Models (LLMs) strictly for unstructured data extraction and natural language recommendations, while the core business logic relies entirely on deterministic TypeScript and SQL.
+
+## 11. Receipt Processing Pipeline
+Users can upload images or PDFs of receipts and bank statements. The system processes these unstructured files to automatically categorize and log expenses.
+
+```mermaid
+graph LR
+    Upload[File Upload] --> Validator[Mime Type & Size Validation]
+    Validator --> Buffer[In-Memory Buffer]
+    Buffer --> Vision[Gemini Vision API]
+    Vision --> Extractor[JSON Structure Extraction]
+    Extractor --> Sanitizer[Sanitize Amounts & Dates]
+    Sanitizer --> DB[Insert into TiDB]
 ```
 
-## Tech Stack
+**The Pipeline:**
+1. **Upload:** User provides a receipt image or PDF.
+2. **Validation:** The application verifies file integrity without persisting to disk.
+3. **AI Vision:** The binary buffer is sent directly to Google Gemini's multimodal endpoint.
+4. **Structured Output:** The prompt forces the LLM to return strict JSON containing the `Merchant`, `Date`, `Amount`, and `Confidence Score`.
+5. **Persistence:** The parsed data is displayed for user confirmation before being inserted into the database.
 
-| Domain | Technology |
-| :--- | :--- |
-| **Frontend** | Next.js 16.1.6 (App Router), React 19, Tailwind CSS 4, Radix UI |
-| **Backend** | Next.js API Routes, Node.js |
-| **Database** | MySQL (via `mysql2`), Integer Currency Storage (Paise) |
-| **Testing** | Vitest 4.1 |
-| **AI** | Google Generative AI (`gemini-3.6-flash`) |
-| **Validation** | Zod 3.24 |
-| **Charts** | Recharts 2.15 |
-| **Language** | TypeScript 5.7 |
+## 12. Financial Insights Engine
+The Financial Insights Engine runs asynchronously to evaluate user behavior.
 
-## Project Structure
+**Data Analyzed:**
+* Trailing 30-day spending patterns.
+* Category utilization vs. defined Budgets.
+* Savings velocity vs. Goal deadlines.
 
-```text
-├── app/                  # Next.js App Router (Pages & API Routes)
-├── components/           # Reusable React components (Radix UI, Tailwind)
-├── lib/
-│   ├── finance/          # FinanceCore (Deterministic Math & Validations)
-│   ├── expense-engine/   # Transaction persistence and DTO mapping
-│   ├── ai/               # AI clients (Gemini Insights)
-│   ├── ocr/              # Receipt extraction and adapters
-│   └── bank/             # Bank statement extraction and adapters
-├── services/             # Legacy service boundary (Migrating to engines)
-├── types/                # Global TypeScript definitions
+The engine aggregates this data and passes the raw metrics to the AI, which generates personalized, actionable recommendations (e.g., "You are spending 40% more on Dining this week. Consider cooking at home to stay within your $500 budget.")
+
+## 13. Database Design
+A critical engineering decision was how to store currency. **Floating point numbers are never used for currency in SmartSpend.**
+
+**Minor Units Strategy:**
+All monetary values are stored as integers representing the currency's minor unit (e.g., cents or paise). 
+* `₹100.50` is stored as `10050`.
+* `$500.00` is stored as `50000`.
+
+**Fields using this pattern:**
+* `amount_minor`
+* `target_minor`
+* `saved_minor`
+* `limit_minor`
+* `monthly_income_minor`
+
+**Why?** This entirely prevents precision loss and rounding errors typical of IEEE 754 floating-point math, guaranteeing 100% financial correctness.
+
+## 14. Entity Relationship Diagram
+The schema is highly normalized and relational, designed for strong referential integrity.
+
+```mermaid
+erDiagram
+    USERS ||--o{ EXPENSES : "owns"
+    USERS ||--o{ BUDGETS : "owns"
+    USERS ||--o{ GOALS : "owns"
+    USERS ||--o{ CATEGORIES : "owns"
+    USERS ||--o{ INSIGHTS : "owns"
+    USERS ||--o{ AUDIT_LOGS : "owns"
+    USERS ||--o{ BANK_ACCOUNTS : "owns"
+    BANK_ACCOUNTS ||--o{ BANK_TRANSACTIONS : "contains"
+    
+    USERS {
+        string id PK
+        string email
+        string name
+        datetime created_at
+    }
+    
+    EXPENSES {
+        string id PK
+        string user_id FK
+        string category_id FK
+        int amount_minor
+        datetime date
+    }
+    
+    BUDGETS {
+        string id PK
+        string user_id FK
+        string category_id FK
+        int limit_minor
+    }
+    
+    AUDIT_LOGS {
+        string id PK
+        string user_id FK
+        string action
+        json metadata
+    }
+```
+*(Diagram simplified for readability; all child entities inherit from `USERS`)*
+
+## 15. Security Architecture
+* **Strict Foreign Keys:** Preventing orphaned data.
+* **Immutable Auditing:** The `audit_logs` and `expense_audit_log` tables record every creation, modification, and deletion of sensitive data. Financial applications require an immutable paper trail for trust and potential compliance.
+* **Server-Side Validation:** Form inputs are validated on the client, but aggressively re-validated on the server using Zod schemas.
+
+## 16. Data Lifecycle
+SmartSpend treats user data with the utmost privacy. Users have absolute control over their data footprint. When a user requests to delete their account, the application ensures complete, immediate, and gapless erasure of their identity and financial history.
+
+## 17. Account Deletion Architecture
+Previously, account deletion required complex application-level orchestration (deleting child records in a specific order within a transaction). This approach is inherently risky; if a new table is added but forgotten in the deletion script, orphaned data remains.
+
+**The Solution: Database-Enforced Cascades**
+SmartSpend utilizes `ON DELETE CASCADE` at the database level. 
+
+```mermaid
+graph TD
+    UserReq[User Requests Deletion] --> API[Next.js API Route]
+    API --> SQL[DELETE FROM users WHERE id = ?]
+    SQL --> DB[(TiDB Executing Cascade)]
+    DB -.-> DropExp[Delete Expenses]
+    DB -.-> DropCat[Delete Categories]
+    DB -.-> DropBudg[Delete Budgets]
+    DB -.-> DropGoal[Delete Goals]
+    DB -.-> DropAudit[Delete Audit Logs]
+    DB -.-> DropBank[Delete Bank Data]
+    DB -.-> DropUploads[Delete Upload Artifacts]
+    DB --> Complete[Data Completely Erased]
+    API --> Logout[Invalidate JWT Session]
 ```
 
-## FinanceCore Ownership Model
+**Why this is safer:**
+By running a single `DELETE FROM users WHERE id = ?` command, we delegate referential cleanup to the database engine. The database automatically cascades the deletion down to every child table (`expenses`, `receipt_uploads`, `insights`, etc.). This guarantees 100% cleanup, eliminates application-layer transaction bottlenecks, and ensures future schema additions are automatically handled via their foreign key constraints.
 
-**All financial calculations live strictly inside FinanceCore.**
+## 18. Scalability Considerations
+* **Serverless Compute:** Vercel automatically scales Edge and Node.js functions infinitely based on traffic.
+* **Distributed Database:** TiDB abstracts sharding and scaling, allowing MySQL compatibility with NoSQL-like scale.
+* **Statelessness:** The application is entirely stateless. Sessions are JWT-based, and file uploads are processed entirely in memory, eliminating the need for complex persistent volume management.
 
-This project operates on a hard architectural boundary:
-- **UI never performs financial math** (no percentages, growth, or savings calculations on the client).
-- **AI never calculates numbers** (models only interpret data pre-computed by FinanceCore).
-- **Integer Currency Storage** is the canonical database representation. All currency is stored in `paise` (1 INR = 100 paise) to prevent floating-point precision errors.
+## 19. Technology Stack
+* **Framework:** Next.js (App Router)
+* **Language:** TypeScript
+* **Styling:** TailwindCSS + Radix UI Primitives
+* **Database:** TiDB (MySQL Compatible)
+* **ORM / Query Builder:** Raw SQL with parameterized queries for maximum performance and security.
+* **Authentication:** NextAuth.js
+* **AI Provider:** Google Gemini API
 
-## Testing
+## 20. Folder Structure
+```text
+smartspend/
+├── app/                  # Next.js 14+ App Router (API and Page routes)
+├── components/           # Modular React components
+│   ├── layouts/          # Page wrappers (Sidebar, Navigation)
+│   ├── sections/         # Feature-specific components (Goals, Expenses)
+│   └── ui/               # Reusable UI primitives (Buttons, Inputs)
+├── context/              # React Context providers (Auth, Global State)
+├── docs/                 # Extensive architectural documentation
+├── hooks/                # Custom React hooks
+├── lib/                  # Core Business Logic
+│   ├── ai/               # Gemini API wrappers and prompt engineering
+│   ├── auth/             # NextAuth configuration
+│   ├── db/               # Database connection pools and schemas
+│   └── finance/          # Deterministic financial calculators
+└── services/             # Database access and abstraction layer
+```
 
-The system enforces architectural compliance and calculation accuracy through a rigorous test suite.
-
-- **Current Status:** 100% Passing (82/82)
-- **Major Suites:**
-  - `FinanceCore` (Math, rounding, duplicate detection)
-  - `OCR Adapter` (Extraction isolation)
-  - `Expense Engine` (Data integrity)
-  - `Dashboard` (Analytics accuracy)
-
-## Getting Started
+## 21. Local Development Setup
 
 ### Prerequisites
-- Node.js >= 22
-- MySQL Server >= 8
-- Google Gemini API Key
+* Node.js 18.x or later
+* MySQL 8.0+ or TiDB Local instance
+* Google Cloud Platform account (for OAuth)
+* Google Gemini API Key
 
 ### Installation
+1. Clone the repository:
 ```bash
 git clone https://github.com/yourusername/smartspend.git
 cd smartspend
+```
+
+2. Install dependencies:
+```bash
 npm install
 ```
 
-### Environment Setup
-Create a `.env.local` file:
+## 22. Environment Variables
+Create a `.env.local` file in the project root:
+
 ```env
-DATABASE_URL="mysql://user:password@localhost:3306/smartspend"
-GEMINI_API_KEY="your_api_key_here"
-NEXTAUTH_SECRET="your_secret"
+# Application URL
+NEXTAUTH_URL=http://localhost:3000
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+# Security
+NEXTAUTH_SECRET=generate_a_strong_random_string
+
+# Database
+# Connect to your local or remote TiDB/MySQL instance
+DATABASE_URL=mysql://root:password@127.0.0.1:4000/smartspend
+
+# Google OAuth
+GOOGLE_CLIENT_ID=your_gcp_client_id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your_gcp_client_secret
+
+# AI Configuration
+GEMINI_API_KEY=your_gemini_api_key
 ```
 
-### Development
-```bash
-npm run dev
-```
+## 23. Deployment
+SmartSpend is architected for zero-config deployment on Vercel.
 
-### Build
-```bash
-npm run build
-```
+1. Push your code to a GitHub repository.
+2. Import the project in the Vercel Dashboard.
+3. Configure your Environment Variables in the Vercel deployment settings.
+4. Click **Deploy**. Vercel will automatically detect the Next.js framework and configure the build settings.
 
-### Testing
-```bash
-npx vitest run
-```
+## 24. Future Roadmap
+* **Automated Bank Sync:** Integration with Plaid/Tink to securely pull transactions directly from banking institutions.
+* **Collaborative Budgets:** Allow multiple users (e.g., family members) to share and contribute to joint budgets and goals.
+* **Advanced Investment Tracking:** Expand the core engine to track equities, cryptocurrencies, and retirement portfolios.
+* **Mobile Application:** Port the web experience to iOS and Android using React Native / Expo.
 
-## API Overview
+## 25. Lessons Learned
+* **AI is non-deterministic; Finances are deterministic.** We learned quickly that relying on an LLM to perform math leads to hallucinations. We restructured the architecture so the AI only performs unstructured data extraction (OCR), passing the raw numbers into a strictly typed, deterministic TypeScript calculation engine.
+* **Serverless PDF Parsing is Hard.** Native Node.js libraries for PDF parsing often rely on Canvas binaries that exceed serverless deployment limits or fail cross-platform compilation. We pivoted to sending PDF byte streams directly to Gemini's Multimodal API, offloading the heavy lifting.
 
-The API layer is fully RESTful and validated via Zod.
+## 26. Engineering Decisions
 
-- **`/api/expenses`**: Log transactions and trigger OCR parsing.
-- **`/api/budgets`**: Manage category spending limits.
-- **`/api/goals`**: Track lifecycle and savings progress.
-- **`/api/dashboard`**: Fetch pre-calculated monthly aggregations.
-- **`/api/insights`**: Request AI-generated financial summaries.
-- **`/api/reports`**: Export financial data in multiple formats.
+### 1. Raw SQL vs. ORM (Prisma/Drizzle)
+* **Chosen:** Raw SQL with parameterized queries.
+* **Why:** For a financial application requiring complex aggregations, window functions, and strict indexing control, ORMs often generate suboptimal queries. Raw SQL provides complete control over the execution plan and avoids the overhead of a heavy Prisma engine in a serverless environment.
+* **Tradeoff:** Slower development speed and manual TypeScript interface maintenance for database rows.
 
-## Architecture Highlights
+### 2. TiDB Serverless over PostgreSQL
+* **Chosen:** TiDB.
+* **Why:** TiDB provides a highly scalable, distributed SQL database that is MySQL compatible. Its serverless offering handles sudden spikes in traffic without manual provisioning, perfect for a modern web application.
+* **Tradeoff:** MySQL syntax lacks some advanced PostgreSQL features (like native Array types), requiring us to store certain metadata as JSON strings.
 
-- **Deterministic Financial Engine**: Zero reliance on floating-point arithmetic or AI hallucinations for core logic.
-- **Integer Currency Storage (Paise)**: Absolute precision for all database values.
-- **Service-Oriented Architecture**: Clean separation between data extraction, persistence, and presentation.
-- **DTO-Based API Contracts**: Strict serialization to prevent internal models from leaking to the client.
-- **AI as Presentation Layer Only**: AI summarizes and formats data; it does not author it.
+### 3. Database Cascades over Application Cleanup
+* **Chosen:** `ON DELETE CASCADE`.
+* **Why:** Guarantees 100% referential integrity during account deletion without relying on application-layer transactions.
+* **Tradeoff:** Accidental deletions are catastrophic and unrecoverable. We mitigate this with strict UI confirmations and audit logging.
 
-## Current Completion Status
+## 27. Screenshots Section
 
-- [x] Expense Engine (Core CRUD)
-- [x] OCR Pipeline (Extraction Isolation)
-- [x] Bank Statement Import
-- [x] Budget System (Limits & Alerts)
-- [x] Goal System (Lifecycle Tracking)
-- [x] Dashboard Analytics (Pre-computed Aggregations)
-- [x] Insights Engine (AI Contextualization)
-- [x] FinanceCore Ownership (100% Math Centralization)
+> *(Replace these placeholders with actual screenshots of your application)*
 
-## Future Improvements
+| Dashboard | Expense Entry |
+|:---:|:---:|
+| <img src="https://via.placeholder.com/600x400?text=Dashboard+View" alt="Dashboard" width="100%"/> | <img src="https://via.placeholder.com/600x400?text=Expense+Form" alt="Expense Form" width="100%"/> |
 
-- Implementation of multi-currency support via FinanceCore rate bridging.
-- Comprehensive end-to-end testing with Playwright.
-- CI/CD pipeline automation via GitHub Actions.
-- Enhanced API rate limiting and security hardening.
+| Budget Tracking | AI Insights |
+|:---:|:---:|
+| <img src="https://via.placeholder.com/600x400?text=Budget+Tracker" alt="Budget" width="100%"/> | <img src="https://via.placeholder.com/600x400?text=AI+Insights" alt="Insights" width="100%"/> |
 
-## License
+## 28. Demo Section
 
-MIT License. See `LICENSE` for more information.
+Experience the platform live. 
+
+[![Live Demo](https://img.shields.io/badge/Launch-Live_Demo-success?style=for-the-badge&logo=vercel)](#)
+
+*(Insert a GIF or short video walkthrough here showcasing the core user journey from login to receipt upload).*
+
+## 29. License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+<div align="center">
+  <p>Engineered with precision for the modern web.</p>
+</div>

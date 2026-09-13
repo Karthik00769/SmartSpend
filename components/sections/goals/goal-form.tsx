@@ -256,7 +256,7 @@ export function GoalForm() {
                 {tmpl.label}
               </div>
               <div className="text-[10px] text-muted-foreground mt-0.5">
-                {fmt(tmpl.amount)}
+                {fmt(tmpl.amount * 100)}
               </div>
             </button>
           ))}

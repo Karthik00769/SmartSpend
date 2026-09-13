@@ -20,6 +20,7 @@ function createPool(): mysql.Pool {
     database: process.env.DB_NAME     || 'smartspend',
     waitForConnections: true,
     connectionLimit:    10,
+    charset:            'utf8mb4',
     queueLimit:         0,
     timezone:           '+00:00',
     // Return BigInt as strings so JSON.stringify doesn't throw
