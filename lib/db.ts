@@ -12,6 +12,19 @@ declare global {
 }
 
 function createPool(): mysql.Pool {
+  if (process.env.DATABASE_URL) {
+    const isTidb = process.env.DATABASE_URL.includes('tidbcloud') || process.env.DB_SSL === 'true';
+    return mysql.createPool({
+      uri: process.env.DATABASE_URL,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      supportBigNumbers: true,
+      bigNumberStrings: true,
+      ssl: isTidb ? { minVersion: 'TLSv1.2', rejectUnauthorized: true } : undefined,
+    });
+  }
+
   return mysql.createPool({
     host:     process.env.DB_HOST     || 'localhost',
     port:     Number(process.env.DB_PORT) || 3306,

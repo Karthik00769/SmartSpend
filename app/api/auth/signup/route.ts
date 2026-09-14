@@ -3,6 +3,7 @@ import { ok, fail } from "@/lib/api-response";
 import pool from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { RowDataPacket } from "mysql2";
+import { v4 as uuidv4 } from "uuid";
 
 export async function POST(req: Request) {
   try {
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
     const passwordHash = await bcrypt.hash(password, 10);
     const fullName = name || email.split("@")[0];
 
-    const oauthId = `local_${crypto.randomUUID()}`;
+    const oauthId = `local_${uuidv4()}`;
 
     // users.id is INT AUTO_INCREMENT — do NOT specify id, MySQL assigns it.
     await pool.execute(

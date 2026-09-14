@@ -35,18 +35,21 @@ export const authOptions: NextAuthOptions = {
 
         const user = rows[0];
 
-        // Validate password if hash exists
-        if (user.password_hash) {
-          const valid = await bcrypt.compare(credentials.password, user.password_hash);
-          if (!valid) throw new Error("Invalid email or password");
+        // Ensure user actually has a password set (prevents OAuth takeover)
+        if (!user.password_hash) {
+          throw new Error("Invalid email or password");
         }
+        
+        const valid = await bcrypt.compare(credentials.password, user.password_hash);
+        if (!valid) throw new Error("Invalid email or password");
 
         // Validate 2FA
         if (user.two_factor_pin) {
           if (!credentials.pin) {
             throw new Error("2FA PIN required");
           }
-          if (credentials.pin !== user.two_factor_pin) {
+          const validPin = await bcrypt.compare(credentials.pin, user.two_factor_pin);
+          if (!validPin) {
             throw new Error("Invalid 2FA PIN");
           }
         }
@@ -181,7 +184,13 @@ export const authOptions: NextAuthOptions = {
       return session;
     }
   },
-  secret: process.env.NEXTAUTH_SECRET || "default_development_secret_do_not_use_in_prod",
+  secret:
+    process.env.NEXTAUTH_SECRET ||
+    (process.env.NODE_ENV === "production"
+      ? (() => {
+          throw new Error("NEXTAUTH_SECRET missing in production");
+        })()
+      : "default_development_secret_do_not_use_in_prod"),
   pages: {
     signIn: "/login",
   },
