@@ -313,14 +313,7 @@ The system leverages Google's Gemini 1.5 Flash for its speed and multimodal capa
 - Accepted for publication in the **ICGMRFT 2026** proceedings.
 - Recognized as an **IEEE YESIST12 2026 International Finalist**.
 
-## 17. Team Contributions
-
-| Contributor | Responsibilities / Ownership |
-|-------------|------------------------------|
-| [Name] | [Role/Contribution] |
-| [Name] | [Role/Contribution] |
-
-## 18. Local Development Setup
+## 17. Local Development Setup
 
 ### Prerequisites
 - Node.js (v22+)
@@ -370,7 +363,7 @@ npm run dev
 ```
 Navigate to `http://localhost:3000`.
 
-## 19. Project Structure
+## 18. Project Structure
 
 ```text
 smartspend/
@@ -387,6 +380,6 @@ smartspend/
 └── tests/             # Vitest configuration and test suites
 ```
 
-## 20. Conclusion
+## 19. Conclusion
 
 SmartSpend demonstrates a robust, production-ready implementation of a modern financial management tool. By prioritizing strict relational data integrity, enforcing multi-tenant isolation, and utilizing LLMs defensively via strict parsing and fallback mechanisms, the architecture minimizes the unreliability typically associated with AI integrations in financial contexts. The project serves as a scalable foundation for automated personal finance.
