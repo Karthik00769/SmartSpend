@@ -56,17 +56,131 @@ To prevent LLM hallucination in financial data:
 2. Deterministic regex parses the text to identify the amount, date, and merchant.
 3. A confidence score is assigned, and the transaction is flagged for mandatory user review before database insertion.
 
-### AI Financial Insights & Behavioral Coaching
-The system feeds a strict JSON snapshot of the user's spending (vs. budget) to Gemini Flash to generate 3-5 concise insights. It also generates behavioral coaching tips for overspending.
-*Graceful Degradation:* If the Gemini API is unreachable, the system falls back to deterministic mathematical rules to ensure the dashboard remains functional.
+### ER Diagram
+```mermaid
+erDiagram
+    USERS ||--o{ EXPENSES : creates
+    USERS ||--o{ BUDGETS : defines
+    USERS ||--o{ GOALS : sets
+    USERS ||--o{ CATEGORIES : owns
+    USERS ||--o{ INSIGHTS : receives
+    USERS ||--o{ AUDIT_LOGS : generates
 
-## 4. Deployment
+    CATEGORIES ||--o{ EXPENSES : categorizes
+    CATEGORIES ||--o{ BUDGETS : tracks
 
-SmartSpend is optimized for serverless deployment on **Vercel**.
-- **Next.js Hosting:** Vercel automatically manages the Edge and Serverless functions for the API routes and server actions.
-- **Database Connectivity:** Vercel securely connects to the TiDB Cloud distributed database using environment variables. The `db.ts` connection pool caches connections across HMR reloads in development and utilizes TLSv1.2 for secure production queries.
+    USERS {
+        int id PK
+        varchar email UK
+        datetime created_at
+        datetime updated_at
+    }
+    CATEGORIES {
+        int id PK
+        int user_id FK "nullable for system categories"
+        varchar name
+        boolean is_system
+    }
+    EXPENSES {
+        int id PK
+        int user_id FK
+        int category_id FK
+        decimal amount
+        date expense_date
+        datetime deleted_at
+    }
+    BUDGETS {
+        int id PK
+        int user_id FK
+        int category_id FK
+        decimal limit_amount
+        tinyint month
+        smallint year
+    }
+    GOALS {
+        int id PK
+        int user_id FK
+        decimal target_amount
+        decimal saved_amount
+    }
+```
 
-## 5. Local Development Setup
+### Schema Overview
+- **`users`**: Enforces unique emails and mandatory timestamps.
+- **`categories`**: Uses `is_system` and allows `user_id = NULL` for global categories. A composite unique key (`user_id`, `name`) prevents duplicate categories per user.
+- **`expenses`**: Implements soft-deletes (`deleted_at`) and enforces `amount > 0` via CHECK constraints. Includes an `audit_log` table for compliance tracking.
+- **`budgets`**: Ensures users can only have one budget per category per month via a composite unique key.
+- **`goals`**: Tracks savings targets with constraints ensuring `target_amount > 0` and `saved_amount >= 0`.
+
+## 9. OCR Processing Pipeline
+
+The OCR pipeline prioritizes safety and determinism over pure AI autonomy.
+
+1. **Upload:** User uploads an image or PDF.
+2. **Extraction:** The system calls Gemini 1.5 Flash with strict instructions to output *raw text only*. If this fails, it falls back to local `Tesseract.js` or `pdf-parse`.
+3. **Regex Parsing:** Custom regex routines scan the raw text to locate the largest currency amount, standard date formats, and likely merchant names.
+4. **Validation:** The system assigns a confidence score (`high`, `medium`, `low`) based on regex match quality.
+5. **Review:** The system explicitly flags the result for manual user review. No OCR data is saved directly to the database without human confirmation.
+
+## 10. AI Integration
+
+The system leverages Google's Gemini 1.5 Flash for its speed and multimodal capabilities.
+
+- **Categorization:** Maps expense descriptions to predefined database categories.
+- **Insight Generation:** Evaluates spending velocity against budgets to warn users of overspending or highlight savings opportunities.
+
+**Technical Considerations & Limitations:**
+- **Hallucination Risk:** Mitigated by forcing JSON schema outputs and using strict backend validation (Zod). 
+- **OCR Number Fabrication:** The AI is intentionally blocked from guessing amounts during OCR; it only provides the transcription, leaving number extraction to regex.
+- **Failure Modes:** If the Gemini API times out (set to 6000ms), 404s, or returns invalid JSON, the system gracefully degrades. Categorization defaults to "Other", and Insights fall back to deterministic, rule-based calculations (e.g., highlighting the highest mathematical spend).
+
+## 11. Design Decisions and Trade-offs
+
+- **MySQL vs NoSQL:** Financial applications require strict ACID properties, foreign key constraints, and relational integrity. MySQL was chosen over MongoDB to prevent orphaned records (e.g., expenses tied to deleted categories).
+- **OCR + Regex vs AI-Only:** While LLMs can extract structured JSON directly from receipts, they are prone to hallucinating tax numbers or subtotals as the final amount. Using the LLM strictly as an OCR transcription tool and regex for data extraction guarantees deterministic numerical handling.
+- **Server-Side Auth:** NextAuth handles sessions server-side via HttpOnly cookies, mitigating XSS risks associated with storing JWTs in `localStorage`.
+
+## 12. Security Considerations
+
+- **Authorization:** Every API route verifies the NextAuth session. The `user_id` is extracted from the trusted server session, never trusted from the client payload.
+- **Data Isolation:** SQL queries are explicitly scoped with `WHERE user_id = ?`.
+- **SQL Injection:** The `mysql2` driver is used with parameterized queries to prevent SQL injection.
+- **Input Validation:** Zod schemas validate all incoming API payloads before database interaction.
+- **Audit Logging:** An `audit_logs` table tracks sensitive modifications to expense records.
+
+## 13. Scalability Considerations
+
+- **Current Architecture:** Monolithic Next.js application backed by a single MySQL instance.
+- **Database Scaling:** The schema is optimized with composite covering indexes (e.g., `idx_expenses_user_date`, `idx_budgets_user_period_canonical`) to support fast analytical queries for the dashboard.
+- **Future Evolution:** The AI and OCR processing pipelines are stateless and can be offloaded to serverless queues or background workers if processing volume increases.
+
+## 14. Current Limitations
+
+- **OCR Accuracy:** Highly dependent on lighting, blur, and receipt formatting. Handwritten receipts perform poorly.
+- **AI Categorization Uncertainty:** Niche or vague descriptions (e.g., "Amazon") lack context to differentiate between groceries or electronics, often resulting in fallback categorizations.
+- **Currency Support:** The database schema supports a `currency_code`, but frontend analytics and AI prompts currently default heavily to INR (`₹`).
+- **File Storage:** Uploaded files are processed in memory and discarded; there is no persistent blob storage for historical receipt viewing.
+
+## 15. Future Roadmap
+
+- **Short-Term:** Implement fully dynamic multi-currency support across all analytics and AI prompts. Add persistent Blob storage (e.g., AWS S3) for receipt images.
+- **Medium-Term:** Integrate Plaid or similar banking APIs for automated transaction ingestion, reducing reliance on manual OCR.
+- **Long-Term:** Implement advanced forecasting models utilizing historical time-series data to predict end-of-month cash flow.
+
+## 16. Research and Academic Context
+
+- Based on the SmartSpend research paper.
+- Accepted for publication in the **ICGMRFT 2026** proceedings.
+- Recognized as an **IEEE YESIST12 2026 International Finalist**.
+
+## 17. Team Contributions
+
+| Contributor | Responsibilities / Ownership |
+|-------------|------------------------------|
+| [Name] | [Role/Contribution] |
+| [Name] | [Role/Contribution] |
+
+## 18. Local Development Setup
 
 ### Prerequisites
 - Node.js (v22+)
@@ -110,3 +224,24 @@ mysql -u root -p smartspend < all_migrations.sql
 npm run dev
 ```
 Navigate to `http://localhost:3000`.
+
+## 19. Project Structure
+
+```text
+smartspend/
+├── app/               # Next.js App Router (Pages, API Routes, Layouts)
+├── components/        # Reusable React components (Radix UI, Tailwind)
+├── db/                # MySQL schema definitions and migration scripts
+├── lib/               # Core business logic, AI engines, OCR pipeline
+│   ├── ai/            # Gemini Flash integrations (Categorization, Insights)
+│   ├── ocr/           # Gemini Vision and Tesseract extraction logic
+│   ├── auth/          # NextAuth configuration
+│   └── finance/       # Analytical calculation utilities
+├── services/          # Data access layer for database entities
+├── public/            # Static assets
+└── tests/             # Vitest configuration and test suites
+```
+
+## 20. Conclusion
+
+SmartSpend demonstrates a robust, production-ready implementation of a modern financial management tool. By prioritizing strict relational data integrity, enforcing multi-tenant isolation, and utilizing LLMs defensively via strict parsing and fallback mechanisms, the architecture minimizes the unreliability typically associated with AI integrations in financial contexts. The project serves as a scalable foundation for automated personal finance.
