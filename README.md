@@ -14,18 +14,6 @@ The platform relies on deterministic software engineering principles for financi
 
 ---
 
-## Research & Publication
-
-**SmartSpend: A Goal-Based Personal Financial Planning Platform for Awareness-Driven Savings**
-
-SmartSpend originated as a research initiative exploring the intersection of deterministic financial systems and non-deterministic LLMs. 
-- **Published in:** ICGMRFT 2026
-- **Recognition:** IEEE YESIST12 2026 International Finalist
-
-**Contribution:** The research demonstrates a novel pipeline for mitigating LLM hallucination in financial applications by utilizing AI strictly for text transcription and semantic categorization, while delegating numerical extraction to deterministic algorithms. The current open-source platform has evolved significantly beyond the published prototype, featuring a multi-tenant cloud architecture, distributed database integration, and real-time behavioral coaching capabilities.
-
----
-
 ## Key Features
 
 ### Financial Management
@@ -51,89 +39,357 @@ SmartSpend originated as a research initiative exploring the intersection of det
 
 ---
 
-## System Architecture
-
-```text
-User
- │
- ▼
-Next.js Application (Client & Server Components)
- │
- ├── NextAuth Authentication (Google OAuth)
- │
- ├── OCR Processing Pipeline
- │    ├── pdf-parse (Bank Statements)
- │    └── Tesseract.js / Gemini Vision (Receipts)
- │
- ├── Gemini AI Services (Categorization & Insights)
- │
- ▼
-TiDB Cloud (MySQL-Compatible Distributed Database)
-```
-
----
-
 ## Technology Stack
 
 | Layer | Technology |
 |---|---|
-| **Frontend** | Next.js 16 (App Router), React 19, Tailwind CSS v4, Radix UI |
-| **Backend** | Next.js API Routes and Server Actions (Node.js) |
+| **Frontend** | React 19, Next.js 16 (App Router), Tailwind CSS v4, Shadcn UI |
+| **Backend** | Next.js API Routes (Node.js) |
 | **Database** | TiDB Cloud (MySQL-compatible distributed SQL database) |
-| **Database Driver** | `mysql2` (Raw parameterised SQL, connection pooling) |
+| **Database Driver** | `mysql2` (Raw parameterized SQL, connection pooling) |
 | **Authentication**| NextAuth.js (v4) with Google OAuth |
-| **OCR Pipeline** | Gemini Vision, Tesseract.js, `pdf-parse` |
+| **OCR Pipeline** | Gemini Vision, Tesseract.js, `pdf-parse`, `xlsx` |
 | **AI Integration**| Google Gemini 1.5 Flash |
 | **Data Validation**| Zod (API payload and AI JSON schema enforcement) |
 | **Deployment** | Vercel (Edge & Serverless functions) |
 
 ---
 
-## Financial Intelligence Pipeline
+## System Architecture
 
-SmartSpend employs a defensive, multi-stage pipeline to handle financial data safely:
-
-1. **Document Upload:** The user uploads a receipt image or PDF bank statement.
-2. **OCR Extraction:** The system invokes Gemini Vision or local Tesseract/pdf-parse to extract a raw text transcription.
-3. **Data Validation:** Deterministic regex routines scan the transcription for amounts, dates, and merchant patterns, assigning a confidence score.
-4. **Transaction Processing:** The extracted data is temporarily held in a staging state. The user must manually review and confirm the transaction before it enters the ledger.
-5. **AI Categorization:** Upon confirmation, Gemini Flash evaluates the merchant and description against the user's active categories, mapping the expense semantically.
-6. **Financial Analytics:** The platform recalculates the user's monthly spending velocity and budget utilization.
-7. **User Dashboard:** The dashboard queries the updated state and requests personalized behavioral insights from the AI engine to guide future spending.
-
----
-
-## AI Integration
-
-SmartSpend leverages Google Gemini 1.5 Flash to enhance user experience without compromising financial determinism.
-
-**What Gemini Does:**
-- Transcribes text from images.
-- Semantically categorizes vague transaction descriptions (e.g., mapping "Uber" to "Transport").
-- Analyzes aggregated financial snapshots to generate human-readable warnings and behavioral coaching.
-
-**What Gemini Does NOT Do:**
-- Guess or calculate financial numbers.
-- Write directly to the database without schema validation.
-
-The architecture strictly separates the AI from mathematical operations. If the AI service times out or returns invalid JSON, the system gracefully degrades to rule-based deterministic calculations, ensuring uninterrupted service.
+```mermaid
+flowchart TD
+    Client[Client Browser / Mobile App]
+    Vercel[Vercel Serverless Platform]
+    TiDB[(TiDB Cloud / MySQL)]
+    Gemini[Google Gemini API]
+    
+    Client -- HTTP Requests --> Vercel
+    Vercel -- Next.js API Routes --> Vercel
+    Vercel -- MySQL Protocol --> TiDB
+    Vercel -- REST API --> Gemini
+```
 
 ---
 
-## Authentication & Security
+## Technical Architecture
 
-- **NextAuth.js:** Secures user onboarding via Google OAuth.
-- **Session Management:** Utilizes HttpOnly, secure cookies for session persistence, protecting against XSS token theft.
-- **User Isolation:** Multi-tenant architecture where every SQL query is explicitly scoped to the authenticated `user_id` injected from the trusted server session.
-- **Data Protection:** Parameterised database queries prevent SQL injection, and Zod schemas enforce type-safety on all inputs.
+```mermaid
+flowchart TD
+    subgraph Frontend
+        React[React 19]
+        NextUI[Next.js 16 App Router]
+        Tailwind[Tailwind CSS v4]
+        Shadcn[Shadcn UI]
+    end
+    
+    subgraph Backend
+        NextAPI[Next.js API Routes]
+        Auth[NextAuth.js]
+        Engine[FinanceCore Engine]
+    end
+    
+    subgraph AI & OCR
+        Gemini[Gemini Flash]
+        Tesseract[Tesseract.js]
+        PDF[pdf-parse]
+        XLSX[xlsx]
+    end
+    
+    subgraph Database
+        TiDB[(TiDB Serverless)]
+        MySQL2[mysql2/promise driver]
+    end
+    
+    Frontend --> Backend
+    Backend --> AI & OCR
+    Backend --> Database
+```
 
 ---
 
-## Deployment
+## Authentication Workflow
 
-SmartSpend is architected for cloud-native, serverless deployment:
-- **Vercel Hosting:** The Next.js application is deployed to Vercel, leveraging Edge and Serverless functions for scalable API routing and SSR.
-- **Database Architecture:** Connected to a highly available **TiDB Cloud** distributed database, utilizing TLSv1.2 encryption for all network transit.
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI as Next.js Client
+    participant AuthApi as NextAuth API
+    participant DB as TiDB (users table)
+    
+    User->>UI: Submit Login/OAuth
+    UI->>AuthApi: Authenticate
+    AuthApi->>DB: Lookup User by Email
+    DB-->>AuthApi: User Hash/Record
+    AuthApi->>AuthApi: Validate Credentials/OAuth Token
+    AuthApi->>DB: Update/Create Session (if necessary)
+    AuthApi-->>UI: Set Secure HTTP-Only Cookie
+    UI->>User: Redirect to Dashboard
+```
+
+---
+
+## Expense Processing Workflow
+
+```mermaid
+flowchart TD
+    Input[Incoming Expense Data]
+    Classifier{Document Type?}
+    
+    Input --> Classifier
+    Classifier -- "Bank Statement (PDF/CSV/XLSX)" --> BankFlow[Bank Extractor]
+    Classifier -- "Image/PDF (Receipt)" --> OCRFlow[OCR Adapter]
+    Classifier -- "JSON (Manual)" --> Engine[Expense Engine]
+    
+    BankFlow --> Engine
+    OCRFlow --> Engine
+    
+    Engine -- "Validate & Normalize" --> Core[FinanceCore]
+    Core -- "Duplicate Detection" --> DBInsert[DB Insert]
+```
+
+---
+
+## OCR Processing Pipeline
+
+```mermaid
+flowchart TD
+    RawImage[Receipt Image / PDF]
+    DocClassifier[Classifier: Image or Text]
+    
+    RawImage --> DocClassifier
+    DocClassifier -- "If Text/PDF" --> ParsePDF[pdf-parse Extraction]
+    DocClassifier -- "If Image" --> GeminiFlow[Gemini Categorizer API]
+    
+    GeminiFlow -- "Success" --> GeminiExtract[Structured JSON]
+    GeminiFlow -- "Timeout/Fail" --> TessFlow[Tesseract.js]
+    
+    TessFlow --> TextNorm[FinanceCore Normalization]
+    TextNorm --> Adapter[OCR Adapter]
+    GeminiExtract --> Adapter
+    
+    Adapter --> DuplicateCheck[Duplicate Suppression]
+    DuplicateCheck --> ExpenseEngine[Expense Validation]
+    ExpenseEngine --> TiDB[(Database)]
+```
+
+---
+
+## Bank Statement Processing Pipeline
+
+```mermaid
+flowchart TD
+    Statement[Bank Statement File]
+    FileCheck{File Type?}
+    
+    Statement --> FileCheck
+    FileCheck -- "PDF" --> PDFParse[pdf-parse]
+    FileCheck -- "CSV/TXT" --> TextParse[UTF-8 Text Stream]
+    FileCheck -- "Excel" --> ExcelParse[xlsx package]
+    
+    PDFParse --> ParserLogic[Bank Extractor Logic]
+    TextParse --> ParserLogic
+    ExcelParse --> ParserLogic
+    
+    ParserLogic --> Regex[Regex Transaction Matcher]
+    Regex --> FallbackCheck{Transactions Found?}
+    FallbackCheck -- "Count > 0" --> BulkImport[Import Bank Transactions]
+    FallbackCheck -- "Count == 0" --> OCRFallback[Fallback to OCR Pipeline]
+    
+    BulkImport --> DB[(TiDB)]
+```
+
+---
+
+## AI Categorization Pipeline
+
+```mermaid
+flowchart LR
+    App[SmartSpend App]
+    CatEngine[ExpenseCategorizer.ts]
+    InsightEngine[InsightGenerator.ts]
+    GeminiAPI[Google Generative AI - Flash]
+    
+    App -->|Raw Description| CatEngine
+    App -->|User Financial Summary| InsightEngine
+    
+    CatEngine -->|Strict Prompt + Category List| GeminiAPI
+    InsightEngine -->|JSON Schema Prompt| GeminiAPI
+    
+    GeminiAPI -->|Category ID / JSON| CatEngine
+    GeminiAPI -->|Array of Insights JSON| InsightEngine
+    
+    CatEngine -->|Fallback to 'Other' if Invalid| App
+    InsightEngine -->|Validate against TypeScript DTO| App
+```
+
+---
+
+## Savings Recommendation Engine
+
+```mermaid
+flowchart TD
+    RawData[Monthly Expenses & Income]
+    
+    RawData --> HealthScore[computeHealthScore]
+    HealthScore --> SavingsRate(Savings Rate Scorer)
+    HealthScore --> BudgetComp(Budget Compliance Scorer)
+    HealthScore --> GoalProg(Goal Progress Scorer)
+    HealthScore --> SpendCont(Spending Control Scorer)
+    
+    RawData --> Goals[analyzeGoal]
+    Goals --> Logistic(Logistic Probability Formula)
+    Goals --> Milestone(Milestone Forecaster)
+    
+    SavingsRate --> Output[Dashboard JSON Response]
+    BudgetComp --> Output
+    GoalProg --> Output
+    SpendCont --> Output
+    Logistic --> Output
+    Milestone --> Output
+```
+
+---
+
+## Analytics & Reporting Flow
+
+```mermaid
+flowchart LR
+    DB[(TiDB)]
+    Route[app/api/analytics/route.ts]
+    Service[analytics.service.ts]
+    FinanceCore[FinanceCore.Analytics]
+    Client[Next.js Client Components]
+    
+    DB -->|SQL SELECT| Service
+    Service -->|Raw Rows| FinanceCore
+    FinanceCore -->|calculateGrowthPct, Trends| Service
+    Service -->|WeekOverWeek / MonthOverMonth DTO| Route
+    Route -->|JSON| Client
+```
+
+---
+
+## Database Architecture
+
+```mermaid
+erDiagram
+    USERS {
+        char(36) id PK
+        varchar email
+        varchar currency_code
+        varchar full_name
+        timestamp created_at
+    }
+    CATEGORIES {
+        int id PK
+        char(36) user_id FK
+        varchar name
+        boolean is_system
+    }
+    EXPENSES {
+        char(36) id PK
+        char(36) user_id FK
+        int category_id FK
+        bigint amount
+        date expense_date
+        varchar payment_method
+        varchar source
+    }
+    BUDGETS {
+        char(36) id PK
+        char(36) user_id FK
+        int category_id FK
+        bigint limit_amount
+        int budget_month
+        int budget_year
+    }
+    GOALS {
+        char(36) id PK
+        char(36) user_id FK
+        bigint target_amount
+        bigint saved_amount
+        date target_date
+        varchar status
+    }
+    INSIGHTS {
+        char(36) id PK
+        char(36) user_id FK
+        varchar insight_type
+        json metadata
+        boolean is_read
+    }
+    
+    USERS ||--o{ CATEGORIES : owns
+    USERS ||--o{ EXPENSES : owns
+    USERS ||--o{ BUDGETS : owns
+    USERS ||--o{ GOALS : owns
+    USERS ||--o{ INSIGHTS : receives
+    CATEGORIES ||--o{ EXPENSES : categorizes
+    CATEGORIES ||--o{ BUDGETS : constrained_by
+```
+
+---
+
+## Request Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Route as Next.js Route (app/api/)
+    participant Auth as NextAuth
+    participant RateLimit as Rate Limiter
+    participant Engine as Domain Engine (lib/finance)
+    participant DB as TiDB (lib/db.ts)
+
+    User->>Route: POST Request
+    Route->>Auth: Validate Session Token
+    Auth-->>Route: Session Details / User ID
+    Route->>RateLimit: Check Request Limit
+    RateLimit-->>Route: Allowed
+    Route->>Engine: Process Payload
+    Engine->>DB: Execute Parameterized SQL
+    DB-->>Engine: Return Result Set
+    Engine-->>Route: JSON DTO
+    Route-->>User: 200 OK / 201 Created
+```
+
+---
+
+## Security Architecture
+
+```mermaid
+flowchart TD
+    Client[Client]
+    WAF[Vercel WAF]
+    Auth[NextAuth Middleware]
+    RateLimiter[Security/Rate-Limit.ts]
+    DBLayer[mysql2 parameterized queries]
+    
+    Client --> WAF
+    WAF --> Auth
+    Auth -- "If Authorized" --> RateLimiter
+    RateLimiter -- "If below threshold" --> DBLayer
+    DBLayer -- "Prevents SQL Injection" --> TiDB[(TiDB)]
+```
+
+---
+
+## Deployment Architecture
+
+```mermaid
+flowchart TD
+    Git[GitHub Repository]
+    Vercel[Vercel CI/CD]
+    TiDB[(TiDB Serverless Cluster)]
+    Env[Environment Variables]
+    
+    Git -- "Push to main" --> Vercel
+    Vercel -- "Build step (next build)" --> Vercel
+    Vercel -- "Edge & Serverless Deployment" --> Vercel
+    Env -- "DATABASE_URL, NEXTAUTH_SECRET, GEMINI_API_KEY" --> Vercel
+    Vercel -- "Runtime Connections" --> TiDB
+```
 
 ---
 
@@ -155,7 +411,7 @@ smartspend/
 
 ---
 
-## Getting Started
+## Local Development Setup
 
 ### Installation
 ```bash
@@ -177,7 +433,32 @@ npm run build
 npm run start
 ```
 
-*Note: Environment variables for database connectivity, NextAuth, Google OAuth, and Gemini API keys are required for the application to function. See `.env.example`.*
+---
+
+## Environment Variables
+
+Environment variables are required for database connectivity, authentication, and AI services. Create a `.env` file based on `.env.example`:
+
+```env
+DATABASE_URL="mysql://user:password@host:4000/smartspend?ssl={"rejectUnauthorized":true}"
+NEXTAUTH_SECRET="your_secure_random_string"
+NEXTAUTH_URL="http://localhost:3000"
+GOOGLE_CLIENT_ID="your_google_client_id"
+GOOGLE_CLIENT_SECRET="your_google_client_secret"
+GEMINI_API_KEY="your_gemini_api_key"
+```
+
+---
+
+## Research Publication
+
+**SmartSpend: A Goal-Based Personal Financial Planning Platform for Awareness-Driven Savings**
+
+SmartSpend originated as a research initiative exploring the intersection of deterministic financial systems and non-deterministic LLMs. 
+- **Published in:** ICGMRFT 2026
+- **Recognition:** IEEE YESIST12 2026 International Finalist
+
+**Contribution:** The research demonstrates a novel pipeline for mitigating LLM hallucination in financial applications by utilizing AI strictly for text transcription and semantic categorization, while delegating numerical extraction to deterministic algorithms. The current open-source platform has evolved significantly beyond the published prototype, featuring a multi-tenant cloud architecture, distributed database integration, and real-time behavioral coaching capabilities.
 
 ---
 
@@ -186,15 +467,3 @@ npm run start
 - **Banking Integrations:** Implement Plaid or generic Open Banking APIs for direct, real-time transaction ingestion.
 - **Predictive Analytics:** Utilize historical time-series data to forecast end-of-month cash flow and anticipate budget overruns.
 - **Advanced Anomaly Detection:** Flag irregular spending patterns or duplicate subscriptions using statistical variance modeling.
-
----
-
-## Author
-
-**Karthik Nair**  
-*Computer Science Undergraduate*  
-Backend Engineering • Cloud Computing • Distributed Systems • AI-Powered Applications
-
-- [GitHub](https://github.com/Karthik00769)
-- [LinkedIn](https://linkedin.com/in/karthiknair)
-- [Email](mailto:contact@example.com)
