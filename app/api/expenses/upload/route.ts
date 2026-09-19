@@ -16,6 +16,7 @@ import { extractPDFLines } from '@/lib/bank/extractor/pdf';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+export const maxDuration = 60; // Allow enough time for OCR retries
 
 const MAX_BYTES   = 10 * 1024 * 1024;
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
