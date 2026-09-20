@@ -1,8 +1,8 @@
 # SmartSpend
 
-**An AI-Assisted Personal Financial Planning Platform for Awareness-Driven Savings**
+**Goal based financial awareness platform**
 
-SmartSpend is a production-grade personal finance management platform designed to eliminate the friction of manual data entry while providing explainable, context-aware financial intelligence. By combining robust Optical Character Recognition (OCR) pipelines with Large Language Models (LLMs), SmartSpend transforms raw receipts and bank statements into actionable financial insights, enabling users to effortlessly track expenses, enforce budgets, and achieve long-term savings goals.
+SmartSpend is a production-grade Goal based financial awareness platform designed to eliminate the friction of manual data entry while providing explainable, context-aware financial intelligence. By combining robust Optical Character Recognition (OCR) pipelines with Large Language Models (LLMs), SmartSpend transforms raw receipts and bank statements into actionable financial insights, enabling users to effortlessly track expenses, enforce budgets, and achieve long-term savings goals.
 
 ---
 
